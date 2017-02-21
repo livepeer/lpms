@@ -25,15 +25,15 @@ import (
 	"strings"
 	"time"
 
+	"bytes"
+
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/swarm/storage"
+	"github.com/ethereum/go-ethereum/swarm/storage/streaming"
 	"github.com/golang/groupcache/lru"
 	"github.com/kz26/m3u8"
-	// "github.com/ethereum/go-ethereum/swarm/storage/streaming"
-	"bytes"
 
-	"github.com/livepeer/lpms/streaming"
 	streamingVizClient "github.com/livepeer/streamingviz/client"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/av/avutil"
