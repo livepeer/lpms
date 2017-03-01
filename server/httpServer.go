@@ -138,7 +138,7 @@ func StartHTTPServer(rtmpPort string, httpPort string, srsRtmpPort string, srsHt
 
 			muxer := flv.NewMuxerWriteFlusher(writeFlusher{httpflusher: flusher, Writer: w})
 			//Cannot kick off a go routine here because the ResponseWriter is not a pointer (so a copy of the writer doesn't make any sense)
-			lpmsIo.CopyRTMPFromStream(muxer, stream)
+			lpmsIo.CopyRTMPFromStream(muxer, stream, stream.CloseChan)
 		}
 	})
 

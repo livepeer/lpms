@@ -60,7 +60,7 @@ func StartRTMPServer(rtmpPort string, srsRtmpPort string, srsHttpPort string, st
 		forwarder.Stream(strmID)
 
 		//Copy chunks to outgoing connection
-		go io.CopyRTMPFromStream(conn, stream)
+		go io.CopyRTMPFromStream(conn, stream, stream.CloseChan)
 	}
 
 	server.HandlePublish = func(conn *joy4rtmp.Conn) {
@@ -88,7 +88,7 @@ func StartRTMPServer(rtmpPort string, srsRtmpPort string, srsHttpPort string, st
 			//Download the segments
 			go io.DownloadHlsSegment(msChan, stream.HlsSegChan)
 			//Copy Hls segments to swarm
-			go io.CopyHlsToChannel(stream.M3U8Chan, stream.HlsSegChan, stream.SrcVideoChan)
+			go io.CopyHlsToChannel(stream.M3U8Chan, stream.HlsSegChan, stream.SrcVideoChan, stream.CloseChan)
 			// go io.CopyHlsToChannel(stream)
 		} else {
 			//Do regular RTMP stuff - create a new stream, copy the video to the stream.
@@ -111,7 +111,7 @@ func StartRTMPServer(rtmpPort string, srsRtmpPort string, srsHttpPort string, st
 			viz.LogBroadcast(string(stream.ID))
 
 			//Send video to streamer channels
-			go io.CopyToChannel(conn, stream)
+			go io.CopyToChannel(conn, stream, stream.CloseChan)
 		}
 	}
 

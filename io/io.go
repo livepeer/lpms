@@ -36,7 +36,7 @@ func CopyChannelToChannel(inChan chan *streaming.VideoChunk, outChan chan *strea
 }
 
 func Transcode(inChan chan *streaming.VideoChunk, outChan chan *streaming.VideoChunk, newStreamID streaming.StreamID,
-	format string, bitrate string, codecin string, codecout string) (err error) {
+	format string, bitrate string, codecin string, codecout string, closeStreamC chan bool) (err error) {
 	if codecin != "RTMP" {
 		return fmt.Errorf("Only support RTMP as input stream")
 	}
@@ -56,7 +56,7 @@ func Transcode(inChan chan *streaming.VideoChunk, outChan chan *streaming.VideoC
 	}
 
 	//Upload the video to SRS
-	go CopyRTMPFromChannel(dstConn, inChan)
+	go CopyRTMPFromChannel(dstConn, inChan, closeStreamC)
 
 	msChan := make(chan *types.Download, 1024)
 	m3u8Chan := make(chan []byte)
@@ -66,24 +66,24 @@ func Transcode(inChan chan *streaming.VideoChunk, outChan chan *streaming.VideoC
 	//Download the segments
 	go DownloadHlsSegment(msChan, hlsSegChan)
 	//Copy the playlist and hls segments to a stream
-	go CopyHlsToChannel(m3u8Chan, hlsSegChan, outChan)
+	go CopyHlsToChannel(m3u8Chan, hlsSegChan, outChan, closeStreamC)
 
 	return
 }
 
 //Copy packets from channels in the streamer to our destination muxer
-func CopyRTMPFromStream(dst av.Muxer, stream *streaming.Stream) (err error) {
+func CopyRTMPFromStream(dst av.Muxer, stream *streaming.Stream, closeStreamC chan bool) (err error) {
 	if len(stream.SrcVideoChan) > 0 {
 		//First check SrcVideoChan, and then check DstVideoChan
-		CopyRTMPFromChannel(dst, stream.SrcVideoChan)
+		CopyRTMPFromChannel(dst, stream.SrcVideoChan, closeStreamC)
 	} else {
-		CopyRTMPFromChannel(dst, stream.DstVideoChan)
+		CopyRTMPFromChannel(dst, stream.DstVideoChan, closeStreamC)
 	}
 
 	return
 }
 
-func CopyRTMPFromChannel(dst av.Muxer, videoChan chan *streaming.VideoChunk) (err error) {
+func CopyRTMPFromChannel(dst av.Muxer, videoChan chan *streaming.VideoChunk, closeStreamC chan bool) (err error) {
 	chunk := <-videoChan
 	if err := dst.WriteHeader(chunk.HeaderStreams); err != nil {
 		fmt.Println("Error writing header copying from channel")
@@ -96,6 +96,7 @@ func CopyRTMPFromChannel(dst av.Muxer, videoChan chan *streaming.VideoChunk) (er
 			// fmt.Println("Copying from channel")
 			if chunk.ID == streaming.EOFStreamMsgID {
 				fmt.Println("Copying EOF from channel")
+				closeStreamC <- true
 				err := dst.WriteTrailer()
 				if err != nil {
 					fmt.Println("Error writing trailer: ", err)
@@ -115,13 +116,13 @@ func CopyRTMPFromChannel(dst av.Muxer, videoChan chan *streaming.VideoChunk) (er
 }
 
 //Copy HLS segments and playlist to the streamer channel.
-func CopyHlsToChannel(m3u8Chan chan []byte, hlsSegChan chan streaming.HlsSegment, outChan chan *streaming.VideoChunk) {
+func CopyHlsToChannel(m3u8Chan chan []byte, hlsSegChan chan streaming.HlsSegment, outChan chan *streaming.VideoChunk, closeStreamC chan bool) {
 	for {
 		select {
 		case m3u8 := <-m3u8Chan:
 			// stream.M3U8 = m3u8 //Just for testing
 			fmt.Printf("Sending HLS Playlist: %s\n", string(m3u8))
-			CopyPacketsToChannel(1, nil, nil, m3u8, streaming.HlsSegment{}, outChan)
+			CopyPacketsToChannel(1, nil, nil, m3u8, streaming.HlsSegment{}, outChan, closeStreamC)
 		case hlsSeg := <-hlsSegChan:
 			regex, _ := regexp.Compile("-(\\d)*")
 			match := regex.FindString(hlsSeg.Name)
@@ -129,7 +130,7 @@ func CopyHlsToChannel(m3u8Chan chan []byte, hlsSegChan chan streaming.HlsSegment
 			segNum, _ := strconv.Atoi(segNumStr)
 			// stream.HlsSegNameMap[hlsSeg.Name] = hlsSeg.Data //Just for testing
 			fmt.Printf("Sending HLS Segment: %d, %s\n", segNum, segNumStr)
-			CopyPacketsToChannel(int64(segNum), nil, nil, nil, hlsSeg, outChan)
+			CopyPacketsToChannel(int64(segNum), nil, nil, nil, hlsSeg, outChan, closeStreamC)
 		}
 	}
 }
@@ -155,13 +156,13 @@ func CopyHlsToChannel(m3u8Chan chan []byte, hlsSegChan chan streaming.HlsSegment
 
 //Copy packets from our source demuxer to the streamer channels.  For now we put the header in every packet.  We can
 //optimize for packet size later.
-func CopyToChannel(src av.Demuxer, stream *streaming.Stream) (err error) {
+func CopyToChannel(src av.Demuxer, stream *streaming.Stream, closeStreamC chan bool) (err error) {
 	var streams []av.CodecData
 	if streams, err = src.Streams(); err != nil {
 		return
 	}
 	for seq := int64(0); ; seq++ {
-		if err = CopyPacketsToChannel(seq, src, streams, nil, streaming.HlsSegment{}, stream.SrcVideoChan); err != nil {
+		if err = CopyPacketsToChannel(seq, src, streams, nil, streaming.HlsSegment{}, stream.SrcVideoChan, closeStreamC); err != nil {
 			return
 		}
 	}
@@ -169,7 +170,7 @@ func CopyToChannel(src av.Demuxer, stream *streaming.Stream) (err error) {
 }
 
 // func CopyPacketsToChannel(seq int64, src av.PacketReader, headerStreams []av.CodecData, m3u8 []byte, hlsSeg streaming.HlsSegment, stream *streaming.Stream) (err error) {
-func CopyPacketsToChannel(seq int64, src av.PacketReader, headerStreams []av.CodecData, m3u8 []byte, hlsSeg streaming.HlsSegment, outVideoChan chan *streaming.VideoChunk) (err error) {
+func CopyPacketsToChannel(seq int64, src av.PacketReader, headerStreams []av.CodecData, m3u8 []byte, hlsSeg streaming.HlsSegment, outVideoChan chan *streaming.VideoChunk, closeStreamC chan bool) (err error) {
 	// for seq := int64(0); ; seq++ {
 	var pkt av.Packet
 	if src != nil {
@@ -188,6 +189,7 @@ func CopyPacketsToChannel(seq int64, src av.PacketReader, headerStreams []av.Cod
 				// Close the channel so that the protocol.go loop
 				// reading from the channel doesn't block
 				close(outVideoChan)
+				closeStreamC <- true
 				return fmt.Errorf("EOF")
 			}
 			return
