@@ -6,8 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
+	"github.com/ethereum/go-ethereum/swarm/network/kademlia"
 	"github.com/ethereum/go-ethereum/swarm/storage"
 	"github.com/ethereum/go-ethereum/swarm/storage/streaming"
 	"github.com/livepeer/lpms/io"
@@ -57,7 +59,7 @@ func StartRTMPServer(rtmpPort string, srsRtmpPort string, srsHttpPort string, st
 		}
 
 		//Send subscribe request
-		forwarder.Stream(strmID)
+		forwarder.Stream(strmID, kademlia.Address(common.HexToHash("")))
 
 		//Copy chunks to outgoing connection
 		go io.CopyRTMPFromStream(conn, stream, stream.CloseChan)

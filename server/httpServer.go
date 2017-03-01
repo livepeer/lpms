@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/ethereum/go-ethereum/swarm/network"
+	"github.com/ethereum/go-ethereum/swarm/network/kademlia"
 	"github.com/ethereum/go-ethereum/swarm/storage"
 	"github.com/ethereum/go-ethereum/swarm/storage/streaming"
 	lpmsIo "github.com/livepeer/lpms/io"
@@ -66,7 +67,7 @@ func StartHTTPServer(rtmpPort string, httpPort string, srsRtmpPort string, srsHt
 					return
 				}
 				//Send subscribe request
-				forwarder.Stream(strmID)
+				forwarder.Stream(strmID, kademlia.Address(common.HexToHash("")))
 			}
 
 			//HLS request. Example: http://localhost:8080/stream/streamid.m3u8
@@ -127,7 +128,7 @@ func StartHTTPServer(rtmpPort string, httpPort string, srsRtmpPort string, srsHt
 					return
 				}
 				//Send subscribe request
-				forwarder.Stream(strmID)
+				forwarder.Stream(strmID, kademlia.Address(common.HexToHash("")))
 			}
 
 			w.Header().Set("Content-Type", "video/x-flv")
