@@ -1,4 +1,6 @@
-# lpms
-Livepeer media server
+# LPMS - Livepeer media server
 
-Currently it's not yet a stand-alone server.  The goal of this project is to create an open source media server that handles live stream video transcoding at scale.
+This is meant to be a standalone server, but at the moment it is
+coupled with the go-livepeer repo. For the time being development will
+proceed at the
+[github.com/livepeer/go-livepeer/lpms package](https://github.com/livepeer/go-livepeer/lpms).
