@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/logger"
 	"github.com/ethereum/go-ethereum/logger/glog"
-	"github.com/ethereum/go-ethereum/swarm/storage/streaming"
+	"github.com/livepeer/go-livepeer/livepeer/storage/streaming"
 	"github.com/golang/groupcache/lru"
 	"github.com/kz26/m3u8"
 	lpmsCommon "github.com/livepeer/lpms/common"

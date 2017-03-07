@@ -8,9 +8,9 @@
 package lpms
 
 import (
-	"github.com/ethereum/go-ethereum/swarm/network"
-	"github.com/ethereum/go-ethereum/swarm/storage"
-	"github.com/ethereum/go-ethereum/swarm/storage/streaming"
+	"github.com/livepeer/go-livepeer/livepeer/network"
+	"github.com/livepeer/go-livepeer/livepeer/storage"
+	"github.com/livepeer/go-livepeer/livepeer/storage/streaming"
 	"github.com/livepeer/lpms/common"
 	"github.com/livepeer/lpms/server"
 	streamingVizClient "github.com/livepeer/streamingviz/client"
