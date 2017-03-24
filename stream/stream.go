@@ -1,0 +1,193 @@
+package stream
+
+import (
+	"context"
+	"errors"
+	"io"
+	"reflect"
+
+	"time"
+
+	"github.com/golang/glog"
+	"github.com/kz26/m3u8"
+	"github.com/nareix/joy4/av"
+)
+
+var ErrBufferFull = errors.New("Stream Buffer Full")
+var ErrBufferEmpty = errors.New("Stream Buffer Empty")
+var ErrBufferItemType = errors.New("Buffer Item Type Not Recognized")
+var ErrDroppedRTMPStream = errors.New("RTMP Stream Stopped Without EOF")
+var ErrHttpReqFailed = errors.New("Http Request Failed")
+
+type RTMPEOF struct{}
+
+type streamBuffer struct {
+	q *Queue
+}
+
+func newStreamBuffer() *streamBuffer {
+	return &streamBuffer{q: NewQueue(1000)}
+}
+
+func (b *streamBuffer) push(in interface{}) error {
+	b.q.Put(in)
+	return nil
+}
+
+func (b *streamBuffer) poll(wait time.Duration) (interface{}, error) {
+	results, err := b.q.Poll(1, wait)
+	if err != nil {
+		return nil, err
+	}
+	result := results[0]
+	return result, nil
+}
+
+func (b *streamBuffer) pop() (interface{}, error) {
+	results, err := b.q.Get(1)
+	if err != nil {
+		return nil, err
+	}
+	result := results[0]
+	return result, nil
+}
+
+func (b *streamBuffer) len() int64 {
+	return b.q.Len()
+}
+
+type HLSSegment struct {
+	Name string
+	Data []byte
+}
+
+type Stream struct {
+	StreamID    string
+	RTMPTimeout time.Duration
+	HLSTimeout  time.Duration
+	buffer      *streamBuffer
+}
+
+func (s *Stream) Len() int64 {
+	return s.buffer.len()
+}
+
+func NewStream(id string) *Stream {
+	return &Stream{buffer: newStreamBuffer(), StreamID: id}
+}
+
+//ReadRTMPFromStream reads the content from the RTMP stream out into the dst.
+func (s *Stream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error {
+	defer dst.Close()
+
+	//TODO: Make sure to listen to ctx.Done()
+	for {
+		item, err := s.buffer.poll(s.RTMPTimeout)
+		if err != nil {
+			return err
+		}
+
+		switch item.(type) {
+		case []av.CodecData:
+			headers := item.([]av.CodecData)
+			err = dst.WriteHeader(headers)
+			if err != nil {
+				glog.Infof("Error writing RTMP header from Stream %v to mux", s.StreamID)
+				return err
+			}
+		case av.Packet:
+			packet := item.(av.Packet)
+			err = dst.WritePacket(packet)
+			if err != nil {
+				glog.Infof("Error writing RTMP packet from Stream %v to mux", s.StreamID)
+				return err
+			}
+		case RTMPEOF:
+			err := dst.WriteTrailer()
+			if err != nil {
+				glog.Infof("Error writing RTMP trailer from Stream %v", s.StreamID)
+				return err
+			}
+			return io.EOF
+		default:
+			glog.Infof("Cannot recognize buffer iteam type: ", reflect.TypeOf(item))
+			return ErrBufferItemType
+		}
+	}
+}
+
+//WriteRTMPToStream writes a video stream from src into the stream.
+func (s *Stream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error {
+	defer src.Close()
+
+	c := make(chan error, 1)
+	go func() {
+		c <- func() error {
+			header, err := src.Streams()
+			if err != nil {
+				return err
+			}
+			err = s.buffer.push(header)
+			if err != nil {
+				return err
+			}
+
+			// var lastKeyframe av.Packet
+			for {
+				packet, err := src.ReadPacket()
+				if err == io.EOF {
+					s.buffer.push(RTMPEOF{})
+					return err
+				} else if err != nil {
+					return err
+				} else if len(packet.Data) == 0 { //TODO: Investigate if it's possible for packet to be nil (what happens when RTMP stopped publishing because of a dropped connection? Is it possible to have err and packet both nil?)
+					return ErrDroppedRTMPStream
+				}
+
+				if packet.IsKeyFrame {
+					// lastKeyframe = packet
+				}
+
+				err = s.buffer.push(packet)
+				if err == ErrBufferFull {
+					//TODO: Delete all packets until last keyframe, insert headers in front - trying to get rid of streaming artifacts.
+				}
+			}
+		}()
+	}()
+
+	select {
+	case <-ctx.Done():
+		glog.Infof("Finished writing RTMP to Stream %v", s.StreamID)
+		return ctx.Err()
+	case err := <-c:
+		return err
+	}
+}
+
+func (s *Stream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error {
+	return s.buffer.push(pl)
+}
+
+func (s *Stream) WriteHLSSegmentToStream(seg HLSSegment) error {
+	return s.buffer.push(seg)
+}
+
+//ReadHLSFromStream reads an HLS stream into an HLSBuffer
+func (s *Stream) ReadHLSFromStream(buffer HLSMuxer) error {
+	for {
+		item, err := s.buffer.poll(s.HLSTimeout)
+		if err != nil {
+			return err
+		}
+
+		switch item.(type) {
+		case m3u8.MediaPlaylist:
+			buffer.WritePlaylist(item.(m3u8.MediaPlaylist))
+		case HLSSegment:
+			buffer.WriteSegment(item.(HLSSegment).Name, item.(HLSSegment).Data)
+		default:
+			return ErrBufferItemType
+		}
+	}
+}
