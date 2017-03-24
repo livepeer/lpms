@@ -1,6 +1,6 @@
 # LPMS - Livepeer media server
 
-LPMS is a media server that can run independantly, or on top of the [Livepeer](https://livepeer.org) 
+LPMS is a media server that can run independently, or on top of the [Livepeer](https://livepeer.org) 
 network.  It allows you to manipulate / broadcast a live video stream.  Currently, LPMS supports RTMP
 as input format and RTMP/HLS as output formats.
 
@@ -21,7 +21,7 @@ LPMS requires ffmpeg.  To install it on OSX, use homebrew.  As a part of this in
 
 ```
 //This may take a few minutes
-brew install ffmpeg --with-fdk-aac --with-ffplay --with-freetype --with-libass --with-libquvi --with-libvorbis --with-libvpx --with-opus --with-x265
+brew install ffmpeg --with-sdl2 --with-libx264
 ```
 
 LPMS uses [SRS](http://ossrs.net/srs.release/releases/) as a transcoding backend.  It's included in 
