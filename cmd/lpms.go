@@ -37,7 +37,7 @@ func main() {
 		//getStream
 		func(reqPath string) (stream.Stream, error) {
 			streamID := getStreamIDFromPath(reqPath)
-			stream := stream.NewStream(streamID)
+			stream := stream.NewVideoStream(streamID)
 			streamDB.db[streamID] = stream
 			return stream, nil
 		},
@@ -61,7 +61,7 @@ func main() {
 		//getOutStream
 		func(ctx context.Context, streamID string) (stream.Stream, error) {
 			//For this example, we'll name the transcoded stream "{streamID}_tran"
-			newStream := stream.NewStream(streamID + "_tran")
+			newStream := stream.NewVideoStream(streamID + "_tran")
 			streamDB.db[newStream.GetStreamID()] = newStream
 			return newStream, nil
 		})

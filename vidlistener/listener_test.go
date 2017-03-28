@@ -1,6 +1,7 @@
 package vidlistener
 
 import (
+	"fmt"
 	"os/exec"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
-func TestError(t *testing.T) {
+func TestListener(t *testing.T) {
 	server := &joy4rtmp.Server{Addr: ":1937"}
 	listener := &VidListener{RtmpServer: server}
 	listener.HandleRTMPPublish(
@@ -18,17 +19,24 @@ func TestError(t *testing.T) {
 		},
 		func(reqPath string) (stream.Stream, error) {
 			// return errors.New("Some Error")
-			return &stream.VideoStream{}, nil
+			return stream.NewVideoStream("test"), nil
 		},
 		func(reqPath string) {})
 
 	ffmpegCmd := "ffmpeg"
 	ffmpegArgs := []string{"-re", "-i", "../data/bunny2.mp4", "-c", "copy", "-f", "flv", "rtmp://localhost:1937/movie/stream"}
-	go exec.Command(ffmpegCmd, ffmpegArgs...).Run()
 
+	cmd := exec.Command(ffmpegCmd, ffmpegArgs...)
+	go cmd.Run()
 	go listener.RtmpServer.ListenAndServe()
 
 	time.Sleep(time.Second * 1)
+	err := cmd.Process.Kill()
+	if err != nil {
+		fmt.Println("Error killing ffmpeg")
+	}
+
+	// time.Sleep(time.Second * 1)
 }
 
 // Integration test.

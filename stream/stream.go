@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 
@@ -30,6 +31,8 @@ func newStreamBuffer() *streamBuffer {
 }
 
 func (b *streamBuffer) push(in interface{}) error {
+	fmt.Println("PUSH----")
+	fmt.Println(b)
 	b.q.Put(in)
 	return nil
 }
@@ -83,7 +86,7 @@ func (s *VideoStream) Len() int64 {
 	return s.buffer.len()
 }
 
-func NewStream(id string) *VideoStream {
+func NewVideoStream(id string) *VideoStream {
 	return &VideoStream{buffer: newStreamBuffer(), StreamID: id}
 }
 

@@ -52,7 +52,7 @@ func (d NoEOFDemuxer) ReadPacket() (av.Packet, error) {
 
 func TestWriteRTMPErrors(t *testing.T) {
 	// stream := Stream{Buffer: &StreamBuffer{}, StreamID: "test"}
-	stream := NewStream("test")
+	stream := NewVideoStream("test")
 	err := stream.WriteRTMPToStream(context.Background(), BadStreamsDemuxer{})
 	if err != ErrStreams {
 		t.Error("Expecting Streams Error, but got: ", err)
@@ -87,7 +87,7 @@ func (d PacketsDemuxer) ReadPacket() (av.Packet, error) {
 
 func TestWriteRTMP(t *testing.T) {
 	// stream := Stream{Buffer: NewStreamBuffer(), StreamID: "test"}
-	stream := NewStream("test")
+	stream := NewVideoStream("test")
 	err := stream.WriteRTMPToStream(context.Background(), PacketsDemuxer{c: &Counter{Count: 0}})
 
 	if err != io.EOF {
@@ -121,7 +121,7 @@ func (d BadPacketMuxer) WriteTrailer() error              { return nil }
 func (d BadPacketMuxer) WritePacket(av.Packet) error      { return ErrBadPacket }
 
 func TestReadRTMPError(t *testing.T) {
-	stream := NewStream("test")
+	stream := NewVideoStream("test")
 	err := stream.WriteRTMPToStream(context.Background(), PacketsDemuxer{c: &Counter{Count: 0}})
 	if err != io.EOF {
 		t.Error("Error setting up the test - while inserting packet.")
@@ -147,7 +147,7 @@ func (d PacketsMuxer) WriteTrailer() error              { return nil }
 func (d PacketsMuxer) WritePacket(av.Packet) error      { return nil }
 
 func TestReadRTMP(t *testing.T) {
-	stream := NewStream("test")
+	stream := NewVideoStream("test")
 	err := stream.WriteRTMPToStream(context.Background(), PacketsDemuxer{c: &Counter{Count: 0}})
 	if err != io.EOF {
 		t.Error("Error setting up the test - while inserting packet.")
@@ -162,7 +162,7 @@ func TestReadRTMP(t *testing.T) {
 		t.Error("Expecting buffer length to be 0, but got ", stream.Len())
 	}
 
-	stream2 := NewStream("test2")
+	stream2 := NewVideoStream("test2")
 	stream2.RTMPTimeout = time.Millisecond * 50
 	err2 := stream.WriteRTMPToStream(context.Background(), NoEOFDemuxer{c: &Counter{Count: 0}})
 	if err2 != ErrDroppedRTMPStream {
@@ -175,7 +175,7 @@ func TestReadRTMP(t *testing.T) {
 }
 
 func TestWriteHLS(t *testing.T) {
-	stream := NewStream("test")
+	stream := NewVideoStream("test")
 	err1 := stream.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{})
 	err2 := stream.WriteHLSSegmentToStream(HLSSegment{})
 	if err1 != nil {
@@ -199,7 +199,7 @@ func TestWriteHLS(t *testing.T) {
 // }
 
 func TestReadHLS(t *testing.T) {
-	stream := NewStream("test")
+	stream := NewVideoStream("test")
 	stream.HLSTimeout = time.Millisecond * 100
 	buffer := NewHLSBuffer()
 	grBefore := runtime.NumGoroutine()
@@ -267,7 +267,7 @@ func TestReadHLS(t *testing.T) {
 // }
 
 // func TestWriteHLS(t *testing.T) {
-// 	stream := NewStream("test")
+// 	stream := NewVideoStream("test")
 // 	numGR := runtime.NumGoroutine()
 // 	ctx, cancel := context.WithCancel(context.Background())
 // 	err := stream.WriteHLSToStream(ctx, GoodHLSDemux{})
@@ -305,7 +305,7 @@ func TestReadHLS(t *testing.T) {
 
 // //This test is more for documentation - this is how timeout works here.
 // func TestWriteHLSTimeout(t *testing.T) {
-// 	stream := NewStream("test")
+// 	stream := NewVideoStream("test")
 // 	numGR := runtime.NumGoroutine()
 // 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 // 	defer cancel()
