@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/ioutil"
 
+	"github.com/golang/glog"
 	"github.com/kz26/m3u8"
 	"github.com/nareix/joy4/av"
 )
@@ -40,12 +41,16 @@ func (s *FileStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) 
 }
 
 func (s *FileStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error {
+	glog.Infof("Writting HLS Playlist to File")
 	return nil
 }
 
 func (s *FileStream) WriteHLSSegmentToStream(seg HLSSegment) error {
+	glog.Infof("Writting HLS Segment to File")
 	err := ioutil.WriteFile("./data/"+s.StreamID+"_"+seg.Name, seg.Data, 0644)
-	// check(err)
+	if err != nil {
+		glog.Infof("Cannot write to file: ", err)
+	}
 
 	return err
 }

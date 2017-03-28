@@ -45,6 +45,7 @@ func (s *VidListener) HandleRTMPPublish(
 		select {
 		case err := <-c:
 			endStream(conn.URL.Path)
+			glog.Infof("Final stream length: %v", stream.Len())
 			glog.Error("Got error writing RTMP: ", err)
 		}
 

@@ -64,6 +64,10 @@ func main() {
 			newStream := stream.NewVideoStream(streamID + "_tran")
 			streamDB.db[newStream.GetStreamID()] = newStream
 			return newStream, nil
+
+			// glog.Infof("Making File Stream")
+			// fileStream := stream.NewFileStream(streamID + "_file")
+			// return fileStream, nil
 		})
 
 	lpms.HandleHLSPlay(

@@ -3,7 +3,6 @@ package stream
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"reflect"
 
@@ -31,8 +30,6 @@ func newStreamBuffer() *streamBuffer {
 }
 
 func (b *streamBuffer) push(in interface{}) error {
-	fmt.Println("PUSH----")
-	fmt.Println(b)
 	b.q.Put(in)
 	return nil
 }

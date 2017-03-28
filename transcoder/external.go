@@ -32,7 +32,7 @@ type ExternalTranscoder struct {
 
 func New(rtmpPort string, srsHTTPPort string, streamID string) *ExternalTranscoder {
 	m := cmap.New()
-	d := SRSHLSDownloader{cache: &m, localEndpoint: "http://localhost:" + srsHTTPPort + "/stream/", streamID: streamID, startDownloadWaitTime: time.Second * 10, hlsIntervalWaitTime: time.Second}
+	d := SRSHLSDownloader{cache: &m, localEndpoint: "http://localhost:" + srsHTTPPort + "/stream/", streamID: streamID, startDownloadWaitTime: time.Second * 20, hlsIntervalWaitTime: time.Second}
 	return &ExternalTranscoder{localSRSRTMPPort: rtmpPort, localSRSHTTPPort: srsHTTPPort, streamID: streamID, downloader: d}
 }
 

@@ -35,8 +35,6 @@ func TestListener(t *testing.T) {
 	if err != nil {
 		fmt.Println("Error killing ffmpeg")
 	}
-
-	// time.Sleep(time.Second * 1)
 }
 
 // Integration test.
