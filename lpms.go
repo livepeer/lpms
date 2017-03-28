@@ -65,7 +65,7 @@ func (l *LPMS) Start() error {
 //HandleRTMPPublish offload to the video listener
 func (l *LPMS) HandleRTMPPublish(
 	getStreamID func(reqPath string) (string, error),
-	stream func(reqPath string) (*stream.Stream, error),
+	stream func(reqPath string) (stream.Stream, error),
 	endStream func(reqPath string)) error {
 
 	return l.vidListen.HandleRTMPPublish(getStreamID, stream, endStream)
@@ -83,7 +83,7 @@ func (l *LPMS) HandleHLSPlay(getStream func(reqPath string) (*stream.HLSBuffer, 
 
 //HandleTranscode kicks off a transcoding process, keeps a local HLS buffer, and returns the new stream ID.
 //stream is the video stream you want to be transcoded.  getNewStreamID gives you a way to name the transcoded stream.
-func (l *LPMS) HandleTranscode(getInStream func(ctx context.Context, streamID string) (*stream.Stream, error), getOutStream func(ctx context.Context, streamID string) (*stream.Stream, error)) {
+func (l *LPMS) HandleTranscode(getInStream func(ctx context.Context, streamID string) (stream.Stream, error), getOutStream func(ctx context.Context, streamID string) (stream.Stream, error)) {
 	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
 		ctx, _ := context.WithCancel(context.Background())
 		// defer cancel()
@@ -117,12 +117,12 @@ func (l *LPMS) HandleTranscode(getInStream func(ctx context.Context, streamID st
 		ec := make(chan error, 1)
 		go func() { ec <- l.doTranscoding(ctx, inStream, newStream) }()
 
-		w.Write([]byte("New Stream: " + newStream.StreamID))
+		w.Write([]byte("New Stream: " + newStream.GetStreamID()))
 	})
 }
 
-func (l *LPMS) doTranscoding(ctx context.Context, inStream *stream.Stream, newStream *stream.Stream) error {
-	t := transcoder.New(l.srsRTMPPort, l.srsHTTPPort, newStream.StreamID)
+func (l *LPMS) doTranscoding(ctx context.Context, inStream stream.Stream, newStream stream.Stream) error {
+	t := transcoder.New(l.srsRTMPPort, l.srsHTTPPort, newStream.GetStreamID())
 	//Should kick off a goroutine for this, so we can return the new streamID rightaway.
 
 	tranMux, err := t.LocalSRSUploadMux()

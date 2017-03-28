@@ -16,9 +16,9 @@ func TestError(t *testing.T) {
 		func(reqPath string) (string, error) {
 			return "test", nil
 		},
-		func(reqPath string) (*stream.Stream, error) {
+		func(reqPath string) (stream.Stream, error) {
 			// return errors.New("Some Error")
-			return &stream.Stream{}, nil
+			return &stream.VideoStream{}, nil
 		},
 		func(reqPath string) {})
 
