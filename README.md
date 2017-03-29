@@ -87,9 +87,9 @@ lpms.HandleRTMPPublish(
         return getStreamIDFromPath(reqPath), nil
     },
     //getStream
-    func(reqPath string) (*stream.Stream, error) {
+    func(reqPath string) (stream.Stream, error) {
         streamID := getStreamIDFromPath(reqPath)
-        stream := stream.NewStream(streamID)
+        stream := stream.NewVideoStream(streamID)
         streamDB.db[streamID] = stream
         return stream, nil
     },
@@ -122,7 +122,7 @@ To handle transcode request:
 ```
 lpms.HandleTranscode(
     //getInStream
-    func(ctx context.Context, streamID string) (*stream.Stream, error) {
+    func(ctx context.Context, streamID string) (stream.Stream, error) {
         if stream := streamDB.db[streamID]; stream != nil {
             return stream, nil
         }
@@ -130,9 +130,9 @@ lpms.HandleTranscode(
         return nil, stream.ErrNotFound
     },
     //getOutStream
-    func(ctx context.Context, streamID string) (*stream.Stream, error) {
+    func(ctx context.Context, streamID string) (stream.Stream, error) {
         //For this example, we'll name the transcoded stream "{streamID}_tran"
-        newStream := stream.NewStream(streamID + "_tran")
+        newStream := stream.NewVideoStream(streamID + "_tran")
         streamDB.db[newStream.StreamID] = newStream
         return newStream, nil
     })

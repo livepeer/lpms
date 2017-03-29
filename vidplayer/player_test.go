@@ -56,7 +56,7 @@ func TestRTMP(t *testing.T) {
 
 func TestHLS(t *testing.T) {
 	player := &VidPlayer{}
-	s := stream.NewStream("test")
+	s := stream.NewVideoStream("test")
 	s.HLSTimeout = time.Second * 5
 	//Write some packets into the stream
 	s.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{})

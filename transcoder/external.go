@@ -32,7 +32,7 @@ type ExternalTranscoder struct {
 
 func New(rtmpPort string, srsHTTPPort string, streamID string) *ExternalTranscoder {
 	m := cmap.New()
-	d := SRSHLSDownloader{cache: &m, localEndpoint: "http://localhost:" + srsHTTPPort + "/stream/", streamID: streamID, startDownloadWaitTime: time.Second * 10, hlsIntervalWaitTime: time.Second}
+	d := SRSHLSDownloader{cache: &m, localEndpoint: "http://localhost:" + srsHTTPPort + "/stream/", streamID: streamID, startDownloadWaitTime: time.Second * 20, hlsIntervalWaitTime: time.Second}
 	return &ExternalTranscoder{localSRSRTMPPort: rtmpPort, localSRSHTTPPort: srsHTTPPort, streamID: streamID, downloader: d}
 }
 
@@ -54,7 +54,7 @@ func (et *ExternalTranscoder) LocalSRSUploadMux() (av.MuxCloser, error) {
 
 //StartUpload takes a io.Stream of RTMP stream, and loads it into a local RTMP endpoint.  The streamID will be used as the streaming endpoint.
 //So if you want to create a new stream, make sure to do that before passing in the stream.
-func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxCloser, src *stream.Stream) error {
+func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxCloser, src stream.Stream) error {
 	upErrC := make(chan error, 1)
 
 	go func() { upErrC <- src.ReadRTMPFromStream(ctx, rtmpMux) }()
@@ -68,7 +68,7 @@ func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxClo
 }
 
 //StartDownload pushes hls playlists and segments into the stream as they become available from the transcoder.
-func (et *ExternalTranscoder) StartDownload(ctx context.Context, hlsMux *stream.Stream) error {
+func (et *ExternalTranscoder) StartDownload(ctx context.Context, hlsMux stream.Stream) error {
 	pc := make(chan *m3u8.MediaPlaylist)
 	sc := make(chan *stream.HLSSegment)
 	ec := make(chan error)

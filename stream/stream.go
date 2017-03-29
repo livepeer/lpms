@@ -61,23 +61,38 @@ type HLSSegment struct {
 	Data []byte
 }
 
-type Stream struct {
+type Stream interface {
+	GetStreamID() string
+	Len() int64
+	// NewStream() Stream
+	ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error
+	WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error
+	WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error
+	WriteHLSSegmentToStream(seg HLSSegment) error
+	ReadHLSFromStream(buffer HLSMuxer) error
+}
+
+type VideoStream struct {
 	StreamID    string
 	RTMPTimeout time.Duration
 	HLSTimeout  time.Duration
 	buffer      *streamBuffer
 }
 
-func (s *Stream) Len() int64 {
+func (s *VideoStream) Len() int64 {
 	return s.buffer.len()
 }
 
-func NewStream(id string) *Stream {
-	return &Stream{buffer: newStreamBuffer(), StreamID: id}
+func NewVideoStream(id string) *VideoStream {
+	return &VideoStream{buffer: newStreamBuffer(), StreamID: id}
+}
+
+func (s *VideoStream) GetStreamID() string {
+	return s.StreamID
 }
 
 //ReadRTMPFromStream reads the content from the RTMP stream out into the dst.
-func (s *Stream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error {
+func (s *VideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error {
 	defer dst.Close()
 
 	//TODO: Make sure to listen to ctx.Done()
@@ -117,7 +132,7 @@ func (s *Stream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error
 }
 
 //WriteRTMPToStream writes a video stream from src into the stream.
-func (s *Stream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error {
+func (s *VideoStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error {
 	defer src.Close()
 
 	c := make(chan error, 1)
@@ -165,16 +180,16 @@ func (s *Stream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) erro
 	}
 }
 
-func (s *Stream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error {
+func (s *VideoStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error {
 	return s.buffer.push(pl)
 }
 
-func (s *Stream) WriteHLSSegmentToStream(seg HLSSegment) error {
+func (s *VideoStream) WriteHLSSegmentToStream(seg HLSSegment) error {
 	return s.buffer.push(seg)
 }
 
 //ReadHLSFromStream reads an HLS stream into an HLSBuffer
-func (s *Stream) ReadHLSFromStream(buffer HLSMuxer) error {
+func (s *VideoStream) ReadHLSFromStream(buffer HLSMuxer) error {
 	for {
 		item, err := s.buffer.poll(s.HLSTimeout)
 		if err != nil {

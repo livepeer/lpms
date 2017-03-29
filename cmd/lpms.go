@@ -14,7 +14,7 @@ import (
 )
 
 type StreamDB struct {
-	db map[string]*stream.Stream
+	db map[string]stream.Stream
 }
 
 type BufferDB struct {
@@ -26,7 +26,7 @@ func main() {
 	flag.Parse()
 
 	lpms := lpms.New("1935", "8000", "2435", "7935")
-	streamDB := &StreamDB{db: make(map[string]*stream.Stream)}
+	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 	bufferDB := &BufferDB{db: make(map[string]*stream.HLSBuffer)}
 
 	lpms.HandleRTMPPublish(
@@ -35,9 +35,9 @@ func main() {
 			return getStreamIDFromPath(reqPath), nil
 		},
 		//getStream
-		func(reqPath string) (*stream.Stream, error) {
+		func(reqPath string) (stream.Stream, error) {
 			streamID := getStreamIDFromPath(reqPath)
-			stream := stream.NewStream(streamID)
+			stream := stream.NewVideoStream(streamID)
 			streamDB.db[streamID] = stream
 			return stream, nil
 		},
@@ -51,7 +51,7 @@ func main() {
 
 	lpms.HandleTranscode(
 		//getInStream
-		func(ctx context.Context, streamID string) (*stream.Stream, error) {
+		func(ctx context.Context, streamID string) (stream.Stream, error) {
 			if stream := streamDB.db[streamID]; stream != nil {
 				return stream, nil
 			}
@@ -59,11 +59,15 @@ func main() {
 			return nil, stream.ErrNotFound
 		},
 		//getOutStream
-		func(ctx context.Context, streamID string) (*stream.Stream, error) {
+		func(ctx context.Context, streamID string) (stream.Stream, error) {
 			//For this example, we'll name the transcoded stream "{streamID}_tran"
-			newStream := stream.NewStream(streamID + "_tran")
-			streamDB.db[newStream.StreamID] = newStream
+			newStream := stream.NewVideoStream(streamID + "_tran")
+			streamDB.db[newStream.GetStreamID()] = newStream
 			return newStream, nil
+
+			// glog.Infof("Making File Stream")
+			// fileStream := stream.NewFileStream(streamID + "_file")
+			// return fileStream, nil
 		})
 
 	lpms.HandleHLSPlay(
