@@ -65,10 +65,10 @@ func (l *LPMS) Start() error {
 //HandleRTMPPublish offload to the video listener
 func (l *LPMS) HandleRTMPPublish(
 	getStreamID func(reqPath string) (string, error),
-	stream func(reqPath string) (stream.Stream, error),
+	getStream func(reqPath string) (stream.Stream, stream.Stream, error),
 	endStream func(reqPath string)) error {
 
-	return l.vidListen.HandleRTMPPublish(getStreamID, stream, endStream)
+	return l.vidListen.HandleRTMPPublish(getStreamID, getStream, endStream)
 }
 
 //HandleRTMPPlay offload to the video player

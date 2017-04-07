@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/kz26/m3u8"
 )
 
@@ -77,7 +76,7 @@ func (b *HLSBuffer) WaitAndPopPlaylist(ctx context.Context) (m3u8.MediaPlaylist,
 func (b *HLSBuffer) WaitAndPopSegment(ctx context.Context, name string) ([]byte, error) {
 	for {
 		seg, found := b.sq.Get(name)
-		glog.Infof("GetSegment: %v, %v", name, found)
+		// glog.Infof("GetSegment: %v, %v", name, found)
 		if found {
 			b.sq.Remove(name)
 			return seg.([]byte), nil

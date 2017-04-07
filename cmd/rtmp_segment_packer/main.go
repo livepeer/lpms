@@ -269,11 +269,12 @@ func main() {
 			return getStreamIDFromPath(reqPath), nil
 		},
 		//getStream
-		func(reqPath string) (stream.Stream, error) {
+		func(reqPath string) (stream.Stream, stream.Stream, error) {
 			streamID := getStreamIDFromPath(reqPath)
-			stream := NewSegmentStream(streamID)
-			streamDB.db[streamID] = stream
-			return stream, nil
+			stream1 := NewSegmentStream(streamID)
+			stream2 := NewSegmentStream(streamID)
+			streamDB.db[streamID] = stream1
+			return stream1, stream2, nil
 		},
 		//finishStream
 		func(reqPath string) {
