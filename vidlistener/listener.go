@@ -43,35 +43,35 @@ func (self *VidListener) HandleRTMPPublish(
 			glog.Errorf("RTMP Publish couldn't get a destination stream for %v", conn.URL.Path)
 			return
 		}
-		// hlsS := stream.NewVideoStream(rs.GetStreamID() + ".m3u8")
 
 		glog.Infof("Got RTMP Stream: %v", rs.GetStreamID())
 		cew := make(chan error, 0)
 		cs := make(chan error, 0)
-
+		ctx, cancel := context.WithCancel(context.Background())
 		glog.Infof("Writing RTMP to stream")
-		go func() { cew <- rs.WriteRTMPToStream(context.Background(), conn) }()
-		go func() { cs <- self.segmentStream(rs, hs) }()
+		go func() { cew <- rs.WriteRTMPToStream(ctx, conn) }()
+		go func() { cs <- self.segmentStream(ctx, rs, hs) }()
 
 		select {
 		case err := <-cew:
 			endStream(conn.URL.Path)
 			glog.Infof("Final stream length: %v", rs.Len())
 			glog.Error("Got error writing RTMP: ", err)
+			cancel()
 		case err := <-cs:
 			glog.Errorf("Error segmenting, %v", err)
+			cancel()
 		}
 
 	}
 	return nil
 }
 
-func (self *VidListener) segmentStream(rs stream.Stream, hs stream.Stream) error {
+func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs stream.Stream) error {
 	// //Invoke Segmenter
 	workDir, _ := os.Getwd()
 	workDir = workDir + "/tmp"
 	localRtmpUrl := "rtmp://localhost" + self.RtmpServer.Addr + "/stream/" + rs.GetStreamID()
-	ctx := context.Background()
 	s := segmenter.NewFFMpegVideoSegmenter(workDir, rs.GetStreamID(), localRtmpUrl, segOptions.SegLength)
 	c := make(chan error, 1)
 	go func() { c <- s.RTMPToHLS(ctx, segOptions) }()
@@ -103,6 +103,7 @@ func (self *VidListener) segmentStream(rs stream.Stream, hs stream.Stream) error
 			}
 		}()
 	}()
+
 	select {
 	case err := <-c:
 		glog.Errorf("Error segmenting stream: %v", err)
