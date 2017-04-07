@@ -52,7 +52,6 @@ func (s *TestStream) WriteHLSSegmentToStream(seg stream.HLSSegment) error       
 func (s *TestStream) ReadHLSFromStream(buffer stream.HLSMuxer) error                  { return nil }
 
 func TestSegmenter(t *testing.T) {
-	// workDir := "/Users/erictang/Code/go/src/github.com/livepeer/lpms/segmenter/tmp" // "/Users/erictang/Code/go/src/github.com/livepeer/go-livepeer/livepeer/storage/streaming/tmp"
 	wd, _ := os.Getwd()
 	workDir := wd + "/tmp"
 	os.RemoveAll(workDir)
