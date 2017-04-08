@@ -2,7 +2,9 @@ package vidplayer
 
 import (
 	"context"
+	"mime"
 	"net/http"
+	"path"
 
 	"strings"
 
@@ -29,6 +31,7 @@ func (s *VidPlayer) HandleRTMPPlay(getStream func(ctx context.Context, reqPath s
 		select {
 		case err := <-c:
 			glog.Errorf("Rtmp getStream Error: %v", err)
+			return
 		}
 	}
 	return nil
@@ -58,6 +61,8 @@ func (s *VidPlayer) HandleHLSPlay(getHLSBuffer func(reqPath string) (*stream.HLS
 				glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
 				return
 			}
+			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 			_, err = w.Write(pl.Encode().Bytes())
 			if err != nil {
 				glog.Errorf("Error writting HLS playlist %v: %v", r.URL.Path, err)
@@ -74,6 +79,8 @@ func (s *VidPlayer) HandleHLSPlay(getHLSBuffer func(reqPath string) (*stream.HLS
 				glog.Errorf("Error getting HLS segment %v: %v", segName, err)
 				return
 			}
+			glog.Infof("Writing seg: %v, len:%v", segName, len(seg))
+			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 			_, err = w.Write(seg)
 			if err != nil {
 				glog.Errorf("Error writting HLS segment %v: %v", segName, err)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"runtime/debug"
 
 	"time"
 
@@ -114,7 +115,7 @@ func (s *VideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) 
 			packet := item.(av.Packet)
 			err = dst.WritePacket(packet)
 			if err != nil {
-				glog.Infof("Error writing RTMP packet from Stream %v to mux", s.StreamID)
+				glog.Infof("Error writing RTMP packet from Stream %v to mux: %v", s.StreamID, err)
 				return err
 			}
 		case RTMPEOF:
@@ -126,6 +127,7 @@ func (s *VideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) 
 			return io.EOF
 		default:
 			glog.Infof("Cannot recognize buffer iteam type: ", reflect.TypeOf(item))
+			debug.PrintStack()
 			return ErrBufferItemType
 		}
 	}
