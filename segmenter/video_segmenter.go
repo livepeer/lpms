@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ethereum/go-ethereum/logger/glog"
+	"github.com/golang/glog"
 	"github.com/kz26/m3u8"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/format/rtmp"
@@ -87,7 +87,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	rtmpMux.Close()
 
 	//Invoke the FFMpeg command
-	// fmt.Println("ffmpeg", "-i", fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", "test"), "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", "./tmp/stream.m3u8", "./tmp/stream_%d.ts")
+	//fmt.Println("ffmpeg", "-i", fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", "test"), "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", "./tmp/stream.m3u8", "./tmp/stream_%d.ts")
 	plfn := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
 	tsfn := s.WorkDir + "/" + s.StrmID + "_%d.ts"
 
