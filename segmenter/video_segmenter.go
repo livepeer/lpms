@@ -12,24 +12,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/logger/glog"
 	"github.com/kz26/m3u8"
+	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/format/rtmp"
 )
-
-type VideoFormat uint32
-
-var (
-	HLS  = MakeVideoFormatType(avFormatTypeMagic + 1)
-	RTMP = MakeVideoFormatType(avFormatTypeMagic + 1)
-)
-
-func MakeVideoFormatType(base uint32) (c VideoFormat) {
-	c = VideoFormat(base) << videoFormatOtherBits
-	return
-}
-
-const avFormatTypeMagic = 577777
-const videoFormatOtherBits = 1
 
 type SegmenterOptions struct {
 	EnforceKeyframe bool //Enforce each segment starts with a keyframe
@@ -38,14 +24,14 @@ type SegmenterOptions struct {
 
 type VideoSegment struct {
 	Codec  av.CodecType
-	Format VideoFormat
+	Format stream.VideoFormat
 	Length time.Duration
 	Data   []byte
 	Name   string
 }
 
 type VideoPlaylist struct {
-	Format VideoFormat
+	Format stream.VideoFormat
 	// Data   []byte
 	Data *m3u8.MediaPlaylist
 }
@@ -132,7 +118,7 @@ func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, 
 
 	s.curSegment = s.curSegment + 1
 	glog.Infof("Segment: %v, len:%v", name, len(seg))
-	return &VideoSegment{Codec: av.H264, Format: HLS, Length: length, Data: seg, Name: name}, err
+	return &VideoSegment{Codec: av.H264, Format: stream.HLS, Length: length, Data: seg, Name: name}, err
 }
 
 //PollPlaylist monitors the filesystem and returns a new playlist as it becomes available
@@ -157,7 +143,7 @@ func (s *FFMpegVideoSegmenter) PollPlaylist(ctx context.Context) (*VideoPlaylist
 	}
 
 	s.curPlaylist = p
-	return &VideoPlaylist{Format: HLS, Data: p}, err
+	return &VideoPlaylist{Format: stream.HLS, Data: p}, err
 }
 
 func pollPlaylist(ctx context.Context, fn string, sleepTime time.Duration, lastFile []byte) (f []byte, err error) {

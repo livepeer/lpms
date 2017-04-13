@@ -20,6 +20,21 @@ var ErrBufferItemType = errors.New("Buffer Item Type Not Recognized")
 var ErrDroppedRTMPStream = errors.New("RTMP Stream Stopped Without EOF")
 var ErrHttpReqFailed = errors.New("Http Request Failed")
 
+type VideoFormat uint32
+
+var (
+	HLS  = MakeVideoFormatType(avFormatTypeMagic + 1)
+	RTMP = MakeVideoFormatType(avFormatTypeMagic + 1)
+)
+
+func MakeVideoFormatType(base uint32) (c VideoFormat) {
+	c = VideoFormat(base) << videoFormatOtherBits
+	return
+}
+
+const avFormatTypeMagic = 577777
+const videoFormatOtherBits = 1
+
 type RTMPEOF struct{}
 
 type streamBuffer struct {
@@ -62,6 +77,42 @@ type HLSSegment struct {
 	Data []byte
 }
 
+// type ChannelStream interface {
+// 	RTMPPackets() <-chan av.Packet
+// 	RTMPHeader() []av.CodecData
+// 	HLSPlaylists() <-chan m3u8.MediaPlaylist
+// 	HLSSegments() <-chan HLSSegment
+// 	// ConsumeRTMP(headers []av.CodecData, pktChan <-chan av.Packet)
+// 	ConsumeRTMP(ChannelRTMPDemuxer)
+// 	ConsumeHLS(plChan <-chan m3u8.MediaPlaylist, segChan <-chan HLSSegment)
+// }
+
+// type CS struct {
+// 	m av.Muxer
+// }
+
+// func (s *CS) ConsumeRTMP(d ChannelRTMPDemuxer) {
+// 	s.headers = d.Streams()
+// 	pktChan, errChan = d.ReadPackets()
+// 	for {
+// 		select {
+// 		case pkt := <-pktChan:
+// 			s.m.WritePacket(pkt)
+// 		}
+// 	}
+// }
+
+// type ChannelRTMPMuxer interface {
+// 	WriteHeader(header []av.CodecData) error
+// 	WritePackets(ctx context.Context, pkt <-chan av.Packet) error
+// 	WriteTrailer() error
+// }
+
+// type ChannelRTMPDemuxer interface {
+// 	Streams() []av.CodecData
+// 	ReadPackets() (chan<- av.Packet, chan<- error)
+// }
+
 type Stream interface {
 	GetStreamID() string
 	Len() int64
@@ -70,7 +121,7 @@ type Stream interface {
 	WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error
 	WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error
 	WriteHLSSegmentToStream(seg HLSSegment) error
-	ReadHLSFromStream(buffer HLSMuxer) error
+	ReadHLSFromStream(ctx context.Context, buffer HLSMuxer) error
 }
 
 type VideoStream struct {
@@ -191,18 +242,25 @@ func (s *VideoStream) WriteHLSSegmentToStream(seg HLSSegment) error {
 }
 
 //ReadHLSFromStream reads an HLS stream into an HLSBuffer
-func (s *VideoStream) ReadHLSFromStream(buffer HLSMuxer) error {
+func (s *VideoStream) ReadHLSFromStream(ctx context.Context, mux HLSMuxer) error {
 	for {
+		// fmt.Printf("Buffer len: %v\n", s.buffer.len())
 		item, err := s.buffer.poll(s.HLSTimeout)
 		if err != nil {
 			return err
 		}
 
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		switch item.(type) {
 		case m3u8.MediaPlaylist:
-			buffer.WritePlaylist(item.(m3u8.MediaPlaylist))
+			mux.WritePlaylist(item.(m3u8.MediaPlaylist))
 		case HLSSegment:
-			buffer.WriteSegment(item.(HLSSegment).Name, item.(HLSSegment).Data)
+			mux.WriteSegment(item.(HLSSegment).Name, item.(HLSSegment).Data)
 		default:
 			return ErrBufferItemType
 		}

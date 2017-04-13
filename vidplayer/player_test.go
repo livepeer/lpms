@@ -67,7 +67,7 @@ func TestHLS(t *testing.T) {
 		if buffer == nil {
 			buffer := stream.NewHLSBuffer()
 			ec := make(chan error, 1)
-			go func() { ec <- s.ReadHLSFromStream(buffer) }()
+			go func() { ec <- s.ReadHLSFromStream(context.Background(), buffer) }()
 			// select {
 			// case err := <-ec:
 			// 	return err

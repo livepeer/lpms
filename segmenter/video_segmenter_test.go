@@ -86,7 +86,7 @@ func TestSegmenter(t *testing.T) {
 		t.Errorf("Got error: %v", err)
 	}
 
-	if pl.Format != HLS {
+	if pl.Format != stream.HLS {
 		t.Errorf("Expecting HLS Playlist, got %v", pl.Format)
 	}
 
@@ -115,7 +115,7 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting H264 segment, got: %v", seg.Codec)
 		}
 
-		if seg.Format != HLS {
+		if seg.Format != stream.HLS {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 

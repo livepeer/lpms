@@ -61,6 +61,7 @@ func (s *VidPlayer) HandleHLSPlay(getHLSBuffer func(reqPath string) (*stream.HLS
 				glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
 				return
 			}
+			// glog.Infof("Writing playlist: %v", pl)
 			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			_, err = w.Write(pl.Encode().Bytes())

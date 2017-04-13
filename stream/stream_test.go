@@ -209,7 +209,7 @@ func TestReadHLS(t *testing.T) {
 	}
 
 	ec := make(chan error, 1)
-	go func() { ec <- stream.ReadHLSFromStream(buffer) }()
+	go func() { ec <- stream.ReadHLSFromStream(context.Background(), buffer) }()
 
 	time.Sleep(time.Millisecond * 100)
 	if buffer.sq.Count() != 9 {
