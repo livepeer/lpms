@@ -77,42 +77,6 @@ type HLSSegment struct {
 	Data []byte
 }
 
-// type ChannelStream interface {
-// 	RTMPPackets() <-chan av.Packet
-// 	RTMPHeader() []av.CodecData
-// 	HLSPlaylists() <-chan m3u8.MediaPlaylist
-// 	HLSSegments() <-chan HLSSegment
-// 	// ConsumeRTMP(headers []av.CodecData, pktChan <-chan av.Packet)
-// 	ConsumeRTMP(ChannelRTMPDemuxer)
-// 	ConsumeHLS(plChan <-chan m3u8.MediaPlaylist, segChan <-chan HLSSegment)
-// }
-
-// type CS struct {
-// 	m av.Muxer
-// }
-
-// func (s *CS) ConsumeRTMP(d ChannelRTMPDemuxer) {
-// 	s.headers = d.Streams()
-// 	pktChan, errChan = d.ReadPackets()
-// 	for {
-// 		select {
-// 		case pkt := <-pktChan:
-// 			s.m.WritePacket(pkt)
-// 		}
-// 	}
-// }
-
-// type ChannelRTMPMuxer interface {
-// 	WriteHeader(header []av.CodecData) error
-// 	WritePackets(ctx context.Context, pkt <-chan av.Packet) error
-// 	WriteTrailer() error
-// }
-
-// type ChannelRTMPDemuxer interface {
-// 	Streams() []av.CodecData
-// 	ReadPackets() (chan<- av.Packet, chan<- error)
-// }
-
 type Stream interface {
 	GetStreamID() string
 	Len() int64

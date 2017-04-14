@@ -20,14 +20,11 @@ type StreamSubscriber struct {
 	lock            sync.Mutex
 	rtmpSubscribers map[string]av.Muxer
 	rtmpHeader      []av.CodecData
-	rtmpHeaderChan  chan []av.CodecData
-	// rtmpWorkerRunning chan bool
-	hlsSubscribers map[string]HLSMuxer
-	// hlsWorkerRunning bool
+	hlsSubscribers  map[string]HLSMuxer
 }
 
 func NewStreamSubscriber(s Stream) *StreamSubscriber {
-	return &StreamSubscriber{stream: s, rtmpSubscribers: make(map[string]av.Muxer), hlsSubscribers: make(map[string]HLSMuxer), rtmpHeaderChan: make(chan []av.CodecData)}
+	return &StreamSubscriber{stream: s, rtmpSubscribers: make(map[string]av.Muxer), hlsSubscribers: make(map[string]HLSMuxer)}
 }
 
 func (s *StreamSubscriber) SubscribeRTMP(ctx context.Context, muxID string, mux av.Muxer) error {
@@ -35,27 +32,15 @@ func (s *StreamSubscriber) SubscribeRTMP(ctx context.Context, muxID string, mux 
 		glog.Errorf("Cannot add RTMP subscriber.  Already have HLS subscribers.")
 		return ErrWrongFormat
 	}
-	//wait for rtmpHeader to be populated (when the stream starts)
-	// for s.rtmpHeader == nil {
-	// 	time.Sleep(1 * time.Second)
-	// }
+
 	if s.rtmpHeader != nil {
 		mux.WriteHeader(s.rtmpHeader)
-		// select {
-		// case header := <-s.rtmpHeaderChan:
-		// 	mux.WriteHeader(header)
-		// 	s.rtmpHeaderChan <- header
-		// 	s.rtmpHeader = header
-		// case <-ctx.Done():
-		// 	return ctx.Err()
-		// }
 	}
 
 	s.lock.Lock()
 	s.rtmpSubscribers[muxID] = mux
 	s.lock.Unlock()
-	// mux.WriteHeader(s.rtmpHeader)
-	glog.Infof("subscriber length: %v", len(s.rtmpSubscribers))
+	// glog.Infof("subscriber length: %v", len(s.rtmpSubscribers))
 	return nil
 }
 
@@ -68,7 +53,7 @@ func (s *StreamSubscriber) UnsubscribeRTMP(muxID string) error {
 }
 
 func (s *StreamSubscriber) StartRTMPWorker(ctx context.Context) error {
-	glog.Infof("Starting RTMP worker")
+	// glog.Infof("Starting RTMP worker")
 	q := pubsub.NewQueue()
 	go s.stream.ReadRTMPFromStream(ctx, q)
 
@@ -87,7 +72,7 @@ func (s *StreamSubscriber) StartRTMPWorker(ctx context.Context) error {
 		// glog.Infof("Writing packet %v", pkt.Data)
 		if err != nil {
 			if err == io.EOF {
-				glog.Info("Got EOF, stopping RTMP subscribers now.")
+				// glog.Info("Got EOF, stopping RTMP subscribers now.")
 				for _, rtmpMux := range s.rtmpSubscribers {
 					rtmpMux.WriteTrailer()
 				}
@@ -131,10 +116,8 @@ func (s *StreamSubscriber) UnsubscribeHLS(muxID string) error {
 }
 
 func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
-	// s.hlsWorkerRunning = true
 	// fmt.Println("Kicking off HLS worker thread")
 	b := NewHLSBuffer()
-	// fmt.Println("Reading HLS from stream")
 	go s.stream.ReadHLSFromStream(ctx, b)
 
 	segments := map[string]bool{}
@@ -161,7 +144,6 @@ func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
 			if segInfo == nil {
 				// glog.Errorf("Error loading segment info from playlist: %v", segInfo)
 				continue
-				// return ErrStreamSubscriber
 			}
 			segName := segInfo.URI
 			if segments[segName] {
@@ -185,5 +167,4 @@ func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
 		default:
 		}
 	}
-	// }()
 }
