@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ethereum/go-ethereum/logger/glog"
+	"github.com/golang/glog"
 	"github.com/kz26/m3u8"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
