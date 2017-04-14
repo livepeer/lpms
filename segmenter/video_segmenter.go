@@ -103,8 +103,9 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 //PollSegment monitors the filesystem and returns a new segment as it becomes available
 func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, error) {
 	var length time.Duration
-	tsfn := s.WorkDir + "/" + s.StrmID + "_" + strconv.Itoa(s.curSegment) + ".ts"
-	seg, err := pollSegment(ctx, tsfn, time.Millisecond*100, s.SegLen)
+	curTsfn := s.WorkDir + "/" + s.StrmID + "_" + strconv.Itoa(s.curSegment) + ".ts"
+	nextTsfn := s.WorkDir + "/" + s.StrmID + "_" + strconv.Itoa(s.curSegment+1) + ".ts"
+	seg, err := pollSegment(ctx, curTsfn, nextTsfn, time.Millisecond*100, s.SegLen)
 	if err != nil {
 		return nil, err
 	}
@@ -185,13 +186,15 @@ func pollPlaylist(ctx context.Context, fn string, sleepTime time.Duration, lastF
 
 }
 
-func pollSegment(ctx context.Context, fn string, sleepTime time.Duration, segLen time.Duration) (f []byte, err error) {
+func pollSegment(ctx context.Context, curFn string, nextFn string, sleepTime time.Duration, segLen time.Duration) (f []byte, err error) {
 	for {
-		if _, err := os.Stat(fn); err == nil {
+		//Because FFMpeg keeps appending to the current segment until it's full before moving onto the next segment, we monitor the existance of
+		//the next file as a signal for the completion of the current segment.
+		if _, err := os.Stat(nextFn); err == nil {
 			// fmt.Printf("FileName: %v, FileSize: %v \n\n", fn, info.Size())
-			time.Sleep(segLen)
+			// time.Sleep(segLen)
 			// fmt.Printf("FileName: %v, FileSize: %v \n\n", fn, info.Size())
-			content, err := ioutil.ReadFile(fn)
+			content, err := ioutil.ReadFile(curFn)
 			if err != nil {
 				return nil, err
 			}
