@@ -76,7 +76,6 @@ func (s *StreamSubscriber) StartRTMPWorker(ctx context.Context) error {
 	// glog.Infof("Waiting for rtmp header in worker")
 	headers, _ := m.Streams()
 	// glog.Infof("StartRTMPWorker: rtmp headers: %v", headers)
-	// s.rtmpHeaderChan <- headers
 	s.rtmpHeader = headers
 	for _, rtmpMux := range s.rtmpSubscribers {
 		rtmpMux.WriteHeader(headers)
@@ -88,7 +87,7 @@ func (s *StreamSubscriber) StartRTMPWorker(ctx context.Context) error {
 		// glog.Infof("Writing packet %v", pkt.Data)
 		if err != nil {
 			if err == io.EOF {
-				glog.Info("Got EOF")
+				glog.Info("Got EOF, stopping RTMP subscribers now.")
 				for _, rtmpMux := range s.rtmpSubscribers {
 					rtmpMux.WriteTrailer()
 				}

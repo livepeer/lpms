@@ -192,6 +192,10 @@ func (s *VideoStream) WriteRTMPPacket(p av.Packet) {
 	s.buffer.push(p)
 }
 
+func (s *VideoStream) WriteRTMPTrailer() {
+	s.buffer.push(RTMPEOF{})
+}
+
 //WriteRTMPToStream writes a video stream from src into the stream.
 func (s *VideoStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error {
 	defer src.Close()
