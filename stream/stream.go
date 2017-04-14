@@ -24,7 +24,7 @@ type VideoFormat uint32
 
 var (
 	HLS  = MakeVideoFormatType(avFormatTypeMagic + 1)
-	RTMP = MakeVideoFormatType(avFormatTypeMagic + 1)
+	RTMP = MakeVideoFormatType(avFormatTypeMagic + 2)
 )
 
 func MakeVideoFormatType(base uint32) (c VideoFormat) {
@@ -182,6 +182,14 @@ func (s *VideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) 
 			return ErrBufferItemType
 		}
 	}
+}
+
+func (s *VideoStream) WriteRTMPHeader(h []av.CodecData) {
+	s.buffer.push(h)
+}
+
+func (s *VideoStream) WriteRTMPPacket(p av.Packet) {
+	s.buffer.push(p)
 }
 
 //WriteRTMPToStream writes a video stream from src into the stream.
