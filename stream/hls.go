@@ -13,7 +13,7 @@ var ErrNotFound = errors.New("Not Found")
 
 type HLSDemuxer interface {
 	//This method should ONLY push a playlist onto a chan when it's a NEW playlist
-	WaitAndPopPlaylist(ctx context.Context) (m3u8.MediaPlaylist, error)
+	PollPlaylist(ctx context.Context) (m3u8.MediaPlaylist, error)
 	//This method should ONLY push a segment onto a chan when it's a NEW segment
 	WaitAndPopSegment(ctx context.Context, name string) ([]byte, error)
 }
@@ -40,7 +40,7 @@ func NewHLSBuffer() *HLSBuffer {
 }
 
 func (b *HLSBuffer) WritePlaylist(p m3u8.MediaPlaylist) error {
-
+	// fmt.Println("Writing playlist")
 	b.lock.Lock()
 	b.plCache = p
 	b.plCacheNew = true
@@ -58,11 +58,15 @@ func (b *HLSBuffer) WriteSegment(name string, s []byte) error {
 
 func (b *HLSBuffer) WaitAndPopPlaylist(ctx context.Context) (m3u8.MediaPlaylist, error) {
 	for {
-
+		b.lock.Lock()
 		if b.plCacheNew {
-			return b.plCache, nil
+			defer b.lock.Unlock()
+
 			b.plCacheNew = false
+			return b.plCache, nil
 		}
+		b.lock.Unlock()
+
 		time.Sleep(time.Second * 1)
 		select {
 		case <-ctx.Done():
@@ -75,6 +79,7 @@ func (b *HLSBuffer) WaitAndPopPlaylist(ctx context.Context) (m3u8.MediaPlaylist,
 
 func (b *HLSBuffer) WaitAndPopSegment(ctx context.Context, name string) ([]byte, error) {
 	for {
+		// fmt.Printf("HLSBuffer %v: segment keys: %v.  Current name: %v\n", &b, b.sq.Keys(), name)
 		seg, found := b.sq.Get(name)
 		// glog.Infof("GetSegment: %v, %v", name, found)
 		if found {

@@ -3,6 +3,7 @@ package segmenter
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -12,24 +13,12 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/kz26/m3u8"
+	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/format/rtmp"
 )
 
-type VideoFormat uint32
-
-var (
-	HLS  = MakeVideoFormatType(avFormatTypeMagic + 1)
-	RTMP = MakeVideoFormatType(avFormatTypeMagic + 1)
-)
-
-func MakeVideoFormatType(base uint32) (c VideoFormat) {
-	c = VideoFormat(base) << videoFormatOtherBits
-	return
-}
-
-const avFormatTypeMagic = 577777
-const videoFormatOtherBits = 1
+var ErrSegmenterTimeout = errors.New("SegmenterTimeout")
 
 type SegmenterOptions struct {
 	EnforceKeyframe bool //Enforce each segment starts with a keyframe
@@ -38,14 +27,14 @@ type SegmenterOptions struct {
 
 type VideoSegment struct {
 	Codec  av.CodecType
-	Format VideoFormat
+	Format stream.VideoFormat
 	Length time.Duration
 	Data   []byte
 	Name   string
 }
 
 type VideoPlaylist struct {
-	Format VideoFormat
+	Format stream.VideoFormat
 	// Data   []byte
 	Data *m3u8.MediaPlaylist
 }
@@ -54,13 +43,14 @@ type VideoSegmenter interface{}
 
 //FFMpegVideoSegmenter segments a RTMP stream by invoking FFMpeg and monitoring the file system.
 type FFMpegVideoSegmenter struct {
-	WorkDir      string
-	LocalRtmpUrl string
-	StrmID       string
-	curSegment   int
-	curPlaylist  *m3u8.MediaPlaylist
-	curWaitTime  time.Duration
-	SegLen       time.Duration
+	WorkDir        string
+	LocalRtmpUrl   string
+	StrmID         string
+	curSegment     int
+	curPlaylist    *m3u8.MediaPlaylist
+	curPlWaitTime  time.Duration
+	curSegWaitTime time.Duration
+	SegLen         time.Duration
 }
 
 func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, segLen time.Duration) *FFMpegVideoSegmenter {
@@ -117,8 +107,9 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 //PollSegment monitors the filesystem and returns a new segment as it becomes available
 func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, error) {
 	var length time.Duration
-	tsfn := s.WorkDir + "/" + s.StrmID + "_" + strconv.Itoa(s.curSegment) + ".ts"
-	seg, err := pollSegment(ctx, tsfn, time.Millisecond*100, s.SegLen)
+	curTsfn := s.WorkDir + "/" + s.StrmID + "_" + strconv.Itoa(s.curSegment) + ".ts"
+	nextTsfn := s.WorkDir + "/" + s.StrmID + "_" + strconv.Itoa(s.curSegment+1) + ".ts"
+	seg, err := s.pollSegment(ctx, curTsfn, nextTsfn, time.Millisecond*100)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +123,7 @@ func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, 
 
 	s.curSegment = s.curSegment + 1
 	glog.Infof("Segment: %v, len:%v", name, len(seg))
-	return &VideoSegment{Codec: av.H264, Format: HLS, Length: length, Data: seg, Name: name}, err
+	return &VideoSegment{Codec: av.H264, Format: stream.HLS, Length: length, Data: seg, Name: name}, err
 }
 
 //PollPlaylist monitors the filesystem and returns a new playlist as it becomes available
@@ -145,7 +136,7 @@ func (s *FFMpegVideoSegmenter) PollPlaylist(ctx context.Context) (*VideoPlaylist
 		lastPl = s.curPlaylist.Encode().Bytes()
 	}
 
-	pl, err := pollPlaylist(ctx, plfn, time.Millisecond*100, lastPl)
+	pl, err := s.pollPlaylist(ctx, plfn, time.Millisecond*100, lastPl)
 	if err != nil {
 		return nil, err
 	}
@@ -157,10 +148,10 @@ func (s *FFMpegVideoSegmenter) PollPlaylist(ctx context.Context) (*VideoPlaylist
 	}
 
 	s.curPlaylist = p
-	return &VideoPlaylist{Format: HLS, Data: p}, err
+	return &VideoPlaylist{Format: stream.HLS, Data: p}, err
 }
 
-func pollPlaylist(ctx context.Context, fn string, sleepTime time.Duration, lastFile []byte) (f []byte, err error) {
+func (s *FFMpegVideoSegmenter) pollPlaylist(ctx context.Context, fn string, sleepTime time.Duration, lastFile []byte) (f []byte, err error) {
 	for {
 		if _, err := os.Stat(fn); err == nil {
 			if err != nil {
@@ -183,6 +174,7 @@ func pollPlaylist(ctx context.Context, fn string, sleepTime time.Duration, lastF
 			// fmt.Printf("p.Segments: %v\n", p.Segments[0])
 			// fmt.Printf("lf: %s \ncf: %s \ncomp:%v\n\n", lastFile, curFile, bytes.Compare(lastFile, curFile))
 			if lastFile == nil || bytes.Compare(lastFile, curFile) != 0 {
+				s.curPlWaitTime = 0
 				return content, nil
 			}
 		}
@@ -194,21 +186,25 @@ func pollPlaylist(ctx context.Context, fn string, sleepTime time.Duration, lastF
 		default:
 		}
 
+		if s.curPlWaitTime >= 10*s.SegLen {
+			return nil, ErrSegmenterTimeout
+		}
 		time.Sleep(sleepTime)
+		s.curPlWaitTime = s.curPlWaitTime + sleepTime
 	}
 
 }
 
-func pollSegment(ctx context.Context, fn string, sleepTime time.Duration, segLen time.Duration) (f []byte, err error) {
+func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, nextFn string, sleepTime time.Duration) (f []byte, err error) {
 	for {
-		if _, err := os.Stat(fn); err == nil {
-			// fmt.Printf("FileName: %v, FileSize: %v \n\n", fn, info.Size())
-			time.Sleep(segLen)
-			// fmt.Printf("FileName: %v, FileSize: %v \n\n", fn, info.Size())
-			content, err := ioutil.ReadFile(fn)
+		//Because FFMpeg keeps appending to the current segment until it's full before moving onto the next segment, we monitor the existance of
+		//the next file as a signal for the completion of the current segment.
+		if _, err := os.Stat(nextFn); err == nil {
+			content, err := ioutil.ReadFile(curFn)
 			if err != nil {
 				return nil, err
 			}
+			s.curSegWaitTime = 0
 			return content, err
 		}
 
@@ -217,7 +213,11 @@ func pollSegment(ctx context.Context, fn string, sleepTime time.Duration, segLen
 			return nil, ctx.Err()
 		default:
 		}
+		if s.curSegWaitTime > 10*s.SegLen {
+			return nil, ErrSegmenterTimeout
+		}
 
 		time.Sleep(sleepTime)
+		s.curSegWaitTime = s.curSegWaitTime + sleepTime
 	}
 }

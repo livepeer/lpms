@@ -72,7 +72,7 @@ func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs
 	workDir, _ := os.Getwd()
 	workDir = workDir + "/tmp"
 	localRtmpUrl := "rtmp://localhost" + self.RtmpServer.Addr + "/stream/" + rs.GetStreamID()
-	s := segmenter.NewFFMpegVideoSegmenter(workDir, rs.GetStreamID(), localRtmpUrl, segOptions.SegLength)
+	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength)
 	c := make(chan error, 1)
 	go func() { c <- s.RTMPToHLS(ctx, segOptions) }()
 
@@ -86,6 +86,11 @@ func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs
 				}
 				// glog.Infof("Writing pl: %v", pl)
 				hs.WriteHLSPlaylistToStream(*pl.Data)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
 			}
 		}()
 	}()
@@ -100,6 +105,11 @@ func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs
 				ss := stream.HLSSegment{Data: seg.Data, Name: seg.Name}
 				glog.Infof("Writing stream: %v, len:%v", ss.Name, len(seg.Data))
 				hs.WriteHLSSegmentToStream(ss)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
 			}
 		}()
 	}()
@@ -108,5 +118,7 @@ func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs
 	case err := <-c:
 		glog.Errorf("Error segmenting stream: %v", err)
 		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
