@@ -201,3 +201,62 @@ func TestPollSegmentError(t *testing.T) {
 		t.Errorf("Expect to exceed deadline, but got: %v", err)
 	}
 }
+
+func TestPollPlaylistTimeout(t *testing.T) {
+	wd, _ := os.Getwd()
+	workDir := wd + "/tmp"
+	os.RemoveAll(workDir)
+	os.Mkdir(workDir, 0700)
+
+	newPl := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-ALLOW-CACHE:YES
+#EXT-X-TARGETDURATION:7
+#EXTINF:2.066000,
+test_0.ts
+`
+	err := ioutil.WriteFile(workDir+"/test.m3u8", []byte(newPl), 0755)
+	if err != nil {
+		t.Errorf("Error writing playlist: %v", err)
+	}
+
+	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100)
+	ctx := context.Background()
+	pl, err := vs.PollPlaylist(ctx)
+	if pl == nil {
+		t.Errorf("Expecting playlist, got nil")
+	}
+
+	pl, err = vs.PollPlaylist(ctx)
+	if err != ErrSegmenterTimeout {
+		t.Errorf("Expecting timeout error, got %v", err)
+	}
+}
+
+func TestPollSegTimeout(t *testing.T) {
+	wd, _ := os.Getwd()
+	workDir := wd + "/tmp"
+	os.RemoveAll(workDir)
+	os.Mkdir(workDir, 0700)
+
+	newSeg := `some random data`
+	err := ioutil.WriteFile(workDir+"/test_0.ts", []byte(newSeg), 0755)
+	err = ioutil.WriteFile(workDir+"/test_1.ts", []byte(newSeg), 0755)
+	if err != nil {
+		t.Errorf("Error writing playlist: %v", err)
+	}
+
+	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100)
+	ctx := context.Background()
+	seg, err := vs.PollSegment(ctx)
+	if seg == nil {
+		t.Errorf("Expecting seg, got nil")
+	}
+
+	seg, err = vs.PollSegment(ctx)
+	if err != ErrSegmenterTimeout {
+		t.Errorf("Expecting timeout, got %v", err)
+	}
+
+}
