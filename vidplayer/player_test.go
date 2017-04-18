@@ -1,11 +1,15 @@
 package vidplayer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"time"
+
+	"net/url"
 
 	"github.com/kz26/m3u8"
 	"github.com/livepeer/lpms/stream"
@@ -106,4 +110,47 @@ func TestHLS(t *testing.T) {
 	// go http.ListenAndServe(":8000", nil)
 
 	//TODO: Add tests for checking if packets were written, etc.
+}
+
+type TestRWriter struct {
+	bytes  []byte
+	header map[string][]string
+}
+
+func (t *TestRWriter) Header() http.Header { return t.header }
+func (t *TestRWriter) Write(b []byte) (int, error) {
+	t.bytes = b
+	return 0, nil
+}
+func (*TestRWriter) WriteHeader(int) {}
+
+func TestHandleHLS(t *testing.T) {
+	testBuf := stream.NewHLSBuffer()
+	req := &http.Request{URL: &url.URL{Path: "test.m3u8"}}
+	rw := &TestRWriter{header: make(map[string][]string)}
+
+	pl, _ := m3u8.NewMediaPlaylist(10, 10)
+	pl.Append("url1", 2, "url1")
+	pl.Append("url2", 2, "url2")
+	pl.Append("url3", 2, "url3")
+	pl.Append("url4", 2, "url4")
+
+	testBuf.WritePlaylist(*pl)
+
+	handleHLS(rw, req, func(reqPath string) (*stream.HLSBuffer, error) {
+		return testBuf, nil
+	})
+
+	p1, _ := m3u8.NewMediaPlaylist(10, 10)
+	p1.DecodeFrom(bytes.NewReader(rw.bytes), true)
+	segLen := 0
+	for _, s := range p1.Segments {
+		if s != nil {
+			segLen = segLen + 1
+		}
+	}
+
+	if segLen != 2 {
+		t.Errorf("Expecting 2 segments, got %v", segLen)
+	}
 }

@@ -41,56 +41,73 @@ func (s *VidPlayer) HandleRTMPPlay(getStream func(ctx context.Context, reqPath s
 //for either the playlist or the segment.
 func (s *VidPlayer) HandleHLSPlay(getHLSBuffer func(reqPath string) (*stream.HLSBuffer, error)) error {
 	http.HandleFunc("/stream/", func(w http.ResponseWriter, r *http.Request) {
-		glog.Infof("LPMS got HTTP request @ %v", r.URL.Path)
-
-		if !strings.HasSuffix(r.URL.Path, ".m3u8") && !strings.HasSuffix(r.URL.Path, ".ts") {
-			http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)
-		}
-
-		ctx := context.Background()
-		// c := make(chan error, 1)
-		// go func() { c <- getStream(ctx, r.URL.Path, w) }()
-		buffer, err := getHLSBuffer(r.URL.Path)
-		if err != nil {
-			glog.Errorf("Error getting HLS Buffer: %v", err)
-		}
-
-		if strings.HasSuffix(r.URL.Path, ".m3u8") {
-			pl, err := buffer.WaitAndPopPlaylist(ctx)
-			if err != nil {
-				glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
-				return
-			}
-			// glog.Infof("Writing playlist: %v", pl)
-			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			_, err = w.Write(pl.Encode().Bytes())
-			if err != nil {
-				glog.Errorf("Error writting HLS playlist %v: %v", r.URL.Path, err)
-				return
-			}
-			return
-		}
-
-		if strings.HasSuffix(r.URL.Path, ".ts") {
-			pathArr := strings.Split(r.URL.Path, "/")
-			segName := pathArr[len(pathArr)-1]
-			seg, err := buffer.WaitAndPopSegment(ctx, segName)
-			if err != nil {
-				glog.Errorf("Error getting HLS segment %v: %v", segName, err)
-				return
-			}
-			glog.Infof("Writing seg: %v, len:%v", segName, len(seg))
-			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
-			_, err = w.Write(seg)
-			if err != nil {
-				glog.Errorf("Error writting HLS segment %v: %v", segName, err)
-				return
-			}
-			return
-		}
-
-		http.Error(w, "Cannot find HTTP video resource: "+r.URL.Path, 500)
+		handleHLS(w, r, getHLSBuffer)
 	})
 	return nil
+}
+
+func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath string) (*stream.HLSBuffer, error)) {
+	glog.Infof("LPMS got HTTP request @ %v", r.URL.Path)
+
+	if !strings.HasSuffix(r.URL.Path, ".m3u8") && !strings.HasSuffix(r.URL.Path, ".ts") {
+		http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)
+	}
+
+	ctx := context.Background()
+	// c := make(chan error, 1)
+	// go func() { c <- getStream(ctx, r.URL.Path, w) }()
+	buffer, err := getHLSBuffer(r.URL.Path)
+	if err != nil {
+		glog.Errorf("Error getting HLS Buffer: %v", err)
+	}
+
+	if strings.HasSuffix(r.URL.Path, ".m3u8") {
+		pl, err := buffer.WaitAndPopPlaylist(ctx)
+		if err != nil {
+			glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
+			return
+		}
+
+		//Remove all but the last 2 segments
+		c := 0
+		for _, seg := range pl.Segments {
+			if seg != nil {
+				// segs = append(segs, seg)
+				c = c + 1
+			}
+		}
+		for c > 2 {
+			pl.Remove()
+			c = c - 1
+		}
+		// glog.Infof("Writing playlist: %v", pl)
+		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		_, err = w.Write(pl.Encode().Bytes())
+		if err != nil {
+			glog.Errorf("Error writting HLS playlist %v: %v", r.URL.Path, err)
+			return
+		}
+		return
+	}
+
+	if strings.HasSuffix(r.URL.Path, ".ts") {
+		pathArr := strings.Split(r.URL.Path, "/")
+		segName := pathArr[len(pathArr)-1]
+		seg, err := buffer.WaitAndPopSegment(ctx, segName)
+		if err != nil {
+			glog.Errorf("Error getting HLS segment %v: %v", segName, err)
+			return
+		}
+		glog.Infof("Writing seg: %v, len:%v", segName, len(seg))
+		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
+		_, err = w.Write(seg)
+		if err != nil {
+			glog.Errorf("Error writting HLS segment %v: %v", segName, err)
+			return
+		}
+		return
+	}
+
+	http.Error(w, "Cannot find HTTP video resource: "+r.URL.Path, 500)
 }
