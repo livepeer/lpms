@@ -66,7 +66,7 @@ func (l *LPMS) Start() error {
 func (l *LPMS) HandleRTMPPublish(
 	getStreamID func(reqPath string) (string, error),
 	getStream func(reqPath string) (stream.Stream, stream.Stream, error),
-	endStream func(reqPath string)) error {
+	endStream func(rtmpStrmID string, hlsStrmID string)) error {
 
 	return l.vidListen.HandleRTMPPublish(getStreamID, getStream, endStream)
 }

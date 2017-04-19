@@ -26,8 +26,8 @@ type VidListener struct {
 //It exposes getStreamID so the user can name the stream, and getStream so the user can keep track of all the streams.
 func (self *VidListener) HandleRTMPPublish(
 	getStreamID func(reqPath string) (string, error),
-	getStream func(reqPath string) (stream.Stream, stream.Stream, error),
-	endStream func(reqPath string)) error {
+	getStream func(reqPath string) (rtmpStrm stream.Stream, hlsStrm stream.Stream, err error),
+	endStream func(rtmpStrmID string, hlsStrmID string)) error {
 
 	self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
 		glog.Infof("RTMP server got upstream")
@@ -54,7 +54,7 @@ func (self *VidListener) HandleRTMPPublish(
 
 		select {
 		case err := <-cew:
-			endStream(conn.URL.Path)
+			endStream(rs.GetStreamID(), hs.GetStreamID())
 			glog.Infof("Final stream length: %v", rs.Len())
 			glog.Error("Got error writing RTMP: ", err)
 			cancel()
