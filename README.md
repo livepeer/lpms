@@ -47,7 +47,7 @@ For OBS, fill in the information like this:
 I0324 09:44:14.639405   80673 listener.go:28] RTMP server got upstream
 I0324 09:44:14.639429   80673 listener.go:42] Got RTMP Stream: test
 ```
-3. Now you have a RTMP video stream running, we can view it from the server.  Simply run `ffplay http://localhost:8000/stream/test_hls.m3u8`, you should see the hls video playback.
+4. Now you have a RTMP video stream running, we can view it from the server.  Simply run `ffplay http://localhost:8000/stream/test_hls.m3u8`, you should see the hls video playback.
 
 
 ### Integrating LPMS
