@@ -21,7 +21,7 @@ func TestListener(t *testing.T) {
 			// return errors.New("Some Error")
 			return stream.NewVideoStream("test"), stream.NewVideoStream("test"), nil
 		},
-		func(reqPath string) {})
+		func(rtmpStrmID string, hlsStrmID string) {})
 
 	ffmpegCmd := "ffmpeg"
 	ffmpegArgs := []string{"-re", "-i", "../data/bunny2.mp4", "-c", "copy", "-f", "flv", "rtmp://localhost:1937/movie/stream"}
