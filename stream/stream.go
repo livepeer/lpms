@@ -90,6 +90,7 @@ type Stream interface {
 
 type VideoStream struct {
 	StreamID    string
+	Format      VideoFormat
 	RTMPTimeout time.Duration
 	HLSTimeout  time.Duration
 	buffer      *streamBuffer
@@ -99,8 +100,8 @@ func (s *VideoStream) Len() int64 {
 	return s.buffer.len()
 }
 
-func NewVideoStream(id string) *VideoStream {
-	return &VideoStream{buffer: newStreamBuffer(), StreamID: id}
+func NewVideoStream(id string, format VideoFormat) *VideoStream {
+	return &VideoStream{buffer: newStreamBuffer(), StreamID: id, Format: format}
 }
 
 func (s *VideoStream) GetStreamID() string {
