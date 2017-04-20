@@ -122,7 +122,7 @@ func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, 
 	}
 
 	s.curSegment = s.curSegment + 1
-	glog.Infof("Segment: %v, len:%v", name, len(seg))
+	// glog.Infof("Segment: %v, len:%v", name, len(seg))
 	return &VideoSegment{Codec: av.H264, Format: stream.HLS, Length: length, Data: seg, Name: name}, err
 }
 
@@ -181,7 +181,7 @@ func (s *FFMpegVideoSegmenter) pollPlaylist(ctx context.Context, fn string, slee
 
 		select {
 		case <-ctx.Done():
-			fmt.Println("ctx.Done()!!!")
+			glog.Infof("ctx.Done()!!!")
 			return nil, ctx.Err()
 		default:
 		}

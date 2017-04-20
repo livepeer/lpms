@@ -123,14 +123,14 @@ func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
 	segments := map[string]bool{}
 
 	for {
-		// fmt.Println("Waiting for pl")
+		// glog.Infof("Waiting for pl")
 		pl, err := b.WaitAndPopPlaylist(ctx)
 		if err != nil {
 			glog.Errorf("Error loading playlist: %v", err)
 			return err
 		}
 
-		// fmt.Printf("# subscribers: %v\n", len(s.hlsSubscribers))
+		// glog.Infof("# subscribers: %v\n", len(s.hlsSubscribers))
 		for _, hlsmux := range s.hlsSubscribers {
 			err = hlsmux.WritePlaylist(pl)
 			if err != nil {

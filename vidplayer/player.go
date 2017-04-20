@@ -59,6 +59,7 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	buffer, err := getHLSBuffer(r.URL.Path)
 	if err != nil {
 		glog.Errorf("Error getting HLS Buffer: %v", err)
+		return
 	}
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
@@ -99,8 +100,9 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 			glog.Errorf("Error getting HLS segment %v: %v", segName, err)
 			return
 		}
-		glog.Infof("Writing seg: %v, len:%v", segName, len(seg))
+		// glog.Infof("Writing seg: %v, len:%v", segName, len(seg))
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		_, err = w.Write(seg)
 		if err != nil {
 			glog.Errorf("Error writting HLS segment %v: %v", segName, err)

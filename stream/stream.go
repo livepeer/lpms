@@ -220,7 +220,7 @@ func (s *VideoStream) WriteHLSSegmentToStream(seg HLSSegment) error {
 //ReadHLSFromStream reads an HLS stream into an HLSBuffer
 func (s *VideoStream) ReadHLSFromStream(ctx context.Context, mux HLSMuxer) error {
 	for {
-		// fmt.Printf("Buffer len: %v\n", s.buffer.len())
+		// glog.Info("HLS Stream Buffer Len: %v\n", s.buffer.len())
 		item, err := s.buffer.poll(s.HLSTimeout)
 		if err != nil {
 			return err
