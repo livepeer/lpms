@@ -36,46 +36,47 @@ func main() {
 		},
 		//getStream
 		func(reqPath string) (stream.Stream, stream.Stream, error) {
-			streamID := getStreamIDFromPath(reqPath)
-			stream1 := stream.NewVideoStream(streamID)
-			stream2 := stream.NewVideoStream(streamID)
-			streamDB.db[streamID] = stream1
-			return stream1, stream2, nil
+			rtmpStreamID := getStreamIDFromPath(reqPath)
+			hlsStreamID := rtmpStreamID + "_hls"
+			rtmpStream := stream.NewVideoStream(rtmpStreamID, stream.RTMP)
+			hlsStream := stream.NewVideoStream(hlsStreamID, stream.HLS)
+			streamDB.db[rtmpStreamID] = rtmpStream
+			streamDB.db[hlsStreamID] = hlsStream
+			return rtmpStream, hlsStream, nil
 		},
 		//finishStream
-		func(reqPath string) {
-			streamID := getStreamIDFromPath(reqPath)
-			delete(streamDB.db, streamID)
-			tranStreamID := streamID + "_tran"
-			delete(streamDB.db, tranStreamID)
+		func(rtmpID string, hlsID string) {
+			delete(streamDB.db, rtmpID)
+			delete(streamDB.db, hlsID)
 		})
 
-	lpms.HandleTranscode(
-		//getInStream
-		func(ctx context.Context, streamID string) (stream.Stream, error) {
-			if stream := streamDB.db[streamID]; stream != nil {
-				return stream, nil
-			}
+	//No transcoding for now until segment transcoder is finished.
+	// lpms.HandleTranscode(
+	// 	//getInStream
+	// 	func(ctx context.Context, streamID string) (stream.Stream, error) {
+	// 		if stream := streamDB.db[streamID]; stream != nil {
+	// 			return stream, nil
+	// 		}
 
-			return nil, stream.ErrNotFound
-		},
-		//getOutStream
-		func(ctx context.Context, streamID string) (stream.Stream, error) {
-			//For this example, we'll name the transcoded stream "{streamID}_tran"
-			newStream := stream.NewVideoStream(streamID + "_tran")
-			streamDB.db[newStream.GetStreamID()] = newStream
-			return newStream, nil
+	// 		return nil, stream.ErrNotFound
+	// 	},
+	// 	//getOutStream
+	// 	func(ctx context.Context, streamID string) (stream.Stream, error) {
+	// 		//For this example, we'll name the transcoded stream "{streamID}_tran"
+	// 		newStream := stream.NewVideoStream(streamID + "_tran")
+	// 		streamDB.db[newStream.GetStreamID()] = newStream
+	// 		return newStream, nil
 
-			// glog.Infof("Making File Stream")
-			// fileStream := stream.NewFileStream(streamID + "_file")
-			// return fileStream, nil
-		})
+	// 		// glog.Infof("Making File Stream")
+	// 		// fileStream := stream.NewFileStream(streamID + "_file")
+	// 		// return fileStream, nil
+	// 	})
 
 	lpms.HandleHLSPlay(
 		//getHLSBuffer
 		func(reqPath string) (*stream.HLSBuffer, error) {
 			streamID := getHLSStreamIDFromPath(reqPath)
-			glog.Infof("Got HTTP Req for stream: %v", streamID)
+			// glog.Infof("Got HTTP Req for stream: %v", streamID)
 			buffer := bufferDB.db[streamID]
 			s := streamDB.db[streamID]
 
@@ -87,12 +88,15 @@ func main() {
 				//Create the buffer and start copying the stream into the buffer
 				buffer = stream.NewHLSBuffer()
 				bufferDB.db[streamID] = buffer
-				ec := make(chan error, 1)
-				go func() { ec <- s.ReadHLSFromStream(buffer) }()
-				//May want to handle the error here
+				sub := stream.NewStreamSubscriber(s)
+				go sub.StartHLSWorker(context.Background())
+				err := sub.SubscribeHLS(streamID, buffer)
+				if err != nil {
+					return nil, stream.ErrStreamSubscriber
+				}
 			}
-			return buffer, nil
 
+			return buffer, nil
 		})
 
 	lpms.HandleRTMPPlay(
@@ -135,9 +139,5 @@ func getStreamIDFromPath(reqPath string) string {
 }
 
 func getHLSStreamIDFromPath(reqPath string) string {
-	if strings.HasSuffix(reqPath, ".m3u8") {
-		return "test_tran"
-	} else {
-		return "test_tran"
-	}
+	return "test_hls"
 }
