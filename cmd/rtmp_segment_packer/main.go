@@ -251,7 +251,7 @@ func (s *SegmentStream) WriteHLSSegmentToStream(seg stream.HLSSegment) error {
 	return nil
 }
 
-func (s *SegmentStream) ReadHLSFromStream(buffer stream.HLSMuxer) error {
+func (s *SegmentStream) ReadHLSFromStream(ctx context.Context, buffer stream.HLSMuxer) error {
 	glog.Info("Reading HLS")
 	return nil
 }
@@ -260,7 +260,7 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	lpms := lpms.New("1935", "8000", "2435", "7935")
+	lpms := lpms.New("1935", "8000", "2435", "7935", "")
 	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 
 	lpms.HandleRTMPPublish(
@@ -277,7 +277,7 @@ func main() {
 			return stream1, stream2, nil
 		},
 		//finishStream
-		func(reqPath string) {
+		func(strmID1 string, strmID2 string) {
 			// streamID := getStreamIDFromPath(reqPath)
 			// delete(streamDB.db, streamID)
 			// tranStreamID := streamID + "_tran"

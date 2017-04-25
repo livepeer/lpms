@@ -30,7 +30,7 @@ func (t *TestHLSMux) WriteSegment(name string, s []byte) error {
 }
 
 func TestHLSSubscribe(t *testing.T) {
-	stream := NewVideoStream("test")
+	stream := NewVideoStream("test", HLS)
 	stream.HLSTimeout = time.Millisecond * 1
 
 	sub := NewStreamSubscriber(stream)
@@ -163,7 +163,7 @@ func (d *TestMux) WriteTrailer() error {
 }
 
 func TestRTMPSubscription(t *testing.T) {
-	stream := NewVideoStream("test")
+	stream := NewVideoStream("test", RTMP)
 	sub := NewStreamSubscriber(stream)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -46,6 +46,7 @@ type FFMpegVideoSegmenter struct {
 	WorkDir        string
 	LocalRtmpUrl   string
 	StrmID         string
+	ffmpegPath     string
 	curSegment     int
 	curPlaylist    *m3u8.MediaPlaylist
 	curPlWaitTime  time.Duration
@@ -53,8 +54,12 @@ type FFMpegVideoSegmenter struct {
 	SegLen         time.Duration
 }
 
-func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, segLen time.Duration) *FFMpegVideoSegmenter {
-	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: segLen}
+func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, segLen time.Duration, ffmpegPath string) *FFMpegVideoSegmenter {
+	fp := ffmpegPath
+	if fp == "" {
+		fp = "/usr/local/bin"
+	}
+	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: segLen, ffmpegPath: fp}
 }
 
 //RTMPToHLS invokes the FFMpeg command to do the segmenting.  This method blocks unless killed.
@@ -82,7 +87,9 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	tsfn := s.WorkDir + "/" + s.StrmID + "_%d.ts"
 
 	//This command needs to be manually killed, because ffmpeg doesn't seem to quit after getting a rtmp EOF
-	cmd := exec.Command("ffmpeg", "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
+	glog.Infof("Ffmpeg path: %v", s.ffmpegPath)
+
+	cmd := exec.Command(s.ffmpegPath+"/ffmpeg", "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
 	err = cmd.Start()
 	if err != nil {
 		glog.Errorf("Cannot start ffmpeg command.")

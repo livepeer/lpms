@@ -20,6 +20,7 @@ type LocalStream struct {
 
 type VidListener struct {
 	RtmpServer *joy4rtmp.Server
+	FfmpegPath string
 }
 
 //HandleRTMPPublish immediately turns the RTMP stream into segmented HLS, and writes it into a stream.
@@ -72,7 +73,7 @@ func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs
 	workDir, _ := os.Getwd()
 	workDir = workDir + "/tmp"
 	localRtmpUrl := "rtmp://localhost" + self.RtmpServer.Addr + "/stream/" + rs.GetStreamID()
-	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength)
+	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, self.FfmpegPath)
 	c := make(chan error, 1)
 	go func() { c <- s.RTMPToHLS(ctx, segOptions) }()
 

@@ -25,6 +25,7 @@ type LPMS struct {
 	httpPort    string
 	srsRTMPPort string
 	srsHTTPPort string
+	ffmpegPath  string
 }
 
 type transcodeReq struct {
@@ -36,11 +37,11 @@ type transcodeReq struct {
 }
 
 //New creates a new LPMS server object.  It really just brokers everything to the components.
-func New(rtmpPort string, httpPort string, srsRTMPPort string, srsHTTPPort string) *LPMS {
+func New(rtmpPort string, httpPort string, srsRTMPPort string, srsHTTPPort string, ffmpegPath string) *LPMS {
 	server := &joy4rtmp.Server{Addr: (":" + rtmpPort)}
 	player := &vidplayer.VidPlayer{RtmpServer: server}
-	listener := &vidlistener.VidListener{RtmpServer: server}
-	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, srsRTMPPort: srsRTMPPort, srsHTTPPort: srsHTTPPort, httpPort: httpPort}
+	listener := &vidlistener.VidListener{RtmpServer: server, FfmpegPath: ffmpegPath}
+	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, srsRTMPPort: srsRTMPPort, srsHTTPPort: srsHTTPPort, httpPort: httpPort, ffmpegPath: ffmpegPath}
 }
 
 //Start starts the rtmp and http server

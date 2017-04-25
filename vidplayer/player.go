@@ -8,6 +8,8 @@ import (
 
 	"strings"
 
+	"time"
+
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
@@ -63,13 +65,16 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	}
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
+		glog.Infof("Before waitAndPopPlaylist: %v", time.Now())
 		pl, err := buffer.WaitAndPopPlaylist(ctx)
+		// pl, err := buffer.LatestPlaylist()
+		glog.Infof("After waitAndPopPlaylist: %v", time.Now())
 		if err != nil {
 			glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
 			return
 		}
 
-		//Remove all but the last 2 segments
+		//Remove all but the last 5 segments
 		c := 0
 		for _, seg := range pl.Segments {
 			if seg != nil {
@@ -77,14 +82,17 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 				c = c + 1
 			}
 		}
-		for c > 2 {
+		for c > 5 {
 			pl.Remove()
 			c = c - 1
 		}
+		pl.TargetDuration = 2
 		// glog.Infof("Writing playlist: %v", pl)
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		_, err = w.Write(pl.Encode().Bytes())
+
+		glog.Infof("Done writing playlist.......")
 		if err != nil {
 			glog.Errorf("Error writting HLS playlist %v: %v", r.URL.Path, err)
 			return

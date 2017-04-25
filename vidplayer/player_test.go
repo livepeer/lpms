@@ -60,7 +60,7 @@ func TestRTMP(t *testing.T) {
 
 func TestHLS(t *testing.T) {
 	player := &VidPlayer{}
-	s := stream.NewVideoStream("test")
+	s := stream.NewVideoStream("test", stream.HLS)
 	s.HLSTimeout = time.Second * 5
 	//Write some packets into the stream
 	s.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{})
@@ -150,7 +150,7 @@ func TestHandleHLS(t *testing.T) {
 		}
 	}
 
-	if segLen != 2 {
-		t.Errorf("Expecting 2 segments, got %v", segLen)
+	if segLen != 4 {
+		t.Errorf("Expecting 4 segments, got %v", segLen)
 	}
 }

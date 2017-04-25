@@ -77,6 +77,10 @@ func (b *HLSBuffer) WaitAndPopPlaylist(ctx context.Context) (m3u8.MediaPlaylist,
 	}
 }
 
+func (b *HLSBuffer) LatestPlaylist() (m3u8.MediaPlaylist, error) {
+	return b.plCache, nil
+}
+
 func (b *HLSBuffer) WaitAndPopSegment(ctx context.Context, name string) ([]byte, error) {
 	for {
 		// fmt.Printf("HLSBuffer %v: segment keys: %v.  Current name: %v\n", &b, b.sq.Keys(), name)
