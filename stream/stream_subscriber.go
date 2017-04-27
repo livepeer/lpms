@@ -27,7 +27,7 @@ func NewStreamSubscriber(s Stream) *StreamSubscriber {
 	return &StreamSubscriber{stream: s, rtmpSubscribers: make(map[string]av.Muxer), hlsSubscribers: make(map[string]HLSMuxer)}
 }
 
-func (s *StreamSubscriber) SubscribeRTMP(ctx context.Context, muxID string, mux av.Muxer) error {
+func (s *StreamSubscriber) SubscribeRTMP(muxID string, mux av.Muxer) error {
 	if len(s.hlsSubscribers) != 0 {
 		glog.Errorf("Cannot add RTMP subscriber.  Already have HLS subscribers.")
 		return ErrWrongFormat
