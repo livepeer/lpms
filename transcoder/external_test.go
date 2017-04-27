@@ -50,7 +50,7 @@ func TestStartUpload(t *testing.T) {
 	tr := &ExternalTranscoder{}
 	mux := &PacketsMuxer{}
 	demux := &PacketsDemuxer{c: &Counter{}}
-	stream := stream.NewVideoStream("test")
+	stream := stream.NewVideoStream("test", stream.RTMP)
 	stream.WriteRTMPToStream(context.Background(), demux)
 	ctx := context.Background()
 
@@ -79,7 +79,7 @@ func (d Downloader) Download(pc chan *m3u8.MediaPlaylist, sc chan *stream.HLSSeg
 func TestStartDownload(t *testing.T) {
 	// fmt.Println("Testing Download")
 	d := Downloader{}
-	s := stream.NewVideoStream("test")
+	s := stream.NewVideoStream("test", stream.RTMP)
 	tr := &ExternalTranscoder{downloader: d}
 	err := tr.StartDownload(context.Background(), s)
 

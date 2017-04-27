@@ -50,8 +50,8 @@ func (b *streamBuffer) push(in interface{}) error {
 	return nil
 }
 
-func (b *streamBuffer) poll(wait time.Duration) (interface{}, error) {
-	results, err := b.q.Poll(1, wait)
+func (b *streamBuffer) poll(ctx context.Context, wait time.Duration) (interface{}, error) {
+	results, err := b.q.Poll(ctx, 1, wait)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (s *VideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) 
 
 	//TODO: Make sure to listen to ctx.Done()
 	for {
-		item, err := s.buffer.poll(s.RTMPTimeout)
+		item, err := s.buffer.poll(ctx, s.RTMPTimeout)
 		if err != nil {
 			return err
 		}
@@ -220,26 +220,31 @@ func (s *VideoStream) WriteHLSSegmentToStream(seg HLSSegment) error {
 
 //ReadHLSFromStream reads an HLS stream into an HLSBuffer
 func (s *VideoStream) ReadHLSFromStream(ctx context.Context, mux HLSMuxer) error {
-	for {
-		// glog.Info("HLS Stream Buffer Len: %v\n", s.buffer.len())
-		item, err := s.buffer.poll(s.HLSTimeout)
-		if err != nil {
-			return err
-		}
+	ec := make(chan error, 1)
+	go func() {
+		ec <- func() error {
+			for {
+				// glog.Info("HLS Stream Buffer Len: %v\n", s.buffer.len())
+				item, err := s.buffer.poll(ctx, s.HLSTimeout)
+				if err != nil {
+					return err
+				}
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+				switch item.(type) {
+				case m3u8.MediaPlaylist:
+					mux.WritePlaylist(item.(m3u8.MediaPlaylist))
+				case HLSSegment:
+					mux.WriteSegment(item.(HLSSegment).Name, item.(HLSSegment).Data)
+				default:
+					return ErrBufferItemType
+				}
+			}
+		}()
+	}()
 
-		switch item.(type) {
-		case m3u8.MediaPlaylist:
-			mux.WritePlaylist(item.(m3u8.MediaPlaylist))
-		case HLSSegment:
-			mux.WriteSegment(item.(HLSSegment).Name, item.(HLSSegment).Data)
-		default:
-			return ErrBufferItemType
-		}
+	select {
+	case err := <-ec:
+		glog.Errorf("Got error reading HLS: %v", err)
+		return err
 	}
 }

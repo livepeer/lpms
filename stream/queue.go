@@ -2,6 +2,7 @@
 package stream
 
 import (
+	"context"
 	"errors"
 	"runtime"
 	"sync"
@@ -170,7 +171,7 @@ func (q *Queue) Put(items ...interface{}) error {
 // parameter.  If no items are in the queue, this method will pause
 // until items are added to the queue.
 func (q *Queue) Get(number int64) ([]interface{}, error) {
-	return q.Poll(number, 0)
+	return q.Poll(context.Background(), number, 0)
 }
 
 // Poll retrieves items from the queue.  If there are some items in the queue,
@@ -178,7 +179,7 @@ func (q *Queue) Get(number int64) ([]interface{}, error) {
 // items are in the queue, this method will pause until items are added to the
 // queue or the provided timeout is reached.  A non-positive timeout will block
 // until items are added.  If a timeout occurs, ErrTimeout is returned.
-func (q *Queue) Poll(number int64, timeout time.Duration) ([]interface{}, error) {
+func (q *Queue) Poll(ctx context.Context, number int64, timeout time.Duration) ([]interface{}, error) {
 	if number < 1 {
 		// thanks again go
 		return []interface{}{}, nil
@@ -225,6 +226,8 @@ func (q *Queue) Poll(number int64, timeout time.Duration) ([]interface{}, error)
 				sema.response.Done()
 			}
 			return nil, ErrTimeout
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 

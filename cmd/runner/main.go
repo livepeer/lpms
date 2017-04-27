@@ -25,7 +25,7 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	lpms := lpms.New("1935", "8000", "2435", "7935")
+	lpms := lpms.New("1935", "8000", "2435", "7935", "")
 	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 	bufferDB := &BufferDB{db: make(map[string]*stream.HLSBuffer)}
 

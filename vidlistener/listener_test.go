@@ -19,7 +19,7 @@ func TestListener(t *testing.T) {
 		},
 		func(reqPath string) (stream.Stream, stream.Stream, error) {
 			// return errors.New("Some Error")
-			return stream.NewVideoStream("test"), stream.NewVideoStream("test"), nil
+			return stream.NewVideoStream("test", stream.RTMP), stream.NewVideoStream("test", stream.HLS), nil
 		},
 		func(rtmpStrmID string, hlsStrmID string) {})
 
