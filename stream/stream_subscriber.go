@@ -52,6 +52,13 @@ func (s *StreamSubscriber) UnsubscribeRTMP(muxID string) error {
 	return nil
 }
 
+func (s *StreamSubscriber) HasSubscribers() bool {
+	rs := len(s.rtmpSubscribers)
+	hs := len(s.hlsSubscribers)
+
+	return rs+hs > 0
+}
+
 func (s *StreamSubscriber) StartRTMPWorker(ctx context.Context) error {
 	// glog.Infof("Starting RTMP worker")
 	q := pubsub.NewQueue()
@@ -118,13 +125,15 @@ func (s *StreamSubscriber) UnsubscribeHLS(muxID string) error {
 func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
 	// fmt.Println("Kicking off HLS worker thread")
 	b := NewHLSBuffer()
-	go s.stream.ReadHLSFromStream(ctx, b)
+	readCtx, readCancel := context.WithCancel(context.Background())
+	go s.stream.ReadHLSFromStream(readCtx, b)
 
 	segments := map[string]bool{}
 
 	for {
 		// glog.Infof("Waiting for pl")
-		pl, err := b.WaitAndPopPlaylist(ctx)
+		popPlCtx, _ := context.WithCancel(context.Background())
+		pl, err := b.WaitAndPopPlaylist(popPlCtx)
 		if err != nil {
 			glog.Errorf("Error loading playlist: %v", err)
 			return err
@@ -149,7 +158,8 @@ func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
 			if segments[segName] {
 				continue
 			}
-			seg, err := b.WaitAndPopSegment(ctx, segName)
+			popSegCtx, _ := context.WithCancel(context.Background())
+			seg, err := b.WaitAndPopSegment(popSegCtx, segName)
 			if err != nil {
 				glog.Errorf("Error loading seg: %v", err)
 			}
@@ -163,6 +173,8 @@ func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
+			readCancel()
+			glog.Errorf("Canceling HLS Worker.")
 			return ctx.Err()
 		default:
 		}

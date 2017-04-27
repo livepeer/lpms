@@ -189,15 +189,6 @@ func TestWriteHLS(t *testing.T) {
 	}
 }
 
-// struct TestHLSBuffer struct{}
-// func (b *TestHLSBuffer) WritePlaylist(m3u8.MediaPlaylist) error {
-
-// }
-
-// func (b *TestHLSBuffer) WriteSegment(name string, s []byte) error {
-
-// }
-
 func TestReadHLS(t *testing.T) {
 	stream := NewVideoStream("test", HLS)
 	stream.HLSTimeout = time.Millisecond * 100
@@ -218,6 +209,36 @@ func TestReadHLS(t *testing.T) {
 
 	if buffer.plCache.SeqNo != 100 {
 		t.Error("Should have inserted a playlist with SeqNo of 100")
+	}
+
+	time.Sleep(time.Millisecond * 100)
+	grAfter := runtime.NumGoroutine()
+	if grBefore != grAfter {
+		t.Errorf("Should have %v Go routines, but have %v", grBefore, grAfter)
+	}
+}
+
+func TestReadHLSCancel(t *testing.T) {
+	stream := NewVideoStream("test", HLS)
+	stream.HLSTimeout = time.Millisecond * 100
+	buffer := NewHLSBuffer()
+	grBefore := runtime.NumGoroutine()
+	stream.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{SeqNo: 100})
+	for i := 0; i < 9; i++ {
+		stream.WriteHLSSegmentToStream(HLSSegment{Name: "test" + string(i), Data: []byte{0}})
+	}
+
+	ec := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { ec <- stream.ReadHLSFromStream(ctx, buffer) }()
+
+	// time.Sleep(time.Millisecond * 100)
+	cancel()
+
+	err := <-ec
+
+	if err != context.Canceled {
+		t.Errorf("Expecting canceled, got %v", err)
 	}
 
 	time.Sleep(time.Millisecond * 100)
