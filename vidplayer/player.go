@@ -21,6 +21,8 @@ type VidPlayer struct {
 	RtmpServer *joy4rtmp.Server
 }
 
+const hlsPlayerSegments = 5
+
 //HandleRTMPPlay is the handler when there is a RTMP request for a video. The source should write
 //into the MuxCloser. The easiest way is through avutil.Copy.
 func (s *VidPlayer) HandleRTMPPlay(getStream func(ctx context.Context, reqPath string, dst av.MuxCloser) error) error {
@@ -82,7 +84,7 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 				c = c + 1
 			}
 		}
-		for c > 5 {
+		for c > hlsPlayerSegments {
 			pl.Remove()
 			c = c - 1
 		}

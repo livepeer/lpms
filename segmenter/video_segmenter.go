@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"path"
+
 	"github.com/golang/glog"
 	"github.com/kz26/m3u8"
 	"github.com/livepeer/lpms/stream"
@@ -86,11 +88,11 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	glog.Infof("Ffmpeg path: %v", s.ffmpegPath)
 
 	var cmd *exec.Cmd
-	if s.ffmpegPath == "" {
-		cmd = exec.Command("ffmpeg", "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
-	} else {
-		cmd = exec.Command(s.ffmpegPath+"/ffmpeg", "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
-	}
+	// if s.ffmpegPath == "" {
+	// 	cmd = exec.Command("ffmpeg", "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
+	// } else {
+	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
+	// }
 
 	err = cmd.Start()
 	if err != nil {
