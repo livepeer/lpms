@@ -256,6 +256,11 @@ func (s *SegmentStream) ReadHLSFromStream(ctx context.Context, buffer stream.HLS
 	return nil
 }
 
+func (s *SegmentStream) ReadHLSSegment() (stream.HLSSegment, error) {
+	glog.Info("Read HLS Segment")
+	return stream.HLSSegment{}, nil
+}
+
 func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()

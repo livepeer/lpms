@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -86,6 +87,7 @@ type Stream interface {
 	WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error
 	WriteHLSSegmentToStream(seg HLSSegment) error
 	ReadHLSFromStream(ctx context.Context, buffer HLSMuxer) error
+	ReadHLSSegment() (HLSSegment, error)
 }
 
 type VideoStream struct {
@@ -247,4 +249,102 @@ func (s *VideoStream) ReadHLSFromStream(ctx context.Context, mux HLSMuxer) error
 		glog.Errorf("Got error reading HLS: %v", err)
 		return err
 	}
+}
+
+func (s *VideoStream) ReadHLSSegment() (HLSSegment, error) {
+	var firstPl m3u8.MediaPlaylist
+	for {
+		item, err := s.buffer.poll(context.Background(), s.HLSTimeout)
+		if err != nil {
+			return HLSSegment{}, err
+		}
+
+		switch item.(type) {
+		case m3u8.MediaPlaylist:
+			//Keep track of the playlist and re-insert it. If we see it again, it means we are done reading HLS segments.
+			//Note this only works in a synchronous case.  Other threads can insert segments when we are reading.
+			// glog.Info("Got playlist")
+			s.buffer.push(item)
+			pl := item.(m3u8.MediaPlaylist)
+			if len(firstPl.Segments) == 0 && firstPl.SeqNo == 0 && firstPl.TargetDuration == 0 {
+				firstPl = pl
+			} else {
+				if samePlaylist(firstPl, pl) {
+					return HLSSegment{}, ErrBufferEmpty
+				}
+			}
+		case HLSSegment:
+			return item.(HLSSegment), nil
+		default:
+		}
+	}
+}
+
+func (s *VideoStream) ReadHLSPlaylist() (m3u8.MediaPlaylist, error) {
+	var firstSeg HLSSegment
+	for {
+		item, err := s.buffer.poll(context.Background(), s.HLSTimeout)
+		if err != nil {
+			return m3u8.MediaPlaylist{}, err
+		}
+
+		switch item.(type) {
+		case m3u8.MediaPlaylist:
+			return item.(m3u8.MediaPlaylist), nil
+			//Keep track of the segment and re-insert it. If we see it again, it means we are done reading playlists.
+			//Note this only works in a synchronous case.  Other threads can insert segments when we are reading.
+		case HLSSegment:
+			s.buffer.push(item)
+			seg := item.(HLSSegment)
+			if firstSeg.Name == "" {
+				firstSeg = seg
+			} else {
+				if firstSeg.Name == seg.Name {
+					return m3u8.MediaPlaylist{}, ErrNotFound
+				}
+			}
+		default:
+		}
+	}
+}
+
+//Compare playlists by segments
+func samePlaylist(p1, p2 m3u8.MediaPlaylist) bool {
+	return bytes.Compare(p1.Encode().Bytes(), p2.Encode().Bytes()) == 0
+	//TODO: Remove all the nils from s1 and s2
+	// s1 := p1.Segments
+	// s2 := p2.Segments
+
+	// if p1.SeqNo != p2.SeqNo || len(s1) != len(s2) || p1.Iframe != p2.Iframe || p1.Key != p2.Key || p1.MediaType != p2.MediaType {
+	// 	return false
+	// }
+
+	// //This is not the correct way to sort, but all we want is consistency here.
+	// sort.Slice(s1, func(i, j int) bool {
+	// 	if s1[i] == nil || s1[j] == nil {
+	// 		return false
+	// 	}
+	// 	return s1[i].URI < s1[j].URI
+	// })
+
+	// sort.Slice(s2, func(i, j int) bool {
+	// 	if s2[i] == nil || s2[j] == nil {
+	// 		return false
+	// 	}
+	// 	return s2[i].URI < s2[j].URI
+	// })
+
+	// glog.Infof("s1: %v", s1)
+	// glog.Infof("s2: %v", s2)
+	// for i := 0; i < len(s1); i++ {
+	// 	if (s1[i] == nil && s2[i] != nil) || (s1[i] != nil && s2[i] == nil) {
+	// 		return false
+	// 	}
+
+	// 	if s1[i].URI != s2[i].URI {
+	// 		return false
+	// 	}
+	// }
+
+	// return true
 }

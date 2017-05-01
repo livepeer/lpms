@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
+	"time"
 
 	"sync"
 
@@ -14,6 +16,7 @@ import (
 
 var ErrWrongFormat = errors.New("WrongVideoFormat")
 var ErrStreamSubscriber = errors.New("StreamSubscriberError")
+var HLSWorkerSleepTime = time.Millisecond * 500
 
 type StreamSubscriber struct {
 	stream          Stream
@@ -109,6 +112,11 @@ func (s *StreamSubscriber) SubscribeHLS(muxID string, mux HLSMuxer) error {
 	}
 
 	// fmt.Println("adding mux to subscribers")
+	if s.hlsSubscribers[muxID] != nil {
+		glog.Errorf("Subscription already exists for %v: %v", muxID, reflect.TypeOf(s.hlsSubscribers))
+		return ErrStreamSubscriber
+	}
+
 	s.hlsSubscribers[muxID] = mux
 	return nil
 }
@@ -122,58 +130,30 @@ func (s *StreamSubscriber) UnsubscribeHLS(muxID string) error {
 	return nil
 }
 
-func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
-	// fmt.Println("Kicking off HLS worker thread")
-	b := NewHLSBuffer()
-	readCtx, readCancel := context.WithCancel(context.Background())
-	go s.stream.ReadHLSFromStream(readCtx, b)
-
-	segments := map[string]bool{}
-
+func (s *StreamSubscriber) StartHLSWorker(ctx context.Context, segWaitTime time.Duration) error {
+	lastSegTimer := time.Now()
 	for {
-		// glog.Infof("Waiting for pl")
-		popPlCtx, _ := context.WithCancel(context.Background())
-		pl, err := b.WaitAndPopPlaylist(popPlCtx)
+		seg, err := s.stream.ReadHLSSegment()
 		if err != nil {
-			glog.Errorf("Error loading playlist: %v", err)
-			return err
-		}
-
-		// glog.Infof("# subscribers: %v\n", len(s.hlsSubscribers))
-		for _, hlsmux := range s.hlsSubscribers {
-			err = hlsmux.WritePlaylist(pl)
-			if err != nil {
-				glog.Errorf("Error writing playlist to mux: %v", err)
+			if err == ErrBufferEmpty && lastSegTimer.Add(segWaitTime).After(time.Now()) {
+				//Read failed because we have exhausted the list.  Wait and try again.
+				time.Sleep(HLSWorkerSleepTime)
+				continue
+			} else {
+				glog.Errorf("Error reading segment in HLS subscribe worker: %v", err)
 				return err
 			}
 		}
 
-		for _, segInfo := range pl.Segments {
-			// fmt.Printf("i: %v, segInfo: %v ", strconv.Itoa(i), segInfo)
-			if segInfo == nil {
-				// glog.Errorf("Error loading segment info from playlist: %v", segInfo)
-				continue
-			}
-			segName := segInfo.URI
-			if segments[segName] {
-				continue
-			}
-			popSegCtx, _ := context.WithCancel(context.Background())
-			seg, err := b.WaitAndPopSegment(popSegCtx, segName)
-			if err != nil {
-				glog.Errorf("Error loading seg: %v", err)
-			}
-			segments[segName] = true
+		lastSegTimer = time.Now()
 
-			// fmt.Printf("StreamSubscriber: Sending %v to %v subscribers\n", segName, len(s.hlsSubscribers))
-			for _, hlsmux := range s.hlsSubscribers {
-				hlsmux.WriteSegment(segName, seg)
-			}
+		for _, hlsmux := range s.hlsSubscribers {
+			// glog.Infof("Writing segment %v to muxes", strings.Split(seg.Name, "_")[1])
+			hlsmux.WriteSegment(seg.Name, seg.Data)
 		}
 
 		select {
 		case <-ctx.Done():
-			readCancel()
 			glog.Errorf("Canceling HLS Worker.")
 			return ctx.Err()
 		default:

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms"
@@ -86,10 +87,10 @@ func main() {
 
 			if buffer == nil {
 				//Create the buffer and start copying the stream into the buffer
-				buffer = stream.NewHLSBuffer()
+				buffer = stream.NewHLSBuffer(100)
 				bufferDB.db[streamID] = buffer
 				sub := stream.NewStreamSubscriber(s)
-				go sub.StartHLSWorker(context.Background())
+				go sub.StartHLSWorker(context.Background(), time.Second*1)
 				err := sub.SubscribeHLS(streamID, buffer)
 				if err != nil {
 					return nil, stream.ErrStreamSubscriber
