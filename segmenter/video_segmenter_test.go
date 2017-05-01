@@ -56,23 +56,32 @@ func TestSegmenter(t *testing.T) {
 	workDir := wd + "/tmp"
 	os.RemoveAll(workDir)
 
+	//Create a test stream from stub
 	strm := &TestStream{}
 	url := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", strm.GetStreamID())
 	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), url, time.Millisecond*10, "")
-	// server := New("1935", "", "", "")
 	server := &rtmp.Server{Addr: ":1935"}
 	player := vidplayer.VidPlayer{RtmpServer: server}
+
 	player.HandleRTMPPlay(
 		func(ctx context.Context, reqPath string, dst av.MuxCloser) error {
 			return strm.ReadRTMPFromStream(ctx, dst)
 		})
-	go player.RtmpServer.ListenAndServe()
+
+	//Kick off RTMP server
+	go func() {
+		err := player.RtmpServer.ListenAndServe()
+		if err != nil {
+			t.Errorf("Error kicking off RTMP server: %v", err)
+		}
+	}()
 
 	se := make(chan error, 1)
 	opt := SegmenterOptions{}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
 
+	//Kick off FFMpeg to create segments
 	go func() { se <- func() error { return vs.RTMPToHLS(ctx, opt) }() }()
 	select {
 	case err := <-se:

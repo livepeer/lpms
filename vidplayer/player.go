@@ -8,8 +8,6 @@ import (
 
 	"strings"
 
-	"time"
-
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
@@ -20,8 +18,6 @@ import (
 type VidPlayer struct {
 	RtmpServer *joy4rtmp.Server
 }
-
-const hlsPlayerSegments = 5
 
 //HandleRTMPPlay is the handler when there is a RTMP request for a video. The source should write
 //into the MuxCloser. The easiest way is through avutil.Copy.
@@ -67,34 +63,43 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	}
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
-		glog.Infof("Before waitAndPopPlaylist: %v", time.Now())
-		pl, err := buffer.WaitAndPopPlaylist(ctx)
+		pl, err := buffer.GeneratePlaylist()
+		// pl, err := buffer.WaitAndPopPlaylist(ctx)
 		// pl, err := buffer.LatestPlaylist()
-		glog.Infof("After waitAndPopPlaylist: %v", time.Now())
 		if err != nil {
 			glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
 			return
 		}
 
-		//Remove all but the last 5 segments
-		c := 0
+		//Remove all but the last 5 segments.
+		c := uint(0)
 		for _, seg := range pl.Segments {
 			if seg != nil {
 				// segs = append(segs, seg)
 				c = c + 1
 			}
 		}
-		for c > hlsPlayerSegments {
+		for c > buffer.Capacity {
 			pl.Remove()
 			c = c - 1
 		}
 		pl.TargetDuration = 2
-		// glog.Infof("Writing playlist: %v", pl)
+
+		// segs := ""
+		// for _, s := range pl.Segments {
+		// 	segs = segs + ", " + strings.Split(s.URI, "_")[1]
+		// }
+		// glog.Infof("Writing playlist seg: %v", segs)
+
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		_, err = w.Write(pl.Encode().Bytes())
 
-		glog.Infof("Done writing playlist.......")
+		_, err = w.Write(pl.Encode().Bytes())
+		if err != nil {
+			glog.Errorf("Error writing playlist to ResponseWriter: %v", err)
+			return
+		}
+
 		if err != nil {
 			glog.Errorf("Error writting HLS playlist %v: %v", r.URL.Path, err)
 			return
@@ -105,7 +110,8 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	if strings.HasSuffix(r.URL.Path, ".ts") {
 		pathArr := strings.Split(r.URL.Path, "/")
 		segName := pathArr[len(pathArr)-1]
-		seg, err := buffer.WaitAndPopSegment(ctx, segName)
+		// seg, err := buffer.WaitAndPopSegment(ctx, segName)
+		seg, err := buffer.WaitAndGetSegment(ctx, segName)
 		if err != nil {
 			glog.Errorf("Error getting HLS segment %v: %v", segName, err)
 			return

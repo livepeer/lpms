@@ -58,3 +58,8 @@ func (s *FileStream) WriteHLSSegmentToStream(seg HLSSegment) error {
 func (s *FileStream) ReadHLSFromStream(ctx context.Context, buffer HLSMuxer) error {
 	return nil
 }
+
+func (s *FileStream) ReadHLSSegment() (HLSSegment, error) {
+	glog.Info("Read HLS Segment")
+	return HLSSegment{}, nil
+}

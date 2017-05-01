@@ -86,7 +86,7 @@ func main() {
 
 			if buffer == nil {
 				//Create the buffer and start copying the stream into the buffer
-				buffer = stream.NewHLSBuffer()
+				buffer = stream.NewHLSBuffer(100)
 				bufferDB.db[streamID] = buffer
 				sub := stream.NewStreamSubscriber(s)
 				go sub.StartHLSWorker(context.Background())
