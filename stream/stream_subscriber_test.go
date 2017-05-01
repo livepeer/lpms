@@ -45,7 +45,7 @@ func TestHLSSubscribe(t *testing.T) {
 	sub.SubscribeHLS("m2", m2)
 
 	ec := make(chan error, 1)
-	go func() { ec <- sub.StartHLSWorker(ctx) }()
+	go func() { ec <- sub.StartHLSWorker(ctx, time.Second*5) }()
 
 	pl, _ := m3u8.NewMediaPlaylist(1, 1)
 	pl.Segments[0] = &m3u8.MediaSegment{URI: "seg1"}

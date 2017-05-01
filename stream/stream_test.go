@@ -249,8 +249,8 @@ func TestReadHLSSync(t *testing.T) {
 	}
 
 	_, err := stream.ReadHLSSegment()
-	if err != ErrNotFound {
-		t.Errorf("Expeting ErrNotFound, got %v", err)
+	if err != ErrBufferEmpty {
+		t.Errorf("Expeting ErrBufferEmpty, got %v", err)
 	}
 
 	if stream.buffer.len() == 0 {

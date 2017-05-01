@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"time"
 
 	"sync"
 
@@ -15,6 +16,7 @@ import (
 
 var ErrWrongFormat = errors.New("WrongVideoFormat")
 var ErrStreamSubscriber = errors.New("StreamSubscriberError")
+var HLSWorkerSleepTime = time.Millisecond * 500
 
 type StreamSubscriber struct {
 	stream          Stream
@@ -128,13 +130,22 @@ func (s *StreamSubscriber) UnsubscribeHLS(muxID string) error {
 	return nil
 }
 
-func (s *StreamSubscriber) StartHLSWorker(ctx context.Context) error {
+func (s *StreamSubscriber) StartHLSWorker(ctx context.Context, segWaitTime time.Duration) error {
+	lastSegTimer := time.Now()
 	for {
 		seg, err := s.stream.ReadHLSSegment()
 		if err != nil {
-			glog.Errorf("Error reading segment in HLS subscribe worker")
-			return err
+			if err == ErrBufferEmpty && lastSegTimer.Add(segWaitTime).After(time.Now()) {
+				//Read failed because we have exhausted the list.  Wait and try again.
+				time.Sleep(HLSWorkerSleepTime)
+				continue
+			} else {
+				glog.Errorf("Error reading segment in HLS subscribe worker: %v", err)
+				return err
+			}
 		}
+
+		lastSegTimer = time.Now()
 
 		for _, hlsmux := range s.hlsSubscribers {
 			// glog.Infof("Writing segment %v to muxes", strings.Split(seg.Name, "_")[1])

@@ -1,12 +1,12 @@
 package stream
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"reflect"
 	"runtime/debug"
-	"sort"
 
 	"time"
 
@@ -270,7 +270,7 @@ func (s *VideoStream) ReadHLSSegment() (HLSSegment, error) {
 				firstPl = pl
 			} else {
 				if samePlaylist(firstPl, pl) {
-					return HLSSegment{}, ErrNotFound
+					return HLSSegment{}, ErrBufferEmpty
 				}
 			}
 		case HLSSegment:
@@ -310,26 +310,41 @@ func (s *VideoStream) ReadHLSPlaylist() (m3u8.MediaPlaylist, error) {
 
 //Compare playlists by segments
 func samePlaylist(p1, p2 m3u8.MediaPlaylist) bool {
-	s1 := p1.Segments
-	s2 := p2.Segments
-	if len(s1) != len(s2) {
-		return false
-	}
+	return bytes.Compare(p1.Encode().Bytes(), p2.Encode().Bytes()) == 0
+	//TODO: Remove all the nils from s1 and s2
+	// s1 := p1.Segments
+	// s2 := p2.Segments
 
-	//This is not the correct way to sort, but all we want is consistency here.
-	sort.Slice(s1, func(i, j int) bool {
-		return s1[i].URI < s1[j].URI
-	})
+	// if p1.SeqNo != p2.SeqNo || len(s1) != len(s2) || p1.Iframe != p2.Iframe || p1.Key != p2.Key || p1.MediaType != p2.MediaType {
+	// 	return false
+	// }
 
-	sort.Slice(s2, func(i, j int) bool {
-		return s2[i].URI < s2[j].URI
-	})
+	// //This is not the correct way to sort, but all we want is consistency here.
+	// sort.Slice(s1, func(i, j int) bool {
+	// 	if s1[i] == nil || s1[j] == nil {
+	// 		return false
+	// 	}
+	// 	return s1[i].URI < s1[j].URI
+	// })
 
-	for i := 0; i < len(s1); i++ {
-		if s1[i].URI != s2[i].URI {
-			return false
-		}
-	}
+	// sort.Slice(s2, func(i, j int) bool {
+	// 	if s2[i] == nil || s2[j] == nil {
+	// 		return false
+	// 	}
+	// 	return s2[i].URI < s2[j].URI
+	// })
 
-	return true
+	// glog.Infof("s1: %v", s1)
+	// glog.Infof("s2: %v", s2)
+	// for i := 0; i < len(s1); i++ {
+	// 	if (s1[i] == nil && s2[i] != nil) || (s1[i] != nil && s2[i] == nil) {
+	// 		return false
+	// 	}
+
+	// 	if s1[i].URI != s2[i].URI {
+	// 		return false
+	// 	}
+	// }
+
+	// return true
 }
