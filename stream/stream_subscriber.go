@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"time"
@@ -159,4 +160,28 @@ func (s *StreamSubscriber) StartHLSWorker(ctx context.Context, segWaitTime time.
 		default:
 		}
 	}
+}
+
+func (s *StreamSubscriber) GetHLSMuxer(subID string) HLSMuxer {
+	return s.hlsSubscribers[subID]
+}
+
+func (s *StreamSubscriber) GetRTMPBuffer(subID string) av.Muxer {
+	return s.rtmpSubscribers[subID]
+}
+
+func (s *StreamSubscriber) HLSSubscribers() []string {
+	var res []string
+	for sub, v := range s.hlsSubscribers {
+		res = append(res, fmt.Sprintf("%v: %v", reflect.TypeOf(v), sub))
+	}
+	return res
+}
+
+func (s *StreamSubscriber) RTMPSubscribers() []string {
+	var res []string
+	for sub, v := range s.rtmpSubscribers {
+		res = append(res, fmt.Sprintf("%v: %v", reflect.TypeOf(v), sub))
+	}
+	return res
 }
