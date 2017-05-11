@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/kz26/m3u8"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
