@@ -150,7 +150,7 @@ func (s *StreamSubscriber) StartHLSWorker(ctx context.Context, segWaitTime time.
 
 		for _, hlsmux := range s.hlsSubscribers {
 			// glog.Infof("Writing segment %v to muxes", strings.Split(seg.Name, "_")[1])
-			hlsmux.WriteSegment(seg.Name, seg.Data)
+			hlsmux.WriteSegment(seg.SeqNo, seg.Name, seg.Duration, seg.Data)
 		}
 
 		select {

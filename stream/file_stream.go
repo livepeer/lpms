@@ -4,8 +4,8 @@ import (
 	"context"
 	"io/ioutil"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/kz26/m3u8"
 	"github.com/nareix/joy4/av"
 )
 

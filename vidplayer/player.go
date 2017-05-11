@@ -63,7 +63,7 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	}
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
-		pl, err := buffer.GeneratePlaylist()
+		pl, err := buffer.LatestPlaylist()
 		// pl, err := buffer.WaitAndPopPlaylist(ctx)
 		// pl, err := buffer.LatestPlaylist()
 		if err != nil {

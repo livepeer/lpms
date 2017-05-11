@@ -10,7 +10,7 @@ import (
 
 	"time"
 
-	"github.com/kz26/m3u8"
+	"github.com/ericxtang/m3u8"
 	"github.com/nareix/joy4/av"
 )
 
@@ -193,11 +193,10 @@ func TestWriteHLS(t *testing.T) {
 func TestReadHLSAsync(t *testing.T) {
 	stream := NewVideoStream("test", HLS)
 	stream.HLSTimeout = time.Millisecond * 100
-	buffer := NewHLSBuffer(10)
+	buffer := NewHLSBuffer(10, 10)
 	grBefore := runtime.NumGoroutine()
-	stream.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{SeqNo: 100})
 	for i := 0; i < 9; i++ {
-		stream.WriteHLSSegmentToStream(HLSSegment{Name: "test" + string(i), Data: []byte{0}})
+		stream.WriteHLSSegmentToStream(HLSSegment{SeqNo: uint64(i + 10), Name: "test" + string(i), Data: []byte{0}})
 	}
 
 	ec := make(chan error, 1)
@@ -205,11 +204,11 @@ func TestReadHLSAsync(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 100)
 	if buffer.sq.Count() != 9 {
-		t.Error("Should have 9 packets in the buffer, but got:", buffer.sq.Count())
+		t.Errorf("Should have 9 packets in the buffer, but got: %v", buffer.sq.Count())
 	}
 
-	if buffer.plCache.SeqNo != 100 {
-		t.Error("Should have inserted a playlist with SeqNo of 100")
+	if buffer.plCache.SeqNo != 10 { //From the first HLSSegment
+		t.Errorf("Should have gotten SeqNo 10, but got %v", buffer.plCache.SeqNo)
 	}
 
 	time.Sleep(time.Millisecond * 100)
@@ -278,11 +277,11 @@ func TestReadHLSSync(t *testing.T) {
 func TestReadHLSCancel(t *testing.T) {
 	stream := NewVideoStream("test", HLS)
 	stream.HLSTimeout = time.Millisecond * 100
-	buffer := NewHLSBuffer(10)
+	buffer := NewHLSBuffer(5, 1000)
 	grBefore := runtime.NumGoroutine()
-	stream.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{SeqNo: 100})
+
 	for i := 0; i < 9; i++ {
-		stream.WriteHLSSegmentToStream(HLSSegment{Name: "test" + string(i), Data: []byte{0}})
+		stream.WriteHLSSegmentToStream(HLSSegment{SeqNo: uint64(i), Name: "test" + string(i), Data: []byte{0}})
 	}
 
 	ec := make(chan error, 1)
@@ -305,6 +304,7 @@ func TestReadHLSCancel(t *testing.T) {
 	}
 }
 
+//////////////////////////////////////////////////////////////////////
 // type GoodHLSDemux struct{}
 
 // func (d GoodHLSDemux) WaitAndPopPlaylist(ctx context.Context) (m3u8.MediaPlaylist, error) {

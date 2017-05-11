@@ -11,7 +11,7 @@ import (
 
 	"net/url"
 
-	"github.com/kz26/m3u8"
+	"github.com/ericxtang/m3u8"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/av/avutil"
@@ -69,7 +69,7 @@ func TestHLS(t *testing.T) {
 	player.HandleHLSPlay(func(reqPath string) (*stream.HLSBuffer, error) {
 		//if can't find local cache, start downloading, and store in cache.
 		if buffer == nil {
-			buffer := stream.NewHLSBuffer(100)
+			buffer := stream.NewHLSBuffer(10, 100)
 			ec := make(chan error, 1)
 			go func() { ec <- s.ReadHLSFromStream(context.Background(), buffer) }()
 			// select {
@@ -125,7 +125,7 @@ func (t *TestRWriter) Write(b []byte) (int, error) {
 func (*TestRWriter) WriteHeader(int) {}
 
 func TestHandleHLS(t *testing.T) {
-	testBuf := stream.NewHLSBuffer(100)
+	testBuf := stream.NewHLSBuffer(10, 100)
 	req := &http.Request{URL: &url.URL{Path: "test.m3u8"}}
 	rw := &TestRWriter{header: make(map[string][]string)}
 
@@ -136,11 +136,11 @@ func TestHandleHLS(t *testing.T) {
 	pl.Append("url_4.ts", 2, "")
 	pl.SeqNo = 1
 
-	testBuf.WritePlaylist(*pl)
-	testBuf.WriteSegment("url_1.ts", []byte{0, 0})
-	testBuf.WriteSegment("url_2.ts", []byte{0, 0})
-	testBuf.WriteSegment("url_3.ts", []byte{0, 0})
-	testBuf.WriteSegment("url_4.ts", []byte{0, 0})
+	// testBuf.WritePlaylist(*pl)
+	testBuf.WriteSegment(1, "url_1.ts", 2, []byte{0, 0})
+	testBuf.WriteSegment(2, "url_2.ts", 2, []byte{0, 0})
+	testBuf.WriteSegment(3, "url_3.ts", 2, []byte{0, 0})
+	testBuf.WriteSegment(4, "url_4.ts", 2, []byte{0, 0})
 
 	handleHLS(rw, req, func(reqPath string) (*stream.HLSBuffer, error) {
 		return testBuf, nil

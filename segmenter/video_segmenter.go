@@ -13,14 +13,16 @@ import (
 
 	"path"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/kz26/m3u8"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/format/rtmp"
 )
 
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")
+var PlaylistRetryCount = 5
+var PlaylistRetryWait = 500 * time.Millisecond
 
 type SegmenterOptions struct {
 	EnforceKeyframe bool //Enforce each segment starts with a keyframe
@@ -33,6 +35,7 @@ type VideoSegment struct {
 	Length time.Duration
 	Data   []byte
 	Name   string
+	SeqNo  uint64
 }
 
 type VideoPlaylist struct {
@@ -80,7 +83,6 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	rtmpMux.Close()
 
 	//Invoke the FFMpeg command
-	//fmt.Println("ffmpeg", "-i", fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", "test"), "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", "./tmp/stream.m3u8", "./tmp/stream_%d.ts")
 	plfn := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
 	tsfn := s.WorkDir + "/" + s.StrmID + "_%d.ts"
 
@@ -88,11 +90,8 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	glog.Infof("Ffmpeg path: %v", s.ffmpegPath)
 
 	var cmd *exec.Cmd
-	// if s.ffmpegPath == "" {
-	// 	cmd = exec.Command("ffmpeg", "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
-	// } else {
+
 	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-muxdelay", "0", "-segment_list", plfn, tsfn)
-	// }
 
 	err = cmd.Start()
 	if err != nil {
@@ -126,15 +125,32 @@ func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, 
 	}
 
 	name := s.StrmID + "_" + strconv.Itoa(s.curSegment) + ".ts"
-	if s.curPlaylist != nil && s.curPlaylist.Segments[s.curSegment] != nil {
-		//This is ridiculous - but it's how we can round floats in Go
-		sec, _ := strconv.Atoi(fmt.Sprintf("%.0f", s.curPlaylist.Segments[s.curSegment].Duration))
-		length = time.Duration(sec) * 1000 * time.Millisecond
+	plfn := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
+
+	for i := 0; i < PlaylistRetryCount; i++ {
+		pl, _ := m3u8.NewMediaPlaylist(uint(s.curSegment+1), uint(s.curSegment+1))
+		pl.DecodeFrom(bytes.NewReader(readPlaylist(plfn)), true)
+		for _, plSeg := range pl.Segments {
+			if plSeg.URI == name {
+				length, err = time.ParseDuration(fmt.Sprintf("%vs", plSeg.Duration))
+				break
+			}
+		}
+		if length != 0 {
+			break
+		}
+		if i < PlaylistRetryCount {
+			glog.Infof("Waiting to load duration from playlist")
+			time.Sleep(PlaylistRetryWait)
+			continue
+		} else {
+			length, err = time.ParseDuration(fmt.Sprintf("%vs", pl.TargetDuration))
+		}
 	}
 
 	s.curSegment = s.curSegment + 1
 	// glog.Infof("Segment: %v, len:%v", name, len(seg))
-	return &VideoSegment{Codec: av.H264, Format: stream.HLS, Length: length, Data: seg, Name: name}, err
+	return &VideoSegment{Codec: av.H264, Format: stream.HLS, Length: length, Data: seg, Name: name, SeqNo: uint64(s.curSegment - 1)}, err
 }
 
 //PollPlaylist monitors the filesystem and returns a new playlist as it becomes available
@@ -160,6 +176,18 @@ func (s *FFMpegVideoSegmenter) PollPlaylist(ctx context.Context) (*VideoPlaylist
 
 	s.curPlaylist = p
 	return &VideoPlaylist{Format: stream.HLS, Data: p}, err
+}
+
+func readPlaylist(fn string) []byte {
+	if _, err := os.Stat(fn); err == nil {
+		content, err := ioutil.ReadFile(fn)
+		if err != nil {
+			return nil
+		}
+		return content
+	}
+
+	return nil
 }
 
 func (s *FFMpegVideoSegmenter) pollPlaylist(ctx context.Context, fn string, sleepTime time.Duration, lastFile []byte) (f []byte, err error) {

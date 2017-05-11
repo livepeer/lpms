@@ -10,8 +10,8 @@ import (
 
 	"time"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/kz26/m3u8"
 	"github.com/nareix/joy4/av"
 )
 
@@ -73,9 +73,12 @@ func (b *streamBuffer) len() int64 {
 	return b.q.Len()
 }
 
+//We couldn't just use the m3u8 definition
 type HLSSegment struct {
-	Name string
-	Data []byte
+	SeqNo    uint64
+	Name     string
+	Data     []byte
+	Duration float64
 }
 
 type Stream interface {
@@ -234,9 +237,10 @@ func (s *VideoStream) ReadHLSFromStream(ctx context.Context, mux HLSMuxer) error
 
 				switch item.(type) {
 				case m3u8.MediaPlaylist:
-					mux.WritePlaylist(item.(m3u8.MediaPlaylist))
+					//Do nothing for now - we are generating playlist from segments
+					// mux.WritePlaylist(item.(m3u8.MediaPlaylist))
 				case HLSSegment:
-					mux.WriteSegment(item.(HLSSegment).Name, item.(HLSSegment).Data)
+					mux.WriteSegment(item.(HLSSegment).SeqNo, item.(HLSSegment).Name, item.(HLSSegment).Duration, item.(HLSSegment).Data)
 				default:
 					return ErrBufferItemType
 				}

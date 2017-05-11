@@ -13,7 +13,7 @@ import (
 
 	"io/ioutil"
 
-	"github.com/kz26/m3u8"
+	"github.com/ericxtang/m3u8"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
 	"github.com/nareix/joy4/av"
@@ -135,6 +135,10 @@ func TestSegmenter(t *testing.T) {
 		fn := "test_" + strconv.Itoa(i) + ".ts"
 		if seg.Name != fn {
 			t.Errorf("Expecting %v, got %v", fn, seg.Name)
+		}
+
+		if seg.SeqNo != uint64(i) {
+			t.Errorf("Expecting SeqNo %v, got %v", uint(i), seg.SeqNo)
 		}
 
 		segLen := len(seg.Data)

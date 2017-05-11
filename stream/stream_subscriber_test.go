@@ -8,7 +8,7 @@ import (
 
 	"time"
 
-	"github.com/kz26/m3u8"
+	"github.com/ericxtang/m3u8"
 	"github.com/nareix/joy4/av"
 )
 
@@ -23,7 +23,7 @@ func (t *TestHLSMux) WritePlaylist(pl m3u8.MediaPlaylist) error {
 	return nil
 }
 
-func (t *TestHLSMux) WriteSegment(name string, s []byte) error {
+func (t *TestHLSMux) WriteSegment(segNum uint64, name string, duration float64, s []byte) error {
 	// fmt.Println("Writing seg")
 	t.segs = append(t.segs, name)
 	return nil

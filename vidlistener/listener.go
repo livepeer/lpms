@@ -103,8 +103,8 @@ func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs
 				if err != nil {
 					return err
 				}
-				ss := stream.HLSSegment{Data: seg.Data, Name: seg.Name}
-				// glog.Infof("Writing stream: %v, len:%v", ss.Name, len(seg.Data))
+				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
+				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
 				hs.WriteHLSSegmentToStream(ss)
 				select {
 				case <-ctx.Done():
