@@ -17,6 +17,8 @@ import (
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
+var PlaylistWaittime = 2 * time.Second
+
 //VidPlayer is the module that handles playing video. For now we only support RTMP and HLS play.
 type VidPlayer struct {
 	RtmpServer *joy4rtmp.Server
@@ -65,32 +67,18 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
 		var pl *m3u8.MediaPlaylist
-		for i := 0; i < 4; i++ {
+		sleepTime := 0 * time.Millisecond
+		for sleepTime < PlaylistWaittime { //Try to wait a little for the first segments
 			pl, err = buffer.LatestPlaylist()
 			if pl.Count() == 0 {
-				time.Sleep(500 * time.Millisecond)
-			} else {
-				break
+				time.Sleep(100 * time.Millisecond)
+				sleepTime = sleepTime + 100*time.Millisecond
 			}
 		}
 		if err != nil {
 			glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
 			return
 		}
-
-		// //Remove all but the last 5 segments.
-		// c := uint(0)
-		// for _, seg := range pl.Segments {
-		// 	if seg != nil {
-		// 		// segs = append(segs, seg)
-		// 		c = c + 1
-		// 	}
-		// }
-		// for c > buffer.Capacity {
-		// 	pl.Remove()
-		// 	c = c - 1
-		// }
-		// pl.TargetDuration = 2
 
 		// segs := ""
 		// for _, s := range pl.Segments {
