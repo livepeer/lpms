@@ -8,11 +8,16 @@ import (
 
 	"strings"
 
+	"time"
+
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
+
+var PlaylistWaittime = 2 * time.Second
 
 //VidPlayer is the module that handles playing video. For now we only support RTMP and HLS play.
 type VidPlayer struct {
@@ -54,8 +59,6 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	}
 
 	ctx := context.Background()
-	// c := make(chan error, 1)
-	// go func() { c <- getStream(ctx, r.URL.Path, w) }()
 	buffer, err := getHLSBuffer(r.URL.Path)
 	if err != nil {
 		glog.Errorf("Error getting HLS Buffer: %v", err)
@@ -63,27 +66,19 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	}
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
-		pl, err := buffer.LatestPlaylist()
-		// pl, err := buffer.WaitAndPopPlaylist(ctx)
-		// pl, err := buffer.LatestPlaylist()
+		var pl *m3u8.MediaPlaylist
+		sleepTime := 0 * time.Millisecond
+		for sleepTime < PlaylistWaittime { //Try to wait a little for the first segments
+			pl, err = buffer.LatestPlaylist()
+			if pl.Count() == 0 {
+				time.Sleep(100 * time.Millisecond)
+				sleepTime = sleepTime + 100*time.Millisecond
+			}
+		}
 		if err != nil {
 			glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
 			return
 		}
-
-		//Remove all but the last 5 segments.
-		c := uint(0)
-		for _, seg := range pl.Segments {
-			if seg != nil {
-				// segs = append(segs, seg)
-				c = c + 1
-			}
-		}
-		for c > buffer.Capacity {
-			pl.Remove()
-			c = c - 1
-		}
-		pl.TargetDuration = 2
 
 		// segs := ""
 		// for _, s := range pl.Segments {
@@ -93,6 +88,7 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "max-age=5")
 
 		_, err = w.Write(pl.Encode().Bytes())
 		if err != nil {
