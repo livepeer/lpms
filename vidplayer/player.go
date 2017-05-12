@@ -73,6 +73,8 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 			if pl.Count() == 0 {
 				time.Sleep(100 * time.Millisecond)
 				sleepTime = sleepTime + 100*time.Millisecond
+			} else {
+				break
 			}
 		}
 		if err != nil {
