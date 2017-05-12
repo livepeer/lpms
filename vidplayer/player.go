@@ -8,6 +8,9 @@ import (
 
 	"strings"
 
+	"time"
+
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
@@ -54,8 +57,6 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	}
 
 	ctx := context.Background()
-	// c := make(chan error, 1)
-	// go func() { c <- getStream(ctx, r.URL.Path, w) }()
 	buffer, err := getHLSBuffer(r.URL.Path)
 	if err != nil {
 		glog.Errorf("Error getting HLS Buffer: %v", err)
@@ -63,27 +64,33 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 	}
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
-		pl, err := buffer.LatestPlaylist()
-		// pl, err := buffer.WaitAndPopPlaylist(ctx)
-		// pl, err := buffer.LatestPlaylist()
+		var pl *m3u8.MediaPlaylist
+		for i := 0; i < 4; i++ {
+			pl, err = buffer.LatestPlaylist()
+			if pl.Count() == 0 {
+				time.Sleep(500 * time.Millisecond)
+			} else {
+				break
+			}
+		}
 		if err != nil {
 			glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
 			return
 		}
 
-		//Remove all but the last 5 segments.
-		c := uint(0)
-		for _, seg := range pl.Segments {
-			if seg != nil {
-				// segs = append(segs, seg)
-				c = c + 1
-			}
-		}
-		for c > buffer.Capacity {
-			pl.Remove()
-			c = c - 1
-		}
-		pl.TargetDuration = 2
+		// //Remove all but the last 5 segments.
+		// c := uint(0)
+		// for _, seg := range pl.Segments {
+		// 	if seg != nil {
+		// 		// segs = append(segs, seg)
+		// 		c = c + 1
+		// 	}
+		// }
+		// for c > buffer.Capacity {
+		// 	pl.Remove()
+		// 	c = c - 1
+		// }
+		// pl.TargetDuration = 2
 
 		// segs := ""
 		// for _, s := range pl.Segments {
