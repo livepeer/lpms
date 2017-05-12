@@ -100,6 +100,7 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "max-age=5")
 
 		_, err = w.Write(pl.Encode().Bytes())
 		if err != nil {
