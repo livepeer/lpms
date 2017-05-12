@@ -17,7 +17,7 @@ import (
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
-var PlaylistWaittime = 2 * time.Second
+var PlaylistWaittime = 6 * time.Second
 
 //VidPlayer is the module that handles playing video. For now we only support RTMP and HLS play.
 type VidPlayer struct {
