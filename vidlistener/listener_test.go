@@ -2,6 +2,7 @@ package vidlistener
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
 	"testing"
 	"time"
@@ -14,10 +15,10 @@ func TestListener(t *testing.T) {
 	server := &joy4rtmp.Server{Addr: ":1937"}
 	listener := &VidListener{RtmpServer: server}
 	listener.HandleRTMPPublish(
-		func(reqPath string) (string, error) {
+		func(url *url.URL) (string, error) {
 			return "test", nil
 		},
-		func(reqPath string) (stream.Stream, stream.Stream, error) {
+		func(url *url.URL) (stream.Stream, stream.Stream, error) {
 			// return errors.New("Some Error")
 			return stream.NewVideoStream("test", stream.RTMP), stream.NewVideoStream("test", stream.HLS), nil
 		},

@@ -82,7 +82,7 @@ func TestSegmenter(t *testing.T) {
 	defer cancel()
 
 	//Kick off FFMpeg to create segments
-	go func() { se <- func() error { return vs.RTMPToHLS(ctx, opt) }() }()
+	go func() { se <- func() error { return vs.RTMPToHLS(ctx, opt, false) }() }()
 	select {
 	case err := <-se:
 		if err != context.DeadlineExceeded {
@@ -128,7 +128,8 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 
-		if seg.Length != time.Second*2 {
+		timeDiff := seg.Length - time.Second*2
+		if timeDiff > time.Millisecond*500 || timeDiff < -time.Millisecond*500 {
 			t.Errorf("Expecting 2 sec segments, got %v", seg.Length)
 		}
 
@@ -253,8 +254,19 @@ func TestPollSegTimeout(t *testing.T) {
 	os.RemoveAll(workDir)
 	os.Mkdir(workDir, 0700)
 
+	newPl := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-ALLOW-CACHE:YES
+#EXT-X-TARGETDURATION:7
+#EXTINF:2.066000,
+test_0.ts
+#EXTINF:2.066000,
+test_1.ts
+`
+	err := ioutil.WriteFile(workDir+"/test.m3u8", []byte(newPl), 0755)
 	newSeg := `some random data`
-	err := ioutil.WriteFile(workDir+"/test_0.ts", []byte(newSeg), 0755)
+	err = ioutil.WriteFile(workDir+"/test_0.ts", []byte(newSeg), 0755)
 	err = ioutil.WriteFile(workDir+"/test_1.ts", []byte(newSeg), 0755)
 	if err != nil {
 		t.Errorf("Error writing playlist: %v", err)
@@ -272,4 +284,5 @@ func TestPollSegTimeout(t *testing.T) {
 		t.Errorf("Expecting timeout, got %v", err)
 	}
 
+	os.RemoveAll(workDir)
 }

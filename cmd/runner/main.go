@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -26,18 +27,18 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	lpms := lpms.New("1935", "8000", "2435", "7935", "")
+	lpms := lpms.New("1935", "8000", "", "")
 	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 	bufferDB := &BufferDB{db: make(map[string]*stream.HLSBuffer)}
 
 	lpms.HandleRTMPPublish(
 		//getStreamID
-		func(reqPath string) (string, error) {
-			return getStreamIDFromPath(reqPath), nil
+		func(url *url.URL) (string, error) {
+			return getStreamIDFromPath(url.Path), nil
 		},
 		//getStream
-		func(reqPath string) (stream.Stream, stream.Stream, error) {
-			rtmpStreamID := getStreamIDFromPath(reqPath)
+		func(url *url.URL) (stream.Stream, stream.Stream, error) {
+			rtmpStreamID := getStreamIDFromPath(url.Path)
 			hlsStreamID := rtmpStreamID + "_hls"
 			rtmpStream := stream.NewVideoStream(rtmpStreamID, stream.RTMP)
 			hlsStream := stream.NewVideoStream(hlsStreamID, stream.HLS)

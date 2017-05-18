@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
@@ -37,11 +38,11 @@ type transcodeReq struct {
 }
 
 //New creates a new LPMS server object.  It really just brokers everything to the components.
-func New(rtmpPort string, httpPort string, srsRTMPPort string, srsHTTPPort string, ffmpegPath string) *LPMS {
+func New(rtmpPort, httpPort, ffmpegPath, vodPath string) *LPMS {
 	server := &joy4rtmp.Server{Addr: (":" + rtmpPort)}
-	player := &vidplayer.VidPlayer{RtmpServer: server}
+	player := &vidplayer.VidPlayer{RtmpServer: server, VodPath: vodPath}
 	listener := &vidlistener.VidListener{RtmpServer: server, FfmpegPath: ffmpegPath}
-	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, srsRTMPPort: srsRTMPPort, srsHTTPPort: srsHTTPPort, httpPort: httpPort, ffmpegPath: ffmpegPath}
+	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, httpPort: httpPort, ffmpegPath: ffmpegPath}
 }
 
 //Start starts the rtmp and http server
@@ -65,8 +66,8 @@ func (l *LPMS) Start() error {
 
 //HandleRTMPPublish offload to the video listener
 func (l *LPMS) HandleRTMPPublish(
-	getStreamID func(reqPath string) (string, error),
-	getStream func(reqPath string) (stream.Stream, stream.Stream, error),
+	getStreamID func(url *url.URL) (string, error),
+	getStream func(url *url.URL) (stream.Stream, stream.Stream, error),
 	endStream func(rtmpStrmID string, hlsStrmID string)) error {
 
 	return l.vidListen.HandleRTMPPublish(getStreamID, getStream, endStream)

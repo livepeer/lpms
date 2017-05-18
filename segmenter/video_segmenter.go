@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -64,7 +65,7 @@ func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string,
 }
 
 //RTMPToHLS invokes the FFMpeg command to do the segmenting.  This method blocks unless killed.
-func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptions) error {
+func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptions, cleanup bool) error {
 	//Set up local workdir
 	if _, err := os.Stat(s.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(s.WorkDir, 0700)
@@ -109,6 +110,10 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	case <-ctx.Done():
 		//Can't close RTMP server, joy4 doesn't support it.
 		//server.Stop()
+		glog.Infof("VideoSegmenter stopped for %v", s.StrmID)
+		if cleanup {
+			s.Cleanup()
+		}
 		cmd.Process.Kill()
 		return ctx.Err()
 	}
@@ -129,7 +134,8 @@ func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, 
 
 	for i := 0; i < PlaylistRetryCount; i++ {
 		pl, _ := m3u8.NewMediaPlaylist(uint(s.curSegment+1), uint(s.curSegment+1))
-		pl.DecodeFrom(bytes.NewReader(readPlaylist(plfn)), true)
+		content := readPlaylist(plfn)
+		pl.DecodeFrom(bytes.NewReader(content), true)
 		for _, plSeg := range pl.Segments {
 			if plSeg.URI == name {
 				length, err = time.ParseDuration(fmt.Sprintf("%vs", plSeg.Duration))
@@ -258,5 +264,12 @@ func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, ne
 
 		time.Sleep(sleepTime)
 		s.curSegWaitTime = s.curSegWaitTime + sleepTime
+	}
+}
+
+func (s *FFMpegVideoSegmenter) Cleanup() {
+	files, _ := filepath.Glob(path.Join(s.WorkDir, s.StrmID) + "*")
+	for _, fn := range files {
+		os.Remove(fn)
 	}
 }
