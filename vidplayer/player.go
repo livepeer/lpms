@@ -86,6 +86,10 @@ func (s *VidPlayer) HandleHLSPlay(getHLSBuffer func(reqPath string) (*stream.HLS
 
 func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath string) (*stream.HLSBuffer, error)) {
 	glog.Infof("LPMS got HTTP request @ %v", r.URL.Path)
+	w.Header().Set("Content-Type", "application/x-mpegURL")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Cache-Control", "max-age=5")
 
 	if !strings.HasSuffix(r.URL.Path, ".m3u8") && !strings.HasSuffix(r.URL.Path, ".ts") {
 		http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)
@@ -135,11 +139,6 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 		// 	segs = segs + ", " + strings.Split(s.URI, "_")[1]
 		// }
 		// glog.Infof("Writing playlist seg: %v", segs)
-
-		w.Header().Set("Content-Type", "application/x-mpegURL")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Cache-Control", "max-age=5")
 
 		// pl.MediaType = m3u8.EVENT
 		_, err = w.Write(pl.Encode().Bytes())
