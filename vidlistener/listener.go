@@ -2,6 +2,7 @@ package vidlistener
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"time"
 
@@ -26,20 +27,20 @@ type VidListener struct {
 //HandleRTMPPublish immediately turns the RTMP stream into segmented HLS, and writes it into a stream.
 //It exposes getStreamID so the user can name the stream, and getStream so the user can keep track of all the streams.
 func (self *VidListener) HandleRTMPPublish(
-	getStreamID func(reqPath string) (string, error),
-	getStream func(reqPath string) (rtmpStrm stream.Stream, hlsStrm stream.Stream, err error),
+	getStreamID func(url *url.URL) (string, error),
+	getStream func(url *url.URL) (rtmpStrm stream.Stream, hlsStrm stream.Stream, err error),
 	endStream func(rtmpStrmID string, hlsStrmID string)) error {
 
 	self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
-		glog.Infof("RTMP server got upstream")
+		glog.Infof("RTMP server got upstream: %v", conn.URL)
 
-		_, err := getStreamID(conn.URL.Path)
+		_, err := getStreamID(conn.URL)
 		if err != nil {
 			glog.Errorf("RTMP Stream Publish Error: %v", err)
 			return
 		}
 
-		rs, hs, err := getStream(conn.URL.Path)
+		rs, hs, err := getStream(conn.URL)
 		if err != nil {
 			glog.Errorf("RTMP Publish couldn't get a destination stream for %v", conn.URL.Path)
 			return
@@ -75,7 +76,7 @@ func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs
 	localRtmpUrl := "rtmp://localhost" + self.RtmpServer.Addr + "/stream/" + rs.GetStreamID()
 	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, self.FfmpegPath)
 	c := make(chan error, 1)
-	go func() { c <- s.RTMPToHLS(ctx, segOptions) }()
+	go func() { c <- s.RTMPToHLS(ctx, segOptions, true) }()
 
 	go func() {
 		c <- func() error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"io"
+	"net/url"
 	"strings"
 
 	"time"
@@ -265,17 +266,17 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	lpms := lpms.New("1935", "8000", "2435", "7935", "")
+	lpms := lpms.New("1935", "8000", "", "")
 	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 
 	lpms.HandleRTMPPublish(
 		//getStreamID
-		func(reqPath string) (string, error) {
-			return getStreamIDFromPath(reqPath), nil
+		func(url *url.URL) (string, error) {
+			return getStreamIDFromPath(url.Path), nil
 		},
 		//getStream
-		func(reqPath string) (stream.Stream, stream.Stream, error) {
-			streamID := getStreamIDFromPath(reqPath)
+		func(url *url.URL) (stream.Stream, stream.Stream, error) {
+			streamID := getStreamIDFromPath(url.Path)
 			stream1 := NewSegmentStream(streamID)
 			stream2 := NewSegmentStream(streamID)
 			streamDB.db[streamID] = stream1

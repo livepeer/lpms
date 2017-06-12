@@ -131,6 +131,22 @@ func (s *StreamSubscriber) UnsubscribeHLS(muxID string) error {
 	return nil
 }
 
+func (s *StreamSubscriber) UnsubscribeAll() error {
+	if s.hlsSubscribers != nil {
+		for k := range s.hlsSubscribers {
+			delete(s.hlsSubscribers, k)
+		}
+	}
+
+	if s.rtmpSubscribers != nil {
+		for k := range s.rtmpSubscribers {
+			delete(s.rtmpSubscribers, k)
+		}
+	}
+
+	return nil
+}
+
 func (s *StreamSubscriber) StartHLSWorker(ctx context.Context, segWaitTime time.Duration) error {
 	lastSegTimer := time.Now()
 	for {
@@ -170,7 +186,7 @@ func (s *StreamSubscriber) GetRTMPBuffer(subID string) av.Muxer {
 	return s.rtmpSubscribers[subID]
 }
 
-func (s *StreamSubscriber) HLSSubscribers() []string {
+func (s *StreamSubscriber) HLSSubscribersReport() []string {
 	var res []string
 	for sub, v := range s.hlsSubscribers {
 		res = append(res, fmt.Sprintf("%v: %v", reflect.TypeOf(v), sub))
@@ -178,7 +194,7 @@ func (s *StreamSubscriber) HLSSubscribers() []string {
 	return res
 }
 
-func (s *StreamSubscriber) RTMPSubscribers() []string {
+func (s *StreamSubscriber) RTMPSubscribersReport() []string {
 	var res []string
 	for sub, v := range s.rtmpSubscribers {
 		res = append(res, fmt.Sprintf("%v: %v", reflect.TypeOf(v), sub))
