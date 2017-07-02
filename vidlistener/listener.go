@@ -24,9 +24,38 @@ type VidListener struct {
 	FfmpegPath string
 }
 
+func (self *VidListener) HandleRTMPPublish(
+	makeStreamID func(url *url.URL) (strmID string),
+	gotStream func(url *url.URL, rtmpStrm *stream.VideoStream) error,
+	endStream func(url *url.URL, rtmpStrm *stream.VideoStream) error) {
+
+	self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
+		glog.Infof("RTMP server got upstream: %v", conn.URL)
+
+		s := stream.NewVideoStream(makeStreamID(conn.URL), stream.RTMP)
+		ctx, cancel := context.WithCancel(context.Background())
+		ec := make(chan error)
+		go func() { ec <- s.WriteRTMPToStream(ctx, conn) }()
+		glog.Infof("Listner rtmp addr: %v", &s)
+		err := gotStream(conn.URL, s)
+		if err != nil {
+			glog.Errorf("Error RTMP gotStream handler: %v", err)
+			cancel()
+			return
+		}
+
+		select {
+		case err := <-ec:
+			endStream(conn.URL, s)
+			glog.Errorf("Got error writing RTMP: %v", err)
+			cancel()
+		}
+	}
+}
+
 //HandleRTMPPublish immediately turns the RTMP stream into segmented HLS, and writes it into a stream.
 //It exposes getStreamID so the user can name the stream, and getStream so the user can keep track of all the streams.
-func (self *VidListener) HandleRTMPPublish(
+func (self *VidListener) HandleRTMPPublish_OLD(
 	getStreamID func(url *url.URL) (string, error),
 	getStream func(url *url.URL) (rtmpStrm stream.Stream, hlsStrm stream.Stream, err error),
 	endStream func(rtmpStrmID string, hlsStrmID string)) error {
@@ -69,6 +98,7 @@ func (self *VidListener) HandleRTMPPublish(
 	return nil
 }
 
+//I think this should be done by the application instead the SDK.  It's unreasonable to expect the default LPMS behavior to segment the RTMP stream.
 func (self *VidListener) segmentStream(ctx context.Context, rs stream.Stream, hs stream.Stream) error {
 	// //Invoke Segmenter
 	workDir, _ := os.Getwd()

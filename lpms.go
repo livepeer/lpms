@@ -8,13 +8,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"os"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 	"github.com/livepeer/lpms/vidlistener"
 	"github.com/livepeer/lpms/vidplayer"
-	"github.com/nareix/joy4/av"
 
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
@@ -46,7 +48,7 @@ func New(rtmpPort, httpPort, ffmpegPath, vodPath string) *LPMS {
 }
 
 //Start starts the rtmp and http server
-func (l *LPMS) Start() error {
+func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	go func() {
 		glog.Infof("Starting LPMS Server at :%v", l.rtmpServer.Addr)
@@ -61,26 +63,102 @@ func (l *LPMS) Start() error {
 	case err := <-ec:
 		glog.Infof("LPMS Server Error: %v.  Quitting...", err)
 		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
 //HandleRTMPPublish offload to the video listener
 func (l *LPMS) HandleRTMPPublish(
-	getStreamID func(url *url.URL) (string, error),
-	getStream func(url *url.URL) (stream.Stream, stream.Stream, error),
-	endStream func(rtmpStrmID string, hlsStrmID string)) error {
+	makeStreamID func(url *url.URL) (strmID string),
+	gotStream func(url *url.URL, rtmpStrm *stream.VideoStream) (err error),
+	endStream func(url *url.URL, rtmpStrm *stream.VideoStream) error) {
 
-	return l.vidListen.HandleRTMPPublish(getStreamID, getStream, endStream)
+	l.vidListen.HandleRTMPPublish(makeStreamID, gotStream, endStream)
 }
 
 //HandleRTMPPlay offload to the video player
-func (l *LPMS) HandleRTMPPlay(getStream func(ctx context.Context, reqPath string, dst av.MuxCloser) error) error {
+func (l *LPMS) HandleRTMPPlay(getStream func(url *url.URL) (stream.Stream, error)) error {
 	return l.vidPlayer.HandleRTMPPlay(getStream)
 }
 
 //HandleHLSPlay offload to the video player
-func (l *LPMS) HandleHLSPlay(getStream func(reqPath string) (*stream.HLSBuffer, error)) error {
-	return l.vidPlayer.HandleHLSPlay(getStream)
+func (l *LPMS) HandleHLSPlay(
+	getMasterPlaylist func(url *url.URL) (*m3u8.MasterPlaylist, error),
+	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
+	getSegment func(url *url.URL) ([]byte, error)) {
+
+	l.vidPlayer.HandleHLSPlay(getMasterPlaylist, getMediaPlaylist, getSegment)
+}
+
+//SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
+func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream.Stream, segOptions segmenter.SegmenterOptions) error {
+	//Invoke Segmenter
+	workDir, _ := os.Getwd()
+	workDir = workDir + "/tmp"
+	localRtmpUrl := "rtmp://localhost" + l.rtmpServer.Addr + "/stream/" + rs.GetStreamID()
+	glog.Infof("Segment RTMP Req: %v", localRtmpUrl)
+
+	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, l.ffmpegPath)
+	c := make(chan error, 1)
+	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
+	go func() { c <- s.RTMPToHLS(ffmpegCtx, segOptions, true) }()
+
+	//Kick off go routine to write HLS playlist
+	plCtx, plCancel := context.WithCancel(context.Background())
+	go func() {
+		c <- func() error {
+			for {
+				pl, err := s.PollPlaylist(plCtx)
+				if err != nil {
+					glog.Errorf("Got error polling playlist: %v", err)
+					return err
+				}
+				// glog.Infof("Writing pl: %v", pl)
+				hs.WriteHLSPlaylistToStream(*pl.Data)
+				select {
+				case <-plCtx.Done():
+					return plCtx.Err()
+				default:
+				}
+			}
+		}()
+	}()
+
+	//Kick off go routine to write HLS segments
+	segCtx, segCancel := context.WithCancel(context.Background())
+	go func() {
+		c <- func() error {
+			for {
+				seg, err := s.PollSegment(segCtx)
+				if err != nil {
+					return err
+				}
+				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
+				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
+				hs.WriteHLSSegmentToStream(ss)
+				select {
+				case <-segCtx.Done():
+					return segCtx.Err()
+				default:
+				}
+			}
+		}()
+	}()
+
+	select {
+	case err := <-c:
+		glog.Errorf("Error segmenting stream: %v", err)
+		ffmpegCancel()
+		plCancel()
+		segCancel()
+		return err
+	case <-ctx.Done():
+		ffmpegCancel()
+		plCancel()
+		segCancel()
+		return ctx.Err()
+	}
 }
 
 //HandleTranscode kicks off a transcoding process, keeps a local HLS buffer, and returns the new stream ID.

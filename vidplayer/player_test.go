@@ -66,46 +66,60 @@ func TestHLS(t *testing.T) {
 	s.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{})
 	s.WriteHLSSegmentToStream(stream.HLSSegment{})
 	var buffer *stream.HLSBuffer
-	player.HandleHLSPlay(func(reqPath string) (*stream.HLSBuffer, error) {
-		//if can't find local cache, start downloading, and store in cache.
-		if buffer == nil {
-			buffer := stream.NewHLSBuffer(10, 100)
-			ec := make(chan error, 1)
-			go func() { ec <- s.ReadHLSFromStream(context.Background(), buffer) }()
-			// select {
-			// case err := <-ec:
-			// 	return err
-			// }
-		}
-		return buffer, nil
+	player.HandleHLSPlay(
+		//getMasterPlaylist
+		func(url *url.URL) (*m3u8.MasterPlaylist, error) {
+			return nil, nil
+		},
+		//getMediaPlaylist
+		func(url *url.URL) (*m3u8.MediaPlaylist, error) {
+			return buffer.LatestPlaylist()
+		},
+		//getSegment
+		func(url *url.URL) ([]byte, error) {
+			return nil, nil
+		})
 
-		// if strings.HasSuffix(reqPath, ".m3u8") {
-		// 	pl, err := buffer.WaitAndPopPlaylist(ctx)
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// 	_, err = writer.Write(pl.Encode().Bytes())
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// 	return nil, nil
-		// }
+	// func(reqPath string) (*stream.HLSBuffer, error) {
+	// //if can't find local cache, start downloading, and store in cache.
+	// if buffer == nil {
+	// 	buffer := stream.NewHLSBuffer(10, 100)
+	// 	ec := make(chan error, 1)
+	// 	go func() { ec <- s.ReadHLSFromStream(context.Background(), buffer) }()
+	// 	// select {
+	// 	// case err := <-ec:
+	// 	// 	return err
+	// 	// }
+	// }
+	// return buffer, nil
 
-		// if strings.HasSuffix(reqPath, ".ts") {
-		// 	pathArr := strings.Split(reqPath, "/")
-		// 	segName := pathArr[len(pathArr)-1]
-		// 	seg, err := buffer.WaitAndPopSegment(ctx, segName)
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// 	_, err = writer.Write(seg)
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// }
+	// if strings.HasSuffix(reqPath, ".m3u8") {
+	// 	pl, err := buffer.WaitAndPopPlaylist(ctx)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	_, err = writer.Write(pl.Encode().Bytes())
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	return nil, nil
+	// }
 
-		// return nil, lpmsio.ErrNotFound
-	})
+	// if strings.HasSuffix(reqPath, ".ts") {
+	// 	pathArr := strings.Split(reqPath, "/")
+	// 	segName := pathArr[len(pathArr)-1]
+	// 	seg, err := buffer.WaitAndPopSegment(ctx, segName)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	_, err = writer.Write(seg)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
+
+	// return nil, lpmsio.ErrNotFound
+	// })
 
 	// go http.ListenAndServe(":8000", nil)
 
@@ -142,9 +156,9 @@ func TestHandleHLS(t *testing.T) {
 	testBuf.WriteSegment(3, "url_3.ts", 2, []byte{0, 0})
 	testBuf.WriteSegment(4, "url_4.ts", 2, []byte{0, 0})
 
-	handleHLS(rw, req, func(reqPath string) (*stream.HLSBuffer, error) {
-		return testBuf, nil
-	})
+	// HandleHLSPlay(rw, req, func(reqPath string) (*stream.HLSBuffer, error) {
+	// 	return testBuf, nil
+	// })
 
 	p1, _ := m3u8.NewMediaPlaylist(10, 10)
 	err := p1.DecodeFrom(bytes.NewReader(pl.Encode().Bytes()), true)

@@ -22,6 +22,7 @@ import (
 )
 
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")
+var ErrFFMpegSegmenter = errors.New("FFMpegSegmenterError")
 var PlaylistRetryCount = 5
 var PlaylistRetryWait = 500 * time.Millisecond
 
@@ -106,6 +107,10 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	select {
 	case ffmpege := <-ec:
 		glog.Errorf("Error from ffmpeg: %v", ffmpege)
+		//Sometimes ffmpeg doesn't return the correct error
+		if ffmpege == nil {
+			ffmpege = ErrFFMpegSegmenter
+		}
 		return ffmpege
 	case <-ctx.Done():
 		//Can't close RTMP server, joy4 doesn't support it.

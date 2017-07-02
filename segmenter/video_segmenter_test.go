@@ -14,6 +14,7 @@ import (
 	"io/ioutil"
 
 	"github.com/ericxtang/m3u8"
+	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
 	"github.com/nareix/joy4/av"
@@ -34,7 +35,11 @@ func (s *TestStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) e
 		fmt.Println("Error opening file: ", err)
 		return err
 	}
-	header, _ := file.Streams()
+	header, err := file.Streams()
+	if err != nil {
+		glog.Errorf("Error reading headers: %v", err)
+		return err
+	}
 
 	dst.WriteHeader(header)
 	for {
@@ -78,7 +83,7 @@ func TestSegmenter(t *testing.T) {
 
 	se := make(chan error, 1)
 	opt := SegmenterOptions{}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
 	//Kick off FFMpeg to create segments
@@ -109,11 +114,11 @@ func TestSegmenter(t *testing.T) {
 		t.Errorf("Segment counter should start with 0.  But got: %v", vs.curSegment)
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 2; i++ {
 		seg, err := vs.PollSegment(ctx)
 
 		if vs.curSegment != i+1 {
-			t.Errorf("Segment counter should move to 1.  But got: %v", vs.curSegment)
+			t.Errorf("Segment counter should move to %v.  But got: %v", i+1, vs.curSegment)
 		}
 
 		if err != nil {
@@ -128,7 +133,7 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 
-		timeDiff := seg.Length - time.Second*2
+		timeDiff := seg.Length - time.Second*8
 		if timeDiff > time.Millisecond*500 || timeDiff < -time.Millisecond*500 {
 			t.Errorf("Expecting 2 sec segments, got %v", seg.Length)
 		}
