@@ -102,6 +102,7 @@ type VideoStream struct {
 }
 
 func (s *VideoStream) Len() int64 {
+	// glog.Infof("buffer.q: %v", s.buffer.q)
 	return s.buffer.len()
 }
 

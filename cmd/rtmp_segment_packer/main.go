@@ -121,22 +121,6 @@ func (s *SegmentStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser
 			}
 			time.Sleep(time.Second * 1)
 		}
-
-		// for {
-		// 	packet := s.GetPacket()
-
-		// 	if len(packet.Data) == 0 {
-		// 		glog.Info("Reached the end...")
-		// 		dst.WriteTrailer()
-		// 		return io.EOF
-		// 	}
-		// 	err := dst.WritePacket(packet)
-		// 	if err != nil {
-		// 		glog.Infof("Error writing RTMP packet from Stream %v to mux", s.StreamID)
-		// 		return err
-		// 	}
-		// }
-
 	}
 
 	return nil
@@ -270,41 +254,29 @@ func main() {
 	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 
 	lpms.HandleRTMPPublish(
-		//getStreamID
-		func(url *url.URL) (string, error) {
-			return getStreamIDFromPath(url.Path), nil
+		//makeStreamID
+		func(url *url.URL) (strmID string) {
+			return getStreamIDFromPath(url.Path)
 		},
-		//getStream
-		func(url *url.URL) (stream.Stream, stream.Stream, error) {
+		//gotStream
+		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
 			streamID := getStreamIDFromPath(url.Path)
 			stream1 := NewSegmentStream(streamID)
-			stream2 := NewSegmentStream(streamID)
+			// stream2 := NewSegmentStream(streamID)
 			streamDB.db[streamID] = stream1
-			return stream1, stream2, nil
+			return nil
 		},
-		//finishStream
-		func(strmID1 string, strmID2 string) {
-			// streamID := getStreamIDFromPath(reqPath)
-			// delete(streamDB.db, streamID)
-			// tranStreamID := streamID + "_tran"
-			// delete(streamDB.db, tranStreamID)
+		//endStream
+		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
+			delete(streamDB.db, rtmpStrm.GetStreamID())
+			return nil
 		})
 
 	lpms.HandleRTMPPlay(
 		//getStream
-		func(ctx context.Context, reqPath string, dst av.MuxCloser) error {
-			glog.Infof("Got req: ", reqPath)
-			// streamID := getStreamIDFromPath(reqPath)
-			// src := streamDB.db[streamID]
+		func(url *url.URL) (stream.Stream, error) {
 			src := copyStream(&StagedStream)
-
-			// if src != nil {
-			src.ReadRTMPFromStream(ctx, dst)
-			// } else {
-			// 	glog.Error("Cannot find stream for ", streamID)
-			// 	return stream.ErrNotFound
-			// }
-			return nil
+			return src, nil
 		})
 
 	lpms.HandleTranscode(
@@ -324,7 +296,7 @@ func main() {
 			fileStream := stream.NewFileStream(streamID + "_file")
 			return fileStream, nil
 		})
-	lpms.Start()
+	lpms.Start(context.Background())
 }
 
 func getStreamIDFromPath(reqPath string) string {

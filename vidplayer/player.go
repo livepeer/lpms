@@ -2,9 +2,11 @@ package vidplayer
 
 import (
 	"context"
+	"errors"
 	"io/ioutil"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"path/filepath"
 
@@ -15,10 +17,11 @@ import (
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
-	"github.com/nareix/joy4/av"
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
+var ErrNotFound = errors.New("NotFound")
+var ErrRTMP = errors.New("RTMP Error")
 var PlaylistWaittime = 6 * time.Second
 
 //VidPlayer is the module that handles playing video. For now we only support RTMP and HLS play.
@@ -29,62 +32,45 @@ type VidPlayer struct {
 
 //HandleRTMPPlay is the handler when there is a RTMP request for a video. The source should write
 //into the MuxCloser. The easiest way is through avutil.Copy.
-func (s *VidPlayer) HandleRTMPPlay(getStream func(ctx context.Context, reqPath string, dst av.MuxCloser) error) error {
+func (s *VidPlayer) HandleRTMPPlay(getStream func(url *url.URL) (stream.Stream, error)) error {
 	s.RtmpServer.HandlePlay = func(conn *joy4rtmp.Conn) {
 		glog.Infof("LPMS got RTMP request @ %v", conn.URL)
 
-		ctx := context.Background()
-		c := make(chan error, 1)
-		go func() { c <- getStream(ctx, conn.URL.Path, conn) }()
-		select {
-		case err := <-c:
-			glog.Errorf("Rtmp getStream Error: %v", err)
+		src, err := getStream(conn.URL)
+		if err != nil {
+			glog.Errorf("Error getting stream: %v", err)
 			return
 		}
+
+		err = src.ReadRTMPFromStream(context.Background(), conn)
+		if err != nil {
+			glog.Errorf("Error copying RTMP stream: %v", err)
+			return
+		}
+
 	}
 	return nil
 }
 
-//HandleHLSPlay is the handler when there is a HLA request. The source should write the raw bytes into the io.Writer,
-//for either the playlist or the segment.
-func (s *VidPlayer) HandleHLSPlay(getHLSBuffer func(reqPath string) (*stream.HLSBuffer, error)) error {
+func (s *VidPlayer) HandleHLSPlay(
+	getMasterPlaylist func(url *url.URL) (*m3u8.MasterPlaylist, error),
+	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
+	getSegment func(url *url.URL) ([]byte, error)) {
+
 	http.HandleFunc("/stream/", func(w http.ResponseWriter, r *http.Request) {
-		handleHLS(w, r, getHLSBuffer)
+		handleLive(w, r, getMasterPlaylist, getMediaPlaylist, getSegment)
 	})
 
-	//To play video from static files
 	http.HandleFunc("/vod/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, ".m3u8") {
-			plName := filepath.Join(s.VodPath, strings.Replace(r.URL.Path, "/vod/", "", -1))
-			dat, err := ioutil.ReadFile(plName)
-			if err != nil {
-				glog.Errorf("Cannot find file: %v", plName)
-				return
-			}
-			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Cache-Control", "max-age=5")
-			w.Write(dat)
-			return
-		}
-
-		if strings.Contains(r.URL.Path, ".ts") {
-			segName := filepath.Join(s.VodPath, strings.Replace(r.URL.Path, "/vod/", "", -1))
-			dat, err := ioutil.ReadFile(segName)
-			if err != nil {
-				glog.Errorf("Cannot find file: %v", segName)
-				return
-			}
-			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Write(dat)
-			return
-		}
+		handleVOD(r.URL, s.VodPath, w)
 	})
-	return nil
 }
 
-func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath string) (*stream.HLSBuffer, error)) {
+func handleLive(w http.ResponseWriter, r *http.Request,
+	getMasterPlaylist func(url *url.URL) (*m3u8.MasterPlaylist, error),
+	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
+	getSegment func(url *url.URL) ([]byte, error)) {
+
 	glog.Infof("LPMS got HTTP request @ %v", r.URL.Path)
 	w.Header().Set("Content-Type", "application/x-mpegURL")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -95,83 +81,77 @@ func handleHLS(w http.ResponseWriter, r *http.Request, getHLSBuffer func(reqPath
 		http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)
 	}
 
-	ctx := context.Background()
-	buffer, err := getHLSBuffer(r.URL.Path)
-	if err != nil {
-		glog.Errorf("Error getting HLS Buffer: %v", err)
-		return
-	}
-
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
-		// Just an experiment to create a fake master playlist.  Commenting it out for now, maybe useful later when we re-visit adaptive bitrate streaming.
-		// if strings.Contains(r.URL.Path, "_master") {
-		// 	pl := *m3u8.NewMasterPlaylist()
-		// 	regex, _ := regexp.Compile("\\/stream\\/([[:alpha:]]|\\d)*")
-		// 	match := regex.FindString(r.URL.Path)
-		// 	uri := strings.Replace(match, "/stream/", "", -1)
-		// 	uri = strings.Replace(uri, "_master", "", -1)
-		// 	pl.Append(uri+".m3u8", nil, m3u8.VariantParams{Bandwidth: 520929})
-
-		// 	w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
-		// 	w.Header().Set("Access-Control-Allow-Origin", "*")
-		// 	w.Header().Set("Cache-Control", "max-age=5")
-		// 	w.Write(pl.Encode().Bytes())
-		// 	return
-		// }
-		var pl *m3u8.MediaPlaylist
-		sleepTime := 0 * time.Millisecond
-		for sleepTime < PlaylistWaittime { //Try to wait a little for the first segments
-			pl, err = buffer.LatestPlaylist()
-			if pl.Count() == 0 {
-				time.Sleep(100 * time.Millisecond)
-				sleepTime = sleepTime + 100*time.Millisecond
-			} else {
-				break
+		//First, assume it's the master playlist
+		var masterPl *m3u8.MasterPlaylist
+		var mediaPl *m3u8.MediaPlaylist
+		masterPl, err := getMasterPlaylist(r.URL)
+		if masterPl == nil || err != nil {
+			//Now try the media playlist
+			mediaPl, err = getMediaPlaylist(r.URL)
+			if err != nil {
+				http.Error(w, "Error getting HLS playlist", 500)
+				return
 			}
 		}
-		if err != nil {
-			glog.Errorf("Error getting HLS playlist %v: %v", r.URL.Path, err)
-			return
+
+		if masterPl != nil {
+			_, err = w.Write(masterPl.Encode().Bytes())
+		} else if mediaPl != nil {
+			_, err = w.Write(mediaPl.Encode().Bytes())
 		}
-
-		// segs := ""
-		// for _, s := range pl.Segments {
-		// 	segs = segs + ", " + strings.Split(s.URI, "_")[1]
-		// }
-		// glog.Infof("Writing playlist seg: %v", segs)
-
-		// pl.MediaType = m3u8.EVENT
-		_, err = w.Write(pl.Encode().Bytes())
 		if err != nil {
 			glog.Errorf("Error writing playlist to ResponseWriter: %v", err)
 			return
 		}
 
-		if err != nil {
-			glog.Errorf("Error writting HLS playlist %v: %v", r.URL.Path, err)
-			return
-		}
 		return
 	}
 
 	if strings.HasSuffix(r.URL.Path, ".ts") {
-		pathArr := strings.Split(r.URL.Path, "/")
-		segName := pathArr[len(pathArr)-1]
-		seg, err := buffer.WaitAndGetSegment(ctx, segName)
+		seg, err := getSegment(r.URL)
 		if err != nil {
-			glog.Errorf("Error getting HLS segment %v: %v", segName, err)
+			glog.Errorf("Error getting segment %v: %v", r.URL, err)
 			return
 		}
-		// glog.Infof("Writing seg: %v, len:%v", segName, len(seg))
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		_, err = w.Write(seg)
 		if err != nil {
-			glog.Errorf("Error writting HLS segment %v: %v", segName, err)
+			glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
 			return
 		}
 		return
 	}
 
-	http.Error(w, "Cannot find HTTP video resource: "+r.URL.Path, 500)
+	http.Error(w, "Cannot find HTTP video resource: "+r.URL.String(), 500)
+}
+
+func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
+	if strings.HasSuffix(url.Path, ".m3u8") {
+		plName := filepath.Join(vodPath, strings.Replace(url.Path, "/vod/", "", -1))
+		dat, err := ioutil.ReadFile(plName)
+		if err != nil {
+			glog.Errorf("Cannot find file: %v", plName)
+			return ErrNotFound
+		}
+		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "max-age=5")
+		w.Write(dat)
+	}
+
+	if strings.Contains(url.Path, ".ts") {
+		segName := filepath.Join(vodPath, strings.Replace(url.Path, "/vod/", "", -1))
+		dat, err := ioutil.ReadFile(segName)
+		if err != nil {
+			glog.Errorf("Cannot find file: %v", segName)
+			return ErrNotFound
+		}
+		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Write(dat)
+	}
+
+	return nil
 }
