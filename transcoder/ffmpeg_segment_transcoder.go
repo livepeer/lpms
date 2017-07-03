@@ -43,7 +43,6 @@ func (t *FFMpegSegmentTranscoder) Transcode(d []byte) ([]byte, error) {
 	}
 
 	//Invoke ffmpeg
-	glog.Infof("Ffmpeg path: %v", t.ffmpegPath)
 	var cmd *exec.Cmd
 	//ffmpeg -i seg.ts -c:v libx264 -s 426:240 -r 30 -mpegts_copyts 1 -minrate 700k -maxrate 700k -bufsize 700k -threads 1 out3.ts
 	cmd = exec.Command(path.Join(t.ffmpegPath, "ffmpeg"), "-i", path.Join(t.workDir, inName), "-c:v", "libx264", "-s", t.Resolution, "-mpegts_copyts", "1", "-minrate", t.Bitrate, "-maxrate", t.Bitrate, "-bufsize", t.Bitrate, "-r", fmt.Sprintf("%d", t.Framerate), "-threads", "1", path.Join(t.workDir, outName))

@@ -120,11 +120,3 @@ func main() {
 
 	lpms.Start(context.Background())
 }
-
-// func getStreamIDFromPath(reqPath string) string {
-// 	return "test"
-// }
-
-// func getHLSStreamIDFromPath(reqPath string) string {
-// 	return "test_hls"
-// }

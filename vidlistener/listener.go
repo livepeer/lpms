@@ -53,7 +53,7 @@ func (self *VidListener) HandleRTMPPublish(
 	}
 }
 
-//HandleRTMPPublish immediately turns the RTMP stream into segmented HLS, and writes it into a stream.
+//HandleRTMPPublish immediately turns the RTMP stream into segmented HLS, and writes it into a stream.  This code is only here as an example for segmenting a RTMP stream.
 //It exposes getStreamID so the user can name the stream, and getStream so the user can keep track of all the streams.
 func (self *VidListener) HandleRTMPPublish_OLD(
 	getStreamID func(url *url.URL) (string, error),
