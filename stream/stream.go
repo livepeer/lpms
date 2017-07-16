@@ -79,6 +79,7 @@ type HLSSegment struct {
 	Name     string
 	Data     []byte
 	Duration float64
+	EOF      bool
 }
 
 type Stream interface {
