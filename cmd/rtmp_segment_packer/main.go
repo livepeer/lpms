@@ -11,7 +11,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/livepeer/lpms"
+	"github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
 )
@@ -250,7 +250,7 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	lpms := lpms.New("1935", "8000", "", "")
+	lpms := core.New("1935", "8000", "", "")
 	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 
 	lpms.HandleRTMPPublish(

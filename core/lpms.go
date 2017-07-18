@@ -1,7 +1,7 @@
 //The RTMP server.  This will put up a RTMP endpoint when starting up Swarm.
 //To integrate with LPMS means your code will become the source / destination of the media server.
 //This RTMP endpoint is mainly used for video upload.  The expected url is rtmp://localhost:port/livepeer/stream
-package lpms
+package core
 
 import (
 	"context"
