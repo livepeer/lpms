@@ -142,7 +142,7 @@ func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, 
 		content := readPlaylist(plfn)
 		pl.DecodeFrom(bytes.NewReader(content), true)
 		for _, plSeg := range pl.Segments {
-			if plSeg.URI == name {
+			if plSeg != nil && plSeg.URI == name {
 				length, err = time.ParseDuration(fmt.Sprintf("%vs", plSeg.Duration))
 				break
 			}
