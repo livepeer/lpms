@@ -12,20 +12,14 @@ import (
 	"github.com/golang/glog"
 )
 
-type TranscoderProfile struct {
-	Bitrate    string
-	Framerate  uint
-	Resolution string
-}
-
 //SegmentTranscoder transcodes segments individually.  This is a simple wrapper for calling FFMpeg on the command line.
 type FFMpegSegmentTranscoder struct {
-	tProfiles  []TranscoderProfile
+	tProfiles  []TranscodeProfile
 	ffmpegPath string
 	workDir    string
 }
 
-func NewFFMpegSegmentTranscoder(ps []TranscoderProfile, ffmpegp, workd string) *FFMpegSegmentTranscoder {
+func NewFFMpegSegmentTranscoder(ps []TranscodeProfile, ffmpegp, workd string) *FFMpegSegmentTranscoder {
 	return &FFMpegSegmentTranscoder{tProfiles: ps, ffmpegPath: ffmpegp, workDir: workd}
 }
 

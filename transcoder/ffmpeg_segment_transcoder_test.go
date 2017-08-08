@@ -11,10 +11,10 @@ func TestTrans(t *testing.T) {
 		t.Errorf("Error reading test segment: %v", err)
 	}
 
-	configs := []TranscoderProfile{
-		TranscoderProfile{Bitrate: "400k", Framerate: 30, Resolution: "256:144"},
-		TranscoderProfile{Bitrate: "700k", Framerate: 30, Resolution: "426:240"},
-		TranscoderProfile{Bitrate: "1000k", Framerate: 30, Resolution: "1024:576"},
+	configs := []TranscodeProfile{
+		P144p30fps16x9,
+		P240p30fps16x9,
+		P576p30fps16x9,
 	}
 	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
 	r, err := tr.Transcode(testSeg)
