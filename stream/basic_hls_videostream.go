@@ -170,7 +170,7 @@ func (s *BasicHLSVideoStream) AddHLSSegment(strmID string, seg *HLSSegment) erro
 	return nil
 }
 
-func (s *BasicHLSVideoStream) String() string {
+func (s BasicHLSVideoStream) String() string {
 	return fmt.Sprintf("StreamID: %v, Type: %v, len: %v", s.GetStreamID(), s.GetStreamFormat(), len(s.sqMap))
 }
 

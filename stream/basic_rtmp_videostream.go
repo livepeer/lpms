@@ -122,6 +122,6 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 	}
 }
 
-func (s *BasicRTMPVideoStream) String() string {
+func (s BasicRTMPVideoStream) String() string {
 	return fmt.Sprintf("StreamID: %v, Type: %v", s.GetStreamID(), s.GetStreamFormat())
 }
