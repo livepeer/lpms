@@ -106,10 +106,11 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 
 	select {
 	case ffmpege := <-ec:
-		glog.Errorf("Error from ffmpeg: %v", ffmpege)
 		//Sometimes ffmpeg doesn't return the correct error
 		if ffmpege == nil {
 			ffmpege = ErrFFMpegSegmenter
+		} else {
+			glog.Errorf("Error from ffmpeg: %v", ffmpege)
 		}
 		return ffmpege
 	case <-ctx.Done():

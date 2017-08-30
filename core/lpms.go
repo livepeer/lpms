@@ -129,7 +129,9 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 
 	select {
 	case err := <-c:
-		glog.Errorf("Error segmenting stream: %v", err)
+		if err != segmenter.ErrFFMpegSegmenter {
+			glog.Errorf("Error segmenting stream: %v", err)
+		}
 		ffmpegCancel()
 		segCancel()
 		return err

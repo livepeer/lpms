@@ -3,6 +3,7 @@ package vidplayer
 import (
 	"context"
 	"errors"
+	"io"
 	"io/ioutil"
 	"mime"
 	"net/http"
@@ -57,9 +58,10 @@ func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 			return
 		}
 
-		err = src.ReadRTMPFromStream(context.Background(), conn)
-		if err != nil {
-			glog.Errorf("Error copying RTMP stream: %v", err)
+		if err = src.ReadRTMPFromStream(context.Background(), conn); err != nil {
+			if err != io.EOF {
+				glog.Errorf("Error copying RTMP stream: %v", err)
+			}
 			return
 		}
 	}

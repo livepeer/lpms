@@ -2,6 +2,7 @@ package vidlistener
 
 import (
 	"context"
+	"io"
 	"net/url"
 	"time"
 
@@ -46,7 +47,9 @@ func (self *VidListener) HandleRTMPPublish(
 		select {
 		case err := <-ec:
 			endStream(conn.URL, s)
-			glog.Errorf("Got error writing RTMP: %v", err)
+			if err != io.EOF {
+				glog.Errorf("Got error writing RTMP: %v", err)
+			}
 			cancel()
 		}
 	}
