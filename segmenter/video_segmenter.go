@@ -89,7 +89,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	tsfn := s.WorkDir + "/" + s.StrmID + "_%d.ts"
 
 	//This command needs to be manually killed, because ffmpeg doesn't seem to quit after getting a rtmp EOF
-	glog.Infof("Ffmpeg path: %v", s.ffmpegPath)
+	glog.V(4).Infof("Ffmpeg path: %v", s.ffmpegPath)
 
 	var cmd *exec.Cmd
 
@@ -115,7 +115,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 	case <-ctx.Done():
 		//Can't close RTMP server, joy4 doesn't support it.
 		//server.Stop()
-		glog.Infof("VideoSegmenter stopped for %v", s.StrmID)
+		glog.V(4).Infof("VideoSegmenter stopped for %v", s.StrmID)
 		if cleanup {
 			s.Cleanup()
 		}
@@ -151,7 +151,7 @@ func (s *FFMpegVideoSegmenter) PollSegment(ctx context.Context) (*VideoSegment, 
 			break
 		}
 		if i < PlaylistRetryCount {
-			glog.Infof("Waiting to load duration from playlist")
+			glog.V(4).Infof("Waiting to load duration from playlist")
 			time.Sleep(PlaylistRetryWait)
 			continue
 		} else {
@@ -231,7 +231,7 @@ func (s *FFMpegVideoSegmenter) pollPlaylist(ctx context.Context, fn string, slee
 
 		select {
 		case <-ctx.Done():
-			glog.Infof("ctx.Done()!!!")
+			glog.V(4).Infof("ctx.Done()!!!")
 			return nil, ctx.Err()
 		default:
 		}

@@ -29,7 +29,7 @@ func (self *VidListener) HandleRTMPPublish(
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
 	self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
-		glog.Infof("RTMP server got upstream: %v", conn.URL)
+		glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
 
 		s := stream.NewBasicRTMPVideoStream(makeStreamID(conn.URL))
 		ctx, cancel := context.WithCancel(context.Background())

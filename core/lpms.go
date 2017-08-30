@@ -51,17 +51,17 @@ func New(rtmpPort, httpPort, ffmpegPath, vodPath string) *LPMS {
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	go func() {
-		glog.Infof("Starting LPMS Server at :%v", l.rtmpServer.Addr)
+		glog.V(2).Infof("Starting LPMS Server at :%v", l.rtmpServer.Addr)
 		ec <- l.rtmpServer.ListenAndServe()
 	}()
 	go func() {
-		glog.Infof("Starting HTTP Server at :%v", l.httpPort)
+		glog.V(2).Infof("Starting HTTP Server at :%v", l.httpPort)
 		ec <- http.ListenAndServe(":"+l.httpPort, nil)
 	}()
 
 	select {
 	case err := <-ec:
-		glog.Infof("LPMS Server Error: %v.  Quitting...", err)
+		glog.Errorf("LPMS Server Error: %v.  Quitting...", err)
 		return err
 	case <-ctx.Done():
 		return ctx.Err()
@@ -97,7 +97,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	workDir, _ := os.Getwd()
 	workDir = workDir + "/tmp"
 	localRtmpUrl := "rtmp://localhost" + l.rtmpServer.Addr + "/stream/" + rs.GetStreamID()
-	glog.Infof("Segment RTMP Req: %v", localRtmpUrl)
+	glog.V(4).Infof("Segment RTMP Req: %v", localRtmpUrl)
 
 	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, l.ffmpegPath)
 	c := make(chan error, 1)
