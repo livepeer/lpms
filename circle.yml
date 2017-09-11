@@ -6,6 +6,7 @@ machine:
 dependencies:
   cache_directories:
     - "$HOME/.go_workspace/"
+    - "$HOME/ffmpeg-static"
   override:
     - go get github.com/livepeer/lpms/cmd/example
     - cd "$HOME"
