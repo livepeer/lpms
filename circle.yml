@@ -1,10 +1,13 @@
 machine:
   environment:
     GOROOT: /usr/local/go
+    PATH: $PATH:$HOME/ffmpeg-static/bin/linux/x64
 
 dependencies:
   cache_directories:
     - "$HOME/.go_workspace/"
+  override:
+    - go get github.com/livepeer/lpms
 
 test:
   override:
