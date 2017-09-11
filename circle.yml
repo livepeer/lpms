@@ -8,6 +8,8 @@ dependencies:
     - "$HOME/.go_workspace/"
   override:
     - go get github.com/livepeer/lpms/cmd/example
+    - cd "$HOME"
+    - git clone git@github.com:livepeer/ffmpeg-static.git
 
 test:
   override:
