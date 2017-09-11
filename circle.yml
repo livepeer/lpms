@@ -1,16 +1,17 @@
 machine:
   environment:
     GOROOT: /usr/local/go
-    PATH: $PATH:$HOME/ffmpeg-static/bin/linux/x64
+    PATH: $PATH:$HOME/ffmpeg-static/bin/linux/x64:/opt/circleci/nodejs/v4.2.6/lib/node_modules/ffmpeg-static/bin/linux/x64/
 
 dependencies:
   cache_directories:
     - "$HOME/.go_workspace/"
-    - "$HOME/ffmpeg-static"
+    # - "$HOME/ffmpeg-static"
   override:
     - go get github.com/livepeer/lpms/cmd/example
     - cd "$HOME"
     - git clone git@github.com:livepeer/ffmpeg-static.git
+    - npm install -g ffmpeg-static
 
 test:
   override:
