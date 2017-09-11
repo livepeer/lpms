@@ -1,0 +1,11 @@
+machine:
+  environment:
+    GOROOT: /usr/local/go
+
+dependencies:
+  cache_directories:
+    - "$HOME/.go_workspace/"
+
+test:
+  override:
+    - bash test.sh
