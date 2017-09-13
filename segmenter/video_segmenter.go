@@ -23,6 +23,7 @@ import (
 
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")
 var ErrFFMpegSegmenter = errors.New("FFMpegSegmenterError")
+var ErrSegmenter = errors.New("SegmenterError")
 var PlaylistRetryCount = 5
 var PlaylistRetryWait = 500 * time.Millisecond
 
