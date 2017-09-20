@@ -259,7 +259,7 @@ func main() {
 			return getStreamIDFromPath(url.Path)
 		},
 		//gotStream
-		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 			streamID := getStreamIDFromPath(url.Path)
 			stream1 := NewSegmentStream(streamID)
 			// stream2 := NewSegmentStream(streamID)
@@ -267,16 +267,17 @@ func main() {
 			return nil
 		},
 		//endStream
-		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 			delete(streamDB.db, rtmpStrm.GetStreamID())
 			return nil
 		})
 
 	lpms.HandleRTMPPlay(
 		//getStream
-		func(url *url.URL) (stream.Stream, error) {
-			src := copyStream(&StagedStream)
-			return src, nil
+		func(url *url.URL) (stream.RTMPVideoStream, error) {
+			// src := copyStream(&StagedStream)
+			// return src, nil
+			return nil, nil
 		})
 
 	lpms.HandleTranscode(
