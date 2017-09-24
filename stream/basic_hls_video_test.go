@@ -7,9 +7,9 @@ import (
 )
 
 func TestAddAndRemove(t *testing.T) {
-	manifest := NewBasicHLSVideoManifest("test_m", 3)
-	strm, err := manifest.AddVideoStream("test_s", &m3u8.Variant{URI: "test_s", Chunklist: nil, VariantParams: m3u8.VariantParams{Bandwidth: 100}})
-	if err != nil {
+	manifest := NewBasicHLSVideoManifest("test_m")
+	strm := NewBasicHLSVideoStream("test_s", DefaultHLSStreamWin)
+	if err := manifest.AddVideoStream(strm, &m3u8.Variant{URI: "test_s", Chunklist: nil, VariantParams: m3u8.VariantParams{Bandwidth: 100}}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 	ml, err := manifest.GetManifest()
@@ -65,12 +65,12 @@ func TestAddAndRemove(t *testing.T) {
 
 	//Add a stream
 	pl, _ = m3u8.NewMediaPlaylist(3, 10)
-	_, err = manifest.AddVideoStream("test2", &m3u8.Variant{URI: "test2.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}})
-	if err != nil {
+	strm2 := NewBasicHLSVideoStream("test2", DefaultHLSStreamWin)
+	if err := manifest.AddVideoStream(strm2, &m3u8.Variant{URI: "test2.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}}); err != nil {
 		t.Errorf("Error adding media playlist: %v", err)
 	}
-	_, err = manifest.AddVideoStream("test3", &m3u8.Variant{URI: "test3.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}})
-	if err == nil {
+	strm3 := NewBasicHLSVideoStream("test3", DefaultHLSStreamWin)
+	if err := manifest.AddVideoStream(strm3, &m3u8.Variant{URI: "test3.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}}); err == nil {
 		t.Errorf("Expecting error because of duplicate variant params")
 	}
 	vstrm, err := manifest.GetVideoStream("wrongName")

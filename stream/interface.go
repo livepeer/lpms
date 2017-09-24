@@ -13,14 +13,21 @@ type VideoStream interface {
 	String() string
 }
 
-type HLSVideoManifest interface {
+type VideoManifest interface {
 	GetManifestID() string
 	GetVideoFormat() VideoFormat
+	String() string
+}
+
+type HLSVideoManifest interface {
+	VideoManifest
 	GetManifest() (*m3u8.MasterPlaylist, error)
 	GetVideoStream(strmID string) (HLSVideoStream, error)
-	AddVideoStream(strmID string, variant *m3u8.Variant) error
+	// AddVideoStream(strmID string, variant *m3u8.Variant) (HLSVideoStream, error)
+	AddVideoStream(strm HLSVideoStream, variant *m3u8.Variant) error
+	GetStreamVariant(strmID string) (*m3u8.Variant, error)
+	GetVideoStreams() []HLSVideoStream
 	DeleteVideoStream(strmID string) error
-	String() string
 }
 
 //HLSVideoStream contains the master playlist, media playlists in it, and the segments in them.  Each media playlist also has a streamID.
@@ -28,7 +35,7 @@ type HLSVideoManifest interface {
 type HLSVideoStream interface {
 	VideoStream
 	GetStreamPlaylist() (*m3u8.MediaPlaylist, error)
-	GetStreamVariant() *m3u8.Variant
+	// GetStreamVariant() *m3u8.Variant
 	GetHLSSegment(segName string) (*HLSSegment, error)
 	AddHLSSegment(seg *HLSSegment) error
 	SetSubscriber(f func(seg *HLSSegment, eof bool))
@@ -39,4 +46,6 @@ type RTMPVideoStream interface {
 	VideoStream
 	ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error
 	WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error
+	Height() int
+	Width() int
 }

@@ -11,19 +11,18 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 )
 
-const DefaultMediaPlLen = uint(500)
+const DefaultHLSStreamCap = uint(500)
+const DefaultHLSStreamWin = uint(3)
 
 // const DefaultMediaWinLen = uint(5)
 const DefaultSegWaitTime = time.Second * 10
 const SegWaitInterval = time.Second
 
-var ErrAddVariant = errors.New("ErrAddVariant")
 var ErrAddHLSSegment = errors.New("ErrAddHLSSegment")
 
 //BasicHLSVideoStream is a basic implementation of HLSVideoStream
 type BasicHLSVideoStream struct {
 	plCache    *m3u8.MediaPlaylist //StrmID -> MediaPlaylist
-	variant    *m3u8.Variant
 	sqMap      map[string]*HLSSegment
 	lock       sync.Locker
 	strmID     string
@@ -31,15 +30,15 @@ type BasicHLSVideoStream struct {
 	winSize    uint
 }
 
-func NewBasicHLSVideoStream(strmID string, variant *m3u8.Variant, wSize uint) *BasicHLSVideoStream {
-	pl, err := m3u8.NewMediaPlaylist(wSize, DefaultMediaPlLen)
+func NewBasicHLSVideoStream(strmID string, wSize uint) *BasicHLSVideoStream {
+	pl, err := m3u8.NewMediaPlaylist(wSize, DefaultHLSStreamCap)
 	if err != nil {
 		return nil
 	}
 
 	return &BasicHLSVideoStream{
 		plCache: pl,
-		variant: variant,
+		// variant: variant,
 		sqMap:   make(map[string]*HLSSegment),
 		lock:    &sync.Mutex{},
 		strmID:  strmID,
@@ -58,7 +57,7 @@ func (s *BasicHLSVideoStream) GetStreamID() string { return s.strmID }
 //GetStreamFormat always returns HLS
 func (s *BasicHLSVideoStream) GetStreamFormat() VideoFormat { return HLS }
 
-//GetVariantPlaylist returns the media playlist represented by the streamID
+//GetStreamPlaylist returns the media playlist represented by the streamID
 func (s *BasicHLSVideoStream) GetStreamPlaylist() (*m3u8.MediaPlaylist, error) {
 	if s.plCache.Count() < s.winSize {
 		return nil, nil
@@ -67,9 +66,9 @@ func (s *BasicHLSVideoStream) GetStreamPlaylist() (*m3u8.MediaPlaylist, error) {
 	return s.plCache, nil
 }
 
-func (s *BasicHLSVideoStream) GetStreamVariant() *m3u8.Variant {
-	return s.variant
-}
+// func (s *BasicHLSVideoStream) GetStreamVariant() *m3u8.Variant {
+// 	return s.variant
+// }
 
 //GetHLSSegment gets the HLS segment.  It blocks until something is found, or timeout happens.
 func (s *BasicHLSVideoStream) GetHLSSegment(segName string) (*HLSSegment, error) {
