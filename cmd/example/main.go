@@ -173,10 +173,10 @@ func main() {
 
 func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool), error) {
 	//Create Transcoder
-	profiles := []transcoder.TranscodeProfile{
-		transcoder.P144p30fps16x9,
-		transcoder.P240p30fps16x9,
-		transcoder.P576p30fps16x9,
+	profiles := []core.VideoProfile{
+		core.P144p30fps16x9,
+		core.P240p30fps16x9,
+		core.P576p30fps16x9,
 	}
 	t := transcoder.NewFFMpegSegmentTranscoder(profiles, "", "./tmp")
 
