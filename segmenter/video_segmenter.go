@@ -26,6 +26,7 @@ var ErrFFMpegSegmenter = errors.New("FFMpegSegmenterError")
 var ErrSegmenter = errors.New("SegmenterError")
 var PlaylistRetryCount = 5
 var PlaylistRetryWait = 500 * time.Millisecond
+var SegmentDuration = 4
 
 type SegmenterOptions struct {
 	EnforceKeyframe bool //Enforce each segment starts with a keyframe
@@ -94,7 +95,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 
 	var cmd *exec.Cmd
 
-	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-segment_time", "8", "-muxdelay", "0", "-segment_list", plfn, tsfn)
+	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-segment_time", fmt.Sprintf("%v", SegmentDuration), "-muxdelay", "0", "-segment_list", plfn, tsfn)
 
 	err = cmd.Start()
 	if err != nil {
@@ -112,6 +113,10 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 			ffmpege = ErrFFMpegSegmenter
 		} else {
 			glog.Errorf("Error from ffmpeg: %v", ffmpege)
+		}
+
+		if cleanup {
+			s.Cleanup()
 		}
 		return ffmpege
 	case <-ctx.Done():
@@ -275,6 +280,7 @@ func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, ne
 }
 
 func (s *FFMpegVideoSegmenter) Cleanup() {
+	glog.Infof("Cleaning up video segments.....")
 	files, _ := filepath.Glob(path.Join(s.WorkDir, s.StrmID) + "*")
 	for _, fn := range files {
 		os.Remove(fn)

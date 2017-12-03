@@ -139,7 +139,7 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 
-		timeDiff := seg.Length - time.Second*8
+		timeDiff := seg.Length - time.Second*time.Duration(SegmentDuration)
 		if timeDiff > time.Millisecond*500 || timeDiff < -time.Millisecond*500 {
 			t.Errorf("Expecting 2 sec segments, got %v", seg.Length)
 		}
