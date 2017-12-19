@@ -166,9 +166,11 @@ func main() {
 		//getStream
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
 			glog.Infof("Got req: ", url.Path)
-			strmID := parseStreamID(url.Path)
-			if strmID == rtmpStrm.GetStreamID() {
-				return rtmpStrm, nil
+			if rtmpStrm != nil {
+				strmID := parseStreamID(url.Path)
+				if strmID == rtmpStrm.GetStreamID() {
+					return rtmpStrm, nil
+				}
 			}
 			return nil, fmt.Errorf("Cannot find stream")
 		})
