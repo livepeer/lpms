@@ -19,7 +19,6 @@ import (
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/core"
-	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -68,7 +67,7 @@ func main() {
 	var rtmpStrm stream.RTMPVideoStream
 	var hlsStrm stream.HLSVideoStream
 	var manifest stream.HLSVideoManifest
-	var cancelSeg context.CancelFunc
+	// var cancelSeg context.CancelFunc
 
 	lpms.HandleRTMPPublish(
 		//makeStreamID (give the stream an ID)
@@ -82,38 +81,38 @@ func main() {
 			glog.Infof("Got RTMP stream: %v", rs.GetStreamID())
 			rtmpStrm = rs
 
-			//Segment the video into HLS (If we need multiple outlets for the HLS stream, we'd need to create a buffer.  But here we only have one outlet for the transcoder)
-			hlsStrm = stream.NewBasicHLSVideoStream(randString(10), 3)
-			var subscriber func(*stream.HLSSegment, bool)
-			subscriber, err = transcode(hlsStrm)
-			if err != nil {
-				glog.Errorf("Error transcoding: %v", err)
-			}
-			hlsStrm.SetSubscriber(subscriber)
-			glog.Infof("After set subscriber")
-			opt := segmenter.SegmenterOptions{SegLength: 8 * time.Second}
-			var ctx context.Context
-			ctx, cancelSeg = context.WithCancel(context.Background())
+			// //Segment the video into HLS (If we need multiple outlets for the HLS stream, we'd need to create a buffer.  But here we only have one outlet for the transcoder)
+			// hlsStrm = stream.NewBasicHLSVideoStream(randString(10), 3)
+			// var subscriber func(*stream.HLSSegment, bool)
+			// subscriber, err = transcode(hlsStrm)
+			// if err != nil {
+			// 	glog.Errorf("Error transcoding: %v", err)
+			// }
+			// hlsStrm.SetSubscriber(subscriber)
+			// glog.Infof("After set subscriber")
+			// opt := segmenter.SegmenterOptions{SegLength: 8 * time.Second}
+			// var ctx context.Context
+			// ctx, cancelSeg = context.WithCancel(context.Background())
 
-			//Kick off FFMpeg to create segments
-			go func() {
-				if err := lpms.SegmentRTMPToHLS(ctx, rtmpStrm, hlsStrm, opt); err != nil {
-					glog.Errorf("Error segmenting RTMP video stream: %v", err)
-				}
-			}()
-			glog.Infof("HLS StreamID: %v", hlsStrm.GetStreamID())
+			// //Kick off FFMpeg to create segments
+			// go func() {
+			// 	if err := lpms.SegmentRTMPToHLS(ctx, rtmpStrm, hlsStrm, opt); err != nil {
+			// 		glog.Errorf("Error segmenting RTMP video stream: %v", err)
+			// 	}
+			// }()
+			// glog.Infof("HLS StreamID: %v", hlsStrm.GetStreamID())
 
-			mid := randString(10)
-			manifest = stream.NewBasicHLSVideoManifest(mid)
-			pl, _ := hlsStrm.GetStreamPlaylist()
-			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", mid), Chunklist: pl, VariantParams: m3u8.VariantParams{}}
-			manifest.AddVideoStream(hlsStrm, variant)
+			// mid := randString(10)
+			// manifest = stream.NewBasicHLSVideoManifest(mid)
+			// pl, _ := hlsStrm.GetStreamPlaylist()
+			// variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", mid), Chunklist: pl, VariantParams: m3u8.VariantParams{}}
+			// manifest.AddVideoStream(hlsStrm, variant)
 			return nil
 		},
 		//endStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 			//Remove the stream
-			cancelSeg()
+			// cancelSeg()
 			rtmpStrm = nil
 			hlsStrm = nil
 			return nil
