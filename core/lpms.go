@@ -10,6 +10,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidlistener"
@@ -48,6 +49,8 @@ func New(rtmpPort, httpPort, ffmpegPath, vodPath, workDir string) *LPMS {
 //Start starts the rtmp and http server
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
 	go func() {
 		glog.Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
 		ec <- l.rtmpServer.ListenAndServe()
@@ -131,7 +134,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 
 	select {
 	case err := <-c:
-		if err != segmenter.ErrFFMpegSegmenter {
+		if err != ffmpeg.ErrFFMpegSegmenter {
 			glog.Errorf("Error segmenting stream: %v", err)
 		}
 		ffmpegCancel()
