@@ -137,11 +137,14 @@ func main() {
 		},
 		//getMediaPlaylist
 		func(url *url.URL) (*m3u8.MediaPlaylist, error) {
+			if nil == hlsStrm {
+				return nil, fmt.Errorf("No stream available")
+			}
 			//Wait for the HLSBuffer gets populated, get the playlist from the buffer, and return it.
 			start := time.Now()
 			for time.Since(start) < HLSWaitTime {
 				pl, err := hlsStrm.GetStreamPlaylist()
-				if err != nil || pl.Segments[0] == nil || pl.Segments[0].URI == "" {
+				if err != nil || pl == nil || pl.Segments == nil || len(pl.Segments) <= 0 || pl.Segments[0] == nil || pl.Segments[0].URI == "" {
 					if err == stream.ErrEOF {
 						return nil, err
 					}
