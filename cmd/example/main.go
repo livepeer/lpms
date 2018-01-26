@@ -115,7 +115,7 @@ func main() {
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 			glog.Infof("Ending stream for %v", hlsStrm.GetStreamID())
 			//Remove the stream
-			// cancelSeg()
+			cancelSeg()
 			rtmpStrm = nil
 			hlsStrm = nil
 			return nil
