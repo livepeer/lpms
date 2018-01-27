@@ -1,7 +1,6 @@
 package ffmpeg
 
 import (
-	"errors"
 	"github.com/golang/glog"
 	"unsafe"
 )
@@ -10,8 +9,6 @@ import (
 // #include <stdlib.h>
 // #include "lpms_ffmpeg.h"
 import "C"
-
-var ErrFFMpegSegmenter = errors.New("FFMpegSegmenterError")
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string) error {
 	inp := C.CString(localRTMPUrl)
@@ -24,8 +21,8 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 	C.free(unsafe.Pointer(ts_tmpl))
 	C.free(unsafe.Pointer(seglen))
 	if 0 != ret {
-		glog.Infof("RTMP2HLS Transmux Return : %d\n", ret)
-		return ErrFFMpegSegmenter
+		glog.Infof("RTMP2HLS Transmux Return : %v\n", Strerror(ret))
+		return ErrorMap[ret]
 	}
 	return nil
 }
