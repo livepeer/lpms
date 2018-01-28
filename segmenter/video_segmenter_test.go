@@ -16,6 +16,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
 	"github.com/nareix/joy4/av"
@@ -69,6 +70,8 @@ func (s *TestStream) Width() int                                                
 func (s *TestStream) Height() int                                                         { return 0 }
 
 func TestSegmenter(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
 	wd, _ := os.Getwd()
 	workDir := wd + "/tmp"
 	os.RemoveAll(workDir)
@@ -103,8 +106,8 @@ func TestSegmenter(t *testing.T) {
 	go func() { se <- func() error { return vs.RTMPToHLS(ctx, opt, false) }() }()
 	select {
 	case err := <-se:
-		if err != context.DeadlineExceeded {
-			t.Errorf("Should exceed deadline (since it's not a real stream, ffmpeg should finish instantly).  But instead got: %v", err)
+		if err != nil {
+			t.Errorf("Since it's not a real stream, ffmpeg should finish instantly.  But instead got: %v", err)
 		}
 	}
 
