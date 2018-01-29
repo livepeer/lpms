@@ -307,3 +307,17 @@ test_1.ts
 
 	os.RemoveAll(workDir)
 }
+
+func TestNoRTMPListener(t *testing.T) {
+	url := "rtmp://localhost:19355"
+	vs := NewFFMpegVideoSegmenter("tmp", "test", url, time.Millisecond*100)
+	opt := SegmenterOptions{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	err := vs.RTMPToHLS(ctx, opt, false)
+	if err == nil {
+		t.Errorf("error was unexpectedly nil; is something running on %v?", url)
+	} else if err.Error() != "Connection refused" {
+		t.Error("error was not nil; got ", err)
+	}
+}

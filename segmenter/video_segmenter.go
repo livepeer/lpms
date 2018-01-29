@@ -18,7 +18,6 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/format/rtmp"
 )
 
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")
@@ -73,15 +72,6 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 			return err
 		}
 	}
-
-	//Test to make sure local RTMP is running.
-	rtmpMux, err := rtmp.Dial(s.LocalRtmpUrl)
-	if err != nil {
-		glog.Errorf("Video Segmenter Error: %v.  Make sure local RTMP stream is available for segmenter.", err)
-		rtmpMux.Close()
-		return err
-	}
-	rtmpMux.Close()
 
 	outp := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
 	ts_tmpl := fmt.Sprintf("%s/%s", s.WorkDir, s.StrmID) + "_%d.ts"
