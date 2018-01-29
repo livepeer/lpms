@@ -101,6 +101,7 @@ func TestSegmenter(t *testing.T) {
 	opt := SegmenterOptions{SegLength: segLength}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
+	time.Sleep(100 * time.Millisecond) // hack cuz listener might not be ready
 
 	//Kick off FFMpeg to create segments
 	go func() { se <- func() error { return vs.RTMPToHLS(ctx, opt, false) }() }()
@@ -319,5 +320,52 @@ func TestNoRTMPListener(t *testing.T) {
 		t.Errorf("error was unexpectedly nil; is something running on %v?", url)
 	} else if err.Error() != "Connection refused" {
 		t.Error("error was not nil; got ", err)
+	}
+}
+
+type ServerDisconnectStream struct {
+	TestStream
+}
+
+func (s *ServerDisconnectStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (chan struct{}, error) {
+	file, err := avutil.Open("test.flv")
+	if err != nil {
+		glog.Errorf("Error reading headers: %v", err)
+		return nil, err
+	}
+	header, err := file.Streams()
+	dst.WriteHeader(header)
+	dst.Close()
+	return make(chan struct{}), nil
+}
+
+func TestServerDisconnectMidStream(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
+	port := "1938" // because we can't yet close the listener on 1935?
+	strm := &ServerDisconnectStream{}
+	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, strm.GetStreamID())
+	vs := NewFFMpegVideoSegmenter("tmp", strm.GetStreamID(), strmUrl, time.Millisecond*10)
+	server := &rtmp.Server{Addr: ":" + port}
+	player := vidplayer.NewVidPlayer(server, "")
+	player.HandleRTMPPlay(
+		func(url *url.URL) (stream.RTMPVideoStream, error) {
+			return strm, nil
+		})
+
+	//Kick off RTMP server
+	go func() {
+		err := player.RtmpServer.ListenAndServe()
+		if err != nil {
+			t.Errorf("Error kicking off RTMP server: %v", err)
+		}
+	}()
+	opt := SegmenterOptions{SegLength: time.Second * 4}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	time.Sleep(100 * time.Millisecond) // hack cuz listener might not be ready
+	err := vs.RTMPToHLS(ctx, opt, false)
+	if err == nil || err.Error() != "Input/output error" {
+		t.Error("Expected 'Input/output error' but instead got ", err)
 	}
 }
