@@ -53,7 +53,6 @@ type FFMpegVideoSegmenter struct {
 	WorkDir        string
 	LocalRtmpUrl   string
 	StrmID         string
-	ffmpegPath     string
 	curSegment     int
 	curPlaylist    *m3u8.MediaPlaylist
 	curPlWaitTime  time.Duration
@@ -61,8 +60,8 @@ type FFMpegVideoSegmenter struct {
 	SegLen         time.Duration
 }
 
-func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, segLen time.Duration, ffmpegPath string) *FFMpegVideoSegmenter {
-	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: segLen, ffmpegPath: ffmpegPath}
+func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, segLen time.Duration) *FFMpegVideoSegmenter {
+	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: segLen}
 }
 
 //RTMPToHLS invokes FFMpeg to do the segmenting. This method blocks until the segmenter exits.

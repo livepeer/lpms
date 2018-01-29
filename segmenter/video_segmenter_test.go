@@ -79,7 +79,7 @@ func TestSegmenter(t *testing.T) {
 	//Create a test stream from stub
 	strm := &TestStream{}
 	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", strm.GetStreamID())
-	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, time.Millisecond*10, "")
+	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, time.Millisecond*10)
 	server := &rtmp.Server{Addr: ":1935"}
 	player := vidplayer.NewVidPlayer(server, "")
 
@@ -218,7 +218,7 @@ test_6.ts
 }
 
 func TestPollPlaylistError(t *testing.T) {
-	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", time.Millisecond*100, "")
+	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", time.Millisecond*100)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
 	defer cancel()
 	_, err := vs.PollPlaylist(ctx)
@@ -228,7 +228,7 @@ func TestPollPlaylistError(t *testing.T) {
 }
 
 func TestPollSegmentError(t *testing.T) {
-	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", time.Millisecond*10, "")
+	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", time.Millisecond*10)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
 	defer cancel()
 	_, err := vs.PollSegment(ctx)
@@ -256,7 +256,7 @@ test_0.ts
 		t.Errorf("Error writing playlist: %v", err)
 	}
 
-	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100, "")
+	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100)
 	ctx := context.Background()
 	pl, err := vs.PollPlaylist(ctx)
 	if pl == nil {
@@ -293,7 +293,7 @@ test_1.ts
 		t.Errorf("Error writing playlist: %v", err)
 	}
 
-	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100, "")
+	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100)
 	ctx := context.Background()
 	seg, err := vs.PollSegment(ctx)
 	if seg == nil {
