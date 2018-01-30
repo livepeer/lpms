@@ -7,7 +7,7 @@ void lpms_init()
   av_register_all();
   avcodec_register_all();
   avformat_network_init();
-  //av_log_set_level(AV_LOG_DEBUG);
+  av_log_set_level(AV_LOG_WARNING);
 }
 
 void lpms_deinit()
