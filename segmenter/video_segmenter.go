@@ -59,12 +59,15 @@ type FFMpegVideoSegmenter struct {
 	SegLen         time.Duration
 }
 
-func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, segLen time.Duration) *FFMpegVideoSegmenter {
-	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: segLen}
+func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, opt SegmenterOptions) *FFMpegVideoSegmenter {
+	if opt.SegLength == 0 {
+		opt.SegLength = time.Second * 4
+	}
+	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: opt.SegLength}
 }
 
 //RTMPToHLS invokes FFMpeg to do the segmenting. This method blocks until the segmenter exits.
-func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptions, cleanup bool) error {
+func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, cleanup bool) error {
 	//Set up local workdir
 	if _, err := os.Stat(s.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(s.WorkDir, 0700)
@@ -75,7 +78,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 
 	outp := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
 	ts_tmpl := fmt.Sprintf("%s/%s", s.WorkDir, s.StrmID) + "_%d.ts"
-	seglen := strconv.FormatFloat(opt.SegLength.Seconds(), 'f', 6, 64)
+	seglen := strconv.FormatFloat(s.SegLen.Seconds(), 'f', 6, 64)
 	ret := ffmpeg.RTMPToHLS(s.LocalRtmpUrl, outp, ts_tmpl, seglen)
 	if cleanup {
 		s.Cleanup()

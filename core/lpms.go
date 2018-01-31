@@ -98,10 +98,10 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	localRtmpUrl := "rtmp://localhost" + l.rtmpServer.Addr + "/stream/" + rs.GetStreamID()
 	glog.V(4).Infof("Segment RTMP Req: %v", localRtmpUrl)
 
-	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength)
+	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions)
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
-	go func() { c <- s.RTMPToHLS(ffmpegCtx, segOptions, true) }()
+	go func() { c <- s.RTMPToHLS(ffmpegCtx, true) }()
 
 	//Kick off go routine to write HLS segments
 	segCtx, segCancel := context.WithCancel(context.Background())
