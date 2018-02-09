@@ -10,17 +10,17 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/lpms/core"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 //SegmentTranscoder transcodes segments individually.  This is a simple wrapper for calling FFMpeg on the command line.
 type FFMpegSegmentTranscoder struct {
-	tProfiles  []core.VideoProfile
+	tProfiles  []ffmpeg.VideoProfile
 	ffmpegPath string
 	workDir    string
 }
 
-func NewFFMpegSegmentTranscoder(ps []core.VideoProfile, ffmpegp, workd string) *FFMpegSegmentTranscoder {
+func NewFFMpegSegmentTranscoder(ps []ffmpeg.VideoProfile, ffmpegp, workd string) *FFMpegSegmentTranscoder {
 	return &FFMpegSegmentTranscoder{tProfiles: ps, ffmpegPath: ffmpegp, workDir: workd}
 }
 

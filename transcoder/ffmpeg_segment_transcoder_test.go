@@ -4,7 +4,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/livepeer/lpms/core"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 func TestTrans(t *testing.T) {
@@ -13,10 +13,10 @@ func TestTrans(t *testing.T) {
 		t.Errorf("Error reading test segment: %v", err)
 	}
 
-	configs := []core.VideoProfile{
-		core.P144p30fps16x9,
-		core.P240p30fps16x9,
-		core.P576p30fps16x9,
+	configs := []ffmpeg.VideoProfile{
+		ffmpeg.P144p30fps16x9,
+		ffmpeg.P240p30fps16x9,
+		ffmpeg.P576p30fps16x9,
 	}
 	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
 	r, err := tr.Transcode(testSeg)
