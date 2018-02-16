@@ -36,9 +36,9 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
   AVPacket pkt;
 
   ret = avformat_open_input(&ic, listen, NULL, NULL);
-  if (ret < 0) r2h_err("Unable to open input\n");
+  if (ret < 0) r2h_err("segmenter: Unable to open input\n");
   ret = avformat_find_stream_info(ic, NULL);
-  if (ret < 0) r2h_err("Unable to find any input streams\n");
+  if (ret < 0) r2h_err("segmenter: Unable to find any input streams\n");
 
   ofmt = av_guess_format(NULL, outf, NULL);
   if (!ofmt) r2h_err("Could not deduce output format from file extension\n");
@@ -46,17 +46,17 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
   if (ret < 0) r2h_err("Unable to allocate output context\n");
 
   stream_map[0] = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
-  if (stream_map[0] < 0) r2h_err("Unable to find video stream\n");
+  if (stream_map[0] < 0) r2h_err("segmenter: Unable to find video stream\n");
   stream_map[1] = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
-  if (stream_map[1] < 0) r2h_err("Unable to find audio stream\n");
+  if (stream_map[1] < 0) r2h_err("segmenter: Unable to find audio stream\n");
 
   ist = ic->streams[stream_map[0]];
   ost = avformat_new_stream(oc, NULL);
-  if (!ost) r2h_err("Unable to allocate output video stream\n");
+  if (!ost) r2h_err("segmenter: Unable to allocate output video stream\n");
   avcodec_parameters_copy(ost->codecpar, ist->codecpar);
   ist = ic->streams[stream_map[1]];
   ost = avformat_new_stream(oc, NULL);
-  if (!ost) r2h_err("Unable to allocate output audio stream\n");
+  if (!ost) r2h_err("segmenter: Unable to allocate output audio stream\n");
   avcodec_parameters_copy(ost->codecpar, ist->codecpar);
 
   av_dict_set(&md, "hls_time", seg_time, 0);
@@ -88,12 +88,12 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
     prev_ts[pkt.stream_index] = dts_next;
     // write the thing
     ret = av_interleaved_write_frame(oc, &pkt);
-    if (ret < 0) r2h_err("Unable to write output frame\n");
+    if (ret < 0) r2h_err("segmenter: Unable to write output frame\n");
 r2hloop_end:
     av_packet_unref(&pkt);
   }
   ret = av_write_trailer(oc);
-  if (ret < 0) r2h_err("Unable to write trailer\n");
+  if (ret < 0) r2h_err("segmenter: Unable to write trailer\n");
 
 handle_r2h_err:
   if (errstr) fprintf(stderr, "%s", errstr);
