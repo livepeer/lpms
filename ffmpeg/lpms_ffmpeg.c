@@ -6,12 +6,14 @@
 // Internal transcoder data structures
 //
 struct input_ctx {
+  AVFormatContext *ic; // demuxer required
 };
 
 struct output_ctx {
   char *fname;         // required output file name
   int width, height, bitrate; // w, h, br required
   AVRational fps;
+  AVFormatContext *oc; // muxer required
 };
 
 void lpms_init()
@@ -123,6 +125,12 @@ handle_r2h_err:
 
 static void free_output(struct output_ctx *octx)
 {
+  if (octx->oc) {
+    if (!(octx->oc->oformat->flags & AVFMT_NOFILE) && octx->oc->pb) {
+      avio_closep(&octx->oc->pb);
+    }
+    avformat_free_context(octx->oc);
+  }
 }
 
 
@@ -134,6 +142,24 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   goto open_output_err; \
 }
   int ret = 0;
+  AVOutputFormat *fmt = NULL;
+  AVFormatContext *oc = NULL;
+  AVStream *st        = NULL;
+
+  // open muxer
+  fmt = av_guess_format(NULL, octx->fname, NULL);
+  if (!fmt) em_err("Unable to guess output format\n");
+  ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
+  if (ret < 0) em_err("Unable to alloc output context\n");
+  octx->oc = oc;
+
+  if (!(fmt->flags & AVFMT_NOFILE)) {
+    avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
+    if (ret < 0) em_err("Error opening output file\n");
+  }
+
+  ret = avformat_write_header(oc, NULL);
+  if (ret < 0) em_err("Error writing header\n");
 
   return 0;
 
@@ -144,6 +170,7 @@ open_output_err:
 
 static void free_input(struct input_ctx *inctx)
 {
+  if (inctx->ic) avformat_close_input(&inctx->ic);
 }
 
 static int open_input(char *inp, struct input_ctx *ctx)
@@ -153,7 +180,14 @@ static int open_input(char *inp, struct input_ctx *ctx)
   fprintf(stderr, msg); \
   goto open_input_err; \
 }
-  int ret = 0;
+  AVFormatContext *ic   = NULL;
+
+  // open demuxer
+  int ret = avformat_open_input(&ic, inp, NULL, NULL);
+  if (ret < 0) dd_err("demuxer: Unable to open input\n");
+  ctx->ic = ic;
+  ret = avformat_find_stream_info(ic, NULL);
+  if (ret < 0) dd_err("Unable to find input info\n");
 
   return 0;
 
@@ -173,6 +207,12 @@ int process_in(struct input_ctx *ictx, AVPacket *pkt)
   int ret = 0;
 
   av_init_packet(pkt);
+  // loop until a new packet has been read, or EAGAIN
+  while (1) {
+    ret = av_read_frame(ictx->ic, pkt);
+    if (ret == AVERROR_EOF) return ret;
+    else if (ret < 0) dec_err("Unable to read input\n");
+  }
 
 dec_cleanup:
   if (ret < 0) av_packet_unref(pkt); // XXX necessary? or have caller do it?
@@ -191,6 +231,9 @@ int process_out(struct output_ctx *octx, AVPacket *pkt)
   goto proc_cleanup; \
 }
   int ret = 0;
+
+  ret = av_interleaved_write_frame(octx->oc, pkt);
+  if (ret < 0) proc_err("Error writing frame\n"); // XXX handle better?
 
 proc_cleanup:
   return ret;
@@ -235,14 +278,17 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
 
   av_init_packet(&ipkt);
 
-  while (0) {
+  while (1) {
     AVStream *ist = NULL;
     ret = process_in(&ictx, &ipkt);
     if (ret == AVERROR_EOF) break;
     else if (ret < 0) goto whileloop_end; // XXX fix
+    ist = ictx.ic->streams[ipkt.stream_index];
 
     for (i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];
+      AVStream *ost = NULL;
+      ist = ictx.ic->streams[ipkt.stream_index];
 
       ret = process_out(octx, &ipkt);
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
@@ -258,6 +304,10 @@ whileloop_end:
     struct output_ctx *octx = &outputs[i];
     // only issue w this flushing method is it's not necessarily sequential
     // wrt all the outputs; might want to iterate on each output per frame?
+    ret = 0;
+    av_interleaved_write_frame(octx->oc, NULL); // flush muxer
+    ret = av_write_trailer(octx->oc);
+    if (ret < 0) main_err("transcoder: Unable to write trailer");
   }
 
 transcode_cleanup:
