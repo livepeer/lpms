@@ -17,6 +17,8 @@ struct output_ctx {
   int width, height, bitrate; // w, h, br required
   AVRational fps;
   AVFormatContext *oc; // muxer required
+  AVCodecContext  *vc; // video decoder optional
+  int vi; // video and audio stream indices
 };
 
 void lpms_init()
@@ -134,6 +136,7 @@ static void free_output(struct output_ctx *octx)
     }
     avformat_free_context(octx->oc);
   }
+  if (octx->vc) avcodec_free_context(&octx->vc);
 }
 
 
@@ -147,6 +150,8 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   int ret = 0;
   AVOutputFormat *fmt = NULL;
   AVFormatContext *oc = NULL;
+  AVCodecContext *vc  = NULL;
+  AVCodec *codec      = NULL;
   AVStream *st        = NULL;
 
   // open muxer
@@ -155,6 +160,45 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
   if (ret < 0) em_err("Unable to alloc output context\n");
   octx->oc = oc;
+
+  if (ictx->vc) {
+    codec = avcodec_find_encoder_by_name("libx264"); // XXX make more flexible?
+    if (!codec) em_err("Unable to find libx264");
+
+    // open video encoder
+    // XXX use avoptions rather than manual enumeration
+    vc = avcodec_alloc_context3(codec);
+    if (!vc) em_err("Unable to alloc video encoder\n"); // XXX shld be optional
+    octx->vc = vc;
+    vc->width = octx->width;
+    vc->height = octx->height;
+    if (octx->fps.den) vc->framerate = octx->fps;
+    if (octx->fps.den) vc->time_base = av_inv_q(octx->fps);
+    if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+    vc->thread_count = 1;
+    vc->pix_fmt = AV_PIX_FMT_YUV420P; // XXX select based on encoder + input support
+    if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    /*
+    if (ictx->vc->extradata) {
+      // XXX only if transmuxing!
+      vc->extradata = av_mallocz(ictx->vc->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+      if (!vc->extradata) em_err("Unable to allocate video extradata\n");
+      memcpy(vc->extradata, ictx->vc->extradata, ictx->vc->extradata_size);
+      vc->extradata_size = ictx->vc->extradata_size;
+    }*/
+    ret = avcodec_open2(vc, codec, NULL);
+    if (ret < 0) em_err("Error opening video encoder\n");
+
+    // video stream in muxer
+    st = avformat_new_stream(oc, NULL);
+    if (!st) em_err("Unable to alloc video stream\n");
+    octx->vi = st->index;
+    st->avg_frame_rate = octx->fps;
+    st->time_base = vc->time_base;
+    ret = avcodec_parameters_from_context(st->codecpar, vc);
+    if (ret < 0) em_err("Error setting video encoder params\n");
+  }
+
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
     avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
@@ -264,7 +308,8 @@ dec_flush:
 #undef dec_err
 }
 
-int process_out(struct output_ctx *octx, AVPacket *pkt)
+int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
+  AVFrame *inf)
 {
 #define proc_err(msg) { \
   char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
@@ -274,11 +319,39 @@ int process_out(struct output_ctx *octx, AVPacket *pkt)
   goto proc_cleanup; \
 }
   int ret = 0;
+  AVFrame *frame = NULL;
+  AVPacket pkt = {0};
+  AVRational tb;
 
-  ret = av_interleaved_write_frame(octx->oc, pkt);
+  frame = inf;
+
+  // encode
+  av_init_packet(&pkt);
+  if (encoder) {
+    ret = avcodec_send_frame(encoder, frame);
+    if (AVERROR_EOF == ret) ;
+    else if (ret < 0) proc_err("Error sending frame to encoder\n");
+    ret = avcodec_receive_packet(encoder, &pkt);
+    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) return ret;
+    if (ret < 0) proc_err("Error receiving packet from encoder\n");
+    tb = encoder->time_base;
+  } else proc_err("Trying to transmux") // XXX pass in the inpacket, set  pkt = ipkt
+
+
+  // packet bookkeeping.  XXX use av_rescale_delta for audio
+  pkt.stream_index = ost->index;
+  if (av_cmp_q(tb, ost->time_base)) {
+    pkt.pts = av_rescale_q_rnd(pkt.pts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
+    pkt.dts = av_rescale_q_rnd(pkt.dts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
+    pkt.duration = av_rescale_q(pkt.duration, encoder->time_base, ost->time_base);
+  }
+
+  ret = av_interleaved_write_frame(octx->oc, &pkt);
   if (ret < 0) proc_err("Error writing frame\n"); // XXX handle better?
 
 proc_cleanup:
+  av_frame_unref(frame);
+  av_packet_unref(&pkt);
   return ret;
 #undef proc_err
 }
@@ -334,9 +407,14 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
     for (i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];
       AVStream *ost = NULL;
-      ist = ictx.ic->streams[ipkt.stream_index];
+      AVCodecContext *encoder = NULL;
 
-      ret = process_out(octx, &ipkt);
+      if (ist->index == ictx.vi && ictx.vc) {
+        ost = octx->oc->streams[0];
+        encoder = octx->vc;
+      } else main_err("transcoder: Got unknown stream\n"); // XXX could be legit; eg subs, secondary streams
+
+      ret = process_out(octx, encoder, ost, dframe);
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
       else if (ret < 0) main_err("transcoder: verybad\n");
     }
@@ -350,6 +428,12 @@ whileloop_end:
     struct output_ctx *octx = &outputs[i];
     // only issue w this flushing method is it's not necessarily sequential
     // wrt all the outputs; might want to iterate on each output per frame?
+    ret = 0;
+    if (octx->vc) { // flush video
+      while (!ret || ret == AVERROR(EAGAIN)) {
+        ret = process_out(octx, octx->vc, octx->oc->streams[octx->vi], NULL);
+      }
+    }
     ret = 0;
     av_interleaved_write_frame(octx->oc, NULL); // flush muxer
     ret = av_write_trailer(octx->oc);
