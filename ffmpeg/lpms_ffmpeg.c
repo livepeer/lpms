@@ -32,7 +32,7 @@ struct output_ctx {
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
-  struct filter_ctx vf;
+  struct filter_ctx vf, af;
 };
 
 void lpms_init()
@@ -160,6 +160,7 @@ static void free_output(struct output_ctx *octx)
   if (octx->vc) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   free_filter(&octx->vf);
+  free_filter(&octx->af);
 }
 
 
@@ -230,11 +231,11 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ac = avcodec_alloc_context3(codec);
     if (!ac) em_err("Unable to alloc audio encoder\n"); // XXX shld be optional
     octx->ac = ac;
-    ac->sample_fmt = AV_SAMPLE_FMT_FLTP;
-    ac->channel_layout = AV_CH_LAYOUT_MONO;
-    ac->channels = 1;
-    ac->sample_rate = 48000;
-    ac->time_base = (AVRational){1, 1000};
+    ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
+    ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);
+    ac->channels = av_buffersink_get_channels(octx->af.sink_ctx);
+    ac->sample_rate = av_buffersink_get_sample_rate(octx->af.sink_ctx);
+    ac->time_base = av_buffersink_get_time_base(octx->af.sink_ctx);
     if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     ret = avcodec_open2(ac, codec, NULL);
     if (ret < 0) em_err("Error opening audio encoder\n");
@@ -413,6 +414,94 @@ init_video_filters_cleanup:
 #undef filters_err
 }
 
+
+static int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx,
+    char *filters_descr)
+{
+#define af_err(msg) { \
+  if (!ret) ret = -1; \
+  fprintf(stderr, msg); \
+  goto init_audio_filters_cleanup; \
+}
+  int ret = 0;
+  char args[512];
+  const AVFilter *buffersrc  = avfilter_get_by_name("abuffer");
+  const AVFilter *buffersink = avfilter_get_by_name("abuffersink");
+  AVFilterInOut *outputs = avfilter_inout_alloc();
+  AVFilterInOut *inputs  = avfilter_inout_alloc();
+  struct filter_ctx *af = &octx->af;
+  AVRational time_base = ictx->ic->streams[ictx->ai]->time_base;
+
+
+  af->graph = avfilter_graph_alloc();
+
+  if (!outputs || !inputs || !af->graph) {
+    ret = AVERROR(ENOMEM);
+    af_err("Unble to allocate audio filters\n");
+  }
+
+  /* buffer audio source: the decoded frames from the decoder will be inserted here. */
+  snprintf(args, sizeof args,
+      "sample_rate=%d:sample_fmt=%d:channel_layout=0x%"PRIx64":channels=%d:"
+      "time_base=%d/%d",
+      ictx->ac->sample_rate, ictx->ac->sample_fmt, ictx->ac->channel_layout,
+      ictx->ac->channels, time_base.num, time_base.den);
+
+  ret = avfilter_graph_create_filter(&af->src_ctx, buffersrc,
+                                     "in", args, NULL, af->graph);
+  if (ret < 0) af_err("Cannot create audio buffer source\n");
+
+  /* buffer audio sink: to terminate the filter chain. */
+  ret = avfilter_graph_create_filter(&af->sink_ctx, buffersink,
+                                     "out", NULL, NULL, af->graph);
+  if (ret < 0) af_err("Cannot create audio buffer sink\n");
+
+  /*
+   * Set the endpoints for the filter graph. The filter_graph will
+   * be linked to the graph described by filters_descr.
+   */
+
+  /*
+   * The buffer source output must be connected to the input pad of
+   * the first filter described by filters_descr; since the first
+   * filter input label is not specified, it is set to "in" by
+   * default.
+   */
+  outputs->name       = av_strdup("in");
+  outputs->filter_ctx = af->src_ctx;
+  outputs->pad_idx    = 0;
+  outputs->next       = NULL;
+
+  /*
+   * The buffer sink input must be connected to the output pad of
+   * the last filter described by filters_descr; since the last
+   * filter output label is not specified, it is set to "out" by
+   * default.
+   */
+  inputs->name       = av_strdup("out");
+  inputs->filter_ctx = af->sink_ctx;
+  inputs->pad_idx    = 0;
+  inputs->next       = NULL;
+
+  ret = avfilter_graph_parse_ptr(af->graph, filters_descr,
+                                &inputs, &outputs, NULL);
+  if (ret < 0) af_err("Unable to parse audio filters desc\n");
+
+  ret = avfilter_graph_config(af->graph, NULL);
+  if (ret < 0) af_err("Unable configure audio filtergraph\n");
+
+  af->frame = av_frame_alloc();
+  if (!af->frame) af_err("Unable to allocate audio frame\n");
+
+init_audio_filters_cleanup:
+  avfilter_inout_free(&inputs);
+  avfilter_inout_free(&outputs);
+
+  af->active = !ret;
+  return ret;
+#undef af_err
+}
+
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 {
 #define dec_err(msg) { \
@@ -563,6 +652,13 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
       ret = init_video_filters(&ictx, octx, filter_str);
       if (ret < 0) main_err("Unable to open video filter");
     }
+    if (ictx.ac) {
+      char filter_str[256];
+      //snprintf(filter_str, sizeof filter_str, "aformat=sample_fmts=s16:channel_layouts=stereo:sample_rates=44100,asetnsamples=n=1152,aresample");
+      snprintf(filter_str, sizeof filter_str, "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"); // set sample format and rate based on encoder support
+      ret = init_audio_filters(&ictx, octx, filter_str);
+      if (ret < 0) main_err("Unable to open audio filter");
+    }
     ret = open_output(octx, &ictx);
     if (ret < 0) main_err("transcoder: Unable to open output\n");
   }
@@ -592,7 +688,7 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
       } else if (ist->index == ictx.ai && ictx.ac) {
         ost = octx->oc->streams[!!ictx.vc]; // depends on whether video exists
         encoder = octx->ac;
-        filter = NULL;
+        filter = &octx->af;
       } else main_err("transcoder: Got unknown stream\n"); // XXX could be legit; eg subs, secondary streams
 
       ret = process_out(octx, encoder, ost, filter, dframe);
@@ -618,7 +714,7 @@ whileloop_end:
     ret = 0;
     if (octx->ac) { // flush audio
       while (!ret || ret == AVERROR(EAGAIN)) {
-        ret = process_out(octx, octx->ac, octx->oc->streams[octx->ai], NULL, NULL);
+        ret = process_out(octx, octx->ac, octx->oc->streams[octx->ai], &octx->af, NULL);
       }
     }
     av_interleaved_write_frame(octx->oc, NULL); // flush muxer
