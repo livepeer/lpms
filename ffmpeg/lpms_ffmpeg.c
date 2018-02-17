@@ -9,7 +9,8 @@
 struct input_ctx {
   AVFormatContext *ic; // demuxer required
   AVCodecContext  *vc; // video decoder optional
-  int vi; // video stream index
+  AVCodecContext  *ac; // audo  decoder optional
+  int vi, ai; // video and audio stream indices
 };
 
 struct output_ctx {
@@ -18,7 +19,8 @@ struct output_ctx {
   AVRational fps;
   AVFormatContext *oc; // muxer required
   AVCodecContext  *vc; // video decoder optional
-  int vi; // video and audio stream indices
+  AVCodecContext  *ac; // audo  decoder optional
+  int vi, ai; // video and audio stream indices
 };
 
 void lpms_init()
@@ -137,6 +139,7 @@ static void free_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
   }
   if (octx->vc) avcodec_free_context(&octx->vc);
+  if (octx->ac) avcodec_free_context(&octx->ac);
 }
 
 
@@ -151,6 +154,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   AVOutputFormat *fmt = NULL;
   AVFormatContext *oc = NULL;
   AVCodecContext *vc  = NULL;
+  AVCodecContext *ac  = NULL;
   AVCodec *codec      = NULL;
   AVStream *st        = NULL;
 
@@ -199,6 +203,30 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) em_err("Error setting video encoder params\n");
   }
 
+  if (ictx->ac) {
+    codec = avcodec_find_encoder_by_name("aac"); // XXX make more flexible?
+    if (!codec) em_err("Unable to find aac\n");
+    // open audio encoder
+    ac = avcodec_alloc_context3(codec);
+    if (!ac) em_err("Unable to alloc audio encoder\n"); // XXX shld be optional
+    octx->ac = ac;
+    ac->sample_fmt = AV_SAMPLE_FMT_FLTP;
+    ac->channel_layout = AV_CH_LAYOUT_MONO;
+    ac->channels = 1;
+    ac->sample_rate = 48000;
+    ac->time_base = (AVRational){1, 1000};
+    if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    ret = avcodec_open2(ac, codec, NULL);
+    if (ret < 0) em_err("Error opening audio encoder\n");
+
+    // audio stream in muxer
+    st = avformat_new_stream(oc, NULL);
+    if (!st) em_err("Unable to alloc audio stream\n");
+    ret = avcodec_parameters_from_context(st->codecpar, ac);
+    st->time_base = ac->time_base;
+    if (ret < 0) em_err("Unable to copy audio codec params\n");
+    octx->ai = st->index;
+  }
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
     avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
@@ -219,6 +247,7 @@ static void free_input(struct input_ctx *inctx)
 {
   if (inctx->ic) avformat_close_input(&inctx->ic);
   if (inctx->vc) avcodec_free_context(&inctx->vc);
+  if (inctx->ac) avcodec_free_context(&inctx->ac);
 }
 
 static int open_input(char *inp, struct input_ctx *ctx)
@@ -252,6 +281,21 @@ static int open_input(char *inp, struct input_ctx *ctx)
     if (ret < 0) dd_err("Unable to open video decoder\n");
   }
 
+  // open audio decoder
+  ctx->ai = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
+  if (ctx->ai < 0) {
+    fprintf(stderr, "No audio stream found in input\n");
+  } else {
+    AVCodecContext * ac = avcodec_alloc_context3(codec);
+    if (!ac) dd_err("Unable to alloc audio codec\n");
+    ctx->ac = ac;
+    av_opt_set_int(ac, "refcounted_frames", 1, 0);
+    ret = avcodec_parameters_to_context(ac, ic->streams[ctx->ai]->codecpar);
+    if (ret < 0) dd_err("Unable to assign audio params\n");
+    ret = avcodec_open2(ac, codec, NULL);
+    if (ret < 0) dd_err("Unable to open audio decoder\n");
+  }
+
   return 0;
 
 open_input_err:
@@ -279,6 +323,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     else if (ret < 0) dec_err("Unable to read input\n");
     ist = ictx->ic->streams[pkt->stream_index];
     if (ist->index == ictx->vi && ictx->vc) decoder = ictx->vc;
+    else if (ist->index == ictx->ai && ictx->ac) decoder = ictx->ac;
     else dec_err("Could not find decoder for stream\n");
 
     ret = avcodec_send_packet(decoder, pkt);
@@ -302,6 +347,11 @@ dec_flush:
     ret = avcodec_receive_frame(ictx->vc, frame);
     pkt->stream_index = ictx->vi; // XXX ugly?
     if (!ret) return ret;
+  }
+  if (ictx->ac) {
+    avcodec_send_packet(ictx->ac, NULL);
+    ret = avcodec_receive_frame(ictx->ac, frame);
+    pkt->stream_index = ictx->ai; // XXX ugly?
   }
   return ret;
 
@@ -412,6 +462,9 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
       if (ist->index == ictx.vi && ictx.vc) {
         ost = octx->oc->streams[0];
         encoder = octx->vc;
+      } else if (ist->index == ictx.ai && ictx.ac) {
+        ost = octx->oc->streams[!!ictx.vc]; // depends on whether video exists
+        encoder = octx->ac;
       } else main_err("transcoder: Got unknown stream\n"); // XXX could be legit; eg subs, secondary streams
 
       ret = process_out(octx, encoder, ost, dframe);
@@ -435,6 +488,11 @@ whileloop_end:
       }
     }
     ret = 0;
+    if (octx->ac) { // flush audio
+      while (!ret || ret == AVERROR(EAGAIN)) {
+        ret = process_out(octx, octx->ac, octx->oc->streams[octx->ai], NULL);
+      }
+    }
     av_interleaved_write_frame(octx->oc, NULL); // flush muxer
     ret = av_write_trailer(octx->oc);
     if (ret < 0) main_err("transcoder: Unable to write trailer");
