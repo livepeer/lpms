@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path"
 	"time"
 
@@ -36,21 +35,17 @@ func (t *FFMpegSegmentTranscoder) Transcode(d []byte) ([][]byte, error) {
 		}
 	}
 
-	if err := ioutil.WriteFile(path.Join(t.workDir, inName), d, 0644); err != nil {
+	fname := path.Join(t.workDir, inName)
+	defer os.Remove(fname)
+	if err := ioutil.WriteFile(fname, d, 0644); err != nil {
 		glog.Errorf("Transcoder cannot write file: %v", err)
 		return nil, err
 	}
 
 	//Invoke ffmpeg
-	var cmd *exec.Cmd
-	//ffmpeg -i seg.ts -c:v libx264 -s 426:240 -r 30 -mpegts_copyts 1 -minrate 700k -maxrate 700k -bufsize 700k -threads 1 out3.ts
-	args := make([]string, 0, 0)
-	for i, p := range t.tProfiles {
-		args = append(args, []string{"-c:v", "libx264", "-s", p.Resolution, "-minrate", p.Bitrate, "-maxrate", p.Bitrate, "-bufsize", p.Bitrate, "-r", fmt.Sprintf("%d", p.Framerate), "-threads", "1", "-copyts", path.Join(t.workDir, fmt.Sprintf("out%v%v", i, inName))}...)
-	}
-	cmd = exec.Command(path.Join(t.ffmpegPath, "ffmpeg"), append([]string{"-i", path.Join(t.workDir, inName)}, args...)...)
-	if err := cmd.Run(); err != nil {
-		glog.Errorf("Cannot start ffmpeg command: %v", err)
+	err := ffmpeg.Transcode(fname, t.tProfiles)
+	if err != nil {
+		glog.Errorf("Error transcoding: %v", err)
 		return nil, err
 	}
 
@@ -64,7 +59,6 @@ func (t *FFMpegSegmentTranscoder) Transcode(d []byte) ([][]byte, error) {
 		os.Remove(path.Join(t.workDir, fmt.Sprintf("out%v%v", i, inName)))
 	}
 
-	os.Remove(path.Join(t.workDir, inName))
 	return dout, nil
 }
 

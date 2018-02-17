@@ -18,8 +18,10 @@ func TestTrans(t *testing.T) {
 		ffmpeg.P240p30fps16x9,
 		ffmpeg.P576p30fps16x9,
 	}
+	ffmpeg.InitFFmpeg()
 	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
 	r, err := tr.Transcode(testSeg)
+	ffmpeg.DeinitFFmpeg()
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
 	}
