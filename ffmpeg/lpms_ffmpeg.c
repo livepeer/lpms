@@ -1,12 +1,15 @@
 #include "lpms_ffmpeg.h"
 
 #include <libavformat/avformat.h>
+#include <libavutil/opt.h>
 
 //
 // Internal transcoder data structures
 //
 struct input_ctx {
   AVFormatContext *ic; // demuxer required
+  AVCodecContext  *vc; // video decoder optional
+  int vi; // video stream index
 };
 
 struct output_ctx {
@@ -171,6 +174,7 @@ open_output_err:
 static void free_input(struct input_ctx *inctx)
 {
   if (inctx->ic) avformat_close_input(&inctx->ic);
+  if (inctx->vc) avcodec_free_context(&inctx->vc);
 }
 
 static int open_input(char *inp, struct input_ctx *ctx)
@@ -180,6 +184,7 @@ static int open_input(char *inp, struct input_ctx *ctx)
   fprintf(stderr, msg); \
   goto open_input_err; \
 }
+  AVCodec *codec = NULL;
   AVFormatContext *ic   = NULL;
 
   // open demuxer
@@ -189,6 +194,20 @@ static int open_input(char *inp, struct input_ctx *ctx)
   ret = avformat_find_stream_info(ic, NULL);
   if (ret < 0) dd_err("Unable to find input info\n");
 
+  // open video decoder
+  ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
+  if (ctx->vi < 0) {
+    fprintf(stderr, "No video stream found in input\n");
+  } else {
+    AVCodecContext *vc = avcodec_alloc_context3(codec);
+    if (!vc) dd_err("Unable to alloc video codec\n");
+    ctx->vc = vc;
+    ret = avcodec_parameters_to_context(vc, ic->streams[ctx->vi]->codecpar);
+    if (ret < 0) dd_err("Unable to assign video params\n");
+    ret = avcodec_open2(vc, codec, NULL);
+    if (ret < 0) dd_err("Unable to open video decoder\n");
+  }
+
   return 0;
 
 open_input_err:
@@ -197,7 +216,7 @@ open_input_err:
 #undef dd_err
 }
 
-int process_in(struct input_ctx *ictx, AVPacket *pkt)
+int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 {
 #define dec_err(msg) { \
   if (!ret) ret = -1; \
@@ -207,15 +226,39 @@ int process_in(struct input_ctx *ictx, AVPacket *pkt)
   int ret = 0;
 
   av_init_packet(pkt);
-  // loop until a new packet has been read, or EAGAIN
+  // loop until a new frame has been decoded, or EAGAIN
   while (1) {
+    AVStream *ist = NULL;
+    AVCodecContext *decoder = NULL;
     ret = av_read_frame(ictx->ic, pkt);
-    if (ret == AVERROR_EOF) return ret;
+    if (ret == AVERROR_EOF) goto dec_flush;
     else if (ret < 0) dec_err("Unable to read input\n");
+    ist = ictx->ic->streams[pkt->stream_index];
+    if (ist->index == ictx->vi && ictx->vc) decoder = ictx->vc;
+    else dec_err("Could not find decoder for stream\n");
+
+    ret = avcodec_send_packet(decoder, pkt);
+    if (ret < 0) dec_err("Error sending packet to decoder\n");
+    ret = avcodec_receive_frame(decoder, frame);
+    if (ret == AVERROR(EAGAIN)) {
+      av_packet_unref(pkt);
+      continue;
+    }
+    else if (ret < 0) dec_err("Error receiving frame from decoder\n");
+    break;
   }
 
 dec_cleanup:
   if (ret < 0) av_packet_unref(pkt); // XXX necessary? or have caller do it?
+  return ret;
+
+dec_flush:
+  if (ictx->vc) {
+    avcodec_send_packet(ictx->vc, NULL);
+    ret = avcodec_receive_frame(ictx->vc, frame);
+    pkt->stream_index = ictx->vi; // XXX ugly?
+    if (!ret) return ret;
+  }
   return ret;
 
 #undef dec_err
@@ -277,10 +320,13 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
   }
 
   av_init_packet(&ipkt);
+  dframe = av_frame_alloc();
+  if (!dframe) main_err("transcoder: Unable to allocate frame\n");
 
   while (1) {
     AVStream *ist = NULL;
-    ret = process_in(&ictx, &ipkt);
+    av_frame_unref(dframe);
+    ret = process_in(&ictx, dframe, &ipkt);
     if (ret == AVERROR_EOF) break;
     else if (ret < 0) goto whileloop_end; // XXX fix
     ist = ictx.ic->streams[ipkt.stream_index];
@@ -313,6 +359,7 @@ whileloop_end:
 transcode_cleanup:
   free_input(&ictx);
   for (i = 0; i < MAX_OUTPUT_SIZE; i++) free_output(&outputs[i]);
+  if (dframe) av_frame_free(&dframe);
   return ret == AVERROR_EOF ? 0 : ret;
 #undef main_err
 }
