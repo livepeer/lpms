@@ -1,6 +1,9 @@
 #include "lpms_ffmpeg.h"
 
 #include <libavformat/avformat.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
 #include <libavutil/opt.h>
 
 //
@@ -13,6 +16,14 @@ struct input_ctx {
   int vi, ai; // video and audio stream indices
 };
 
+struct filter_ctx {
+  int active;
+  AVFilterGraph *graph;
+  AVFrame *frame;
+  AVFilterContext *sink_ctx;
+  AVFilterContext *src_ctx;
+};
+
 struct output_ctx {
   char *fname;         // required output file name
   int width, height, bitrate; // w, h, br required
@@ -21,11 +32,13 @@ struct output_ctx {
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
+  struct filter_ctx vf;
 };
 
 void lpms_init()
 {
   avformat_network_init();
+  avfilter_register_all();
   av_log_set_level(AV_LOG_WARNING);
 }
 
@@ -130,6 +143,12 @@ handle_r2h_err:
 // Transcoder
 //
 
+static void free_filter(struct filter_ctx *filter)
+{
+  if (filter->frame) av_frame_free(&filter->frame);
+  if (filter->graph) avfilter_graph_free(&filter->graph);
+}
+
 static void free_output(struct output_ctx *octx)
 {
   if (octx->oc) {
@@ -140,6 +159,7 @@ static void free_output(struct output_ctx *octx)
   }
   if (octx->vc) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
+  free_filter(&octx->vf);
 }
 
 
@@ -174,13 +194,13 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     vc = avcodec_alloc_context3(codec);
     if (!vc) em_err("Unable to alloc video encoder\n"); // XXX shld be optional
     octx->vc = vc;
-    vc->width = octx->width;
-    vc->height = octx->height;
-    if (octx->fps.den) vc->framerate = octx->fps;
+    vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
+    vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
+    if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
     if (octx->fps.den) vc->time_base = av_inv_q(octx->fps);
     if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
     vc->thread_count = 1;
-    vc->pix_fmt = AV_PIX_FMT_YUV420P; // XXX select based on encoder + input support
+    vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     /*
     if (ictx->vc->extradata) {
@@ -289,7 +309,6 @@ static int open_input(char *inp, struct input_ctx *ctx)
     AVCodecContext * ac = avcodec_alloc_context3(codec);
     if (!ac) dd_err("Unable to alloc audio codec\n");
     ctx->ac = ac;
-    av_opt_set_int(ac, "refcounted_frames", 1, 0);
     ret = avcodec_parameters_to_context(ac, ic->streams[ctx->ai]->codecpar);
     if (ret < 0) dd_err("Unable to assign audio params\n");
     ret = avcodec_open2(ac, codec, NULL);
@@ -302,6 +321,96 @@ open_input_err:
   free_input(ctx);
   return ret;
 #undef dd_err
+}
+
+static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx,
+    const char *filters_descr)
+{
+#define filters_err(msg) { \
+  if (!ret) ret = -1; \
+  fprintf(stderr, msg); \
+  goto init_video_filters_cleanup; \
+}
+    char args[512];
+    int ret = 0;
+    const AVFilter *buffersrc  = avfilter_get_by_name("buffer");
+    const AVFilter *buffersink = avfilter_get_by_name("buffersink");
+    AVFilterInOut *outputs = avfilter_inout_alloc();
+    AVFilterInOut *inputs  = avfilter_inout_alloc();
+    AVRational time_base = ictx->ic->streams[ictx->vi]->time_base;
+    enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
+    struct filter_ctx *vf = &octx->vf;
+
+    vf->graph = avfilter_graph_alloc();
+    if (!outputs || !inputs || !vf->graph) {
+      ret = AVERROR(ENOMEM);
+      filters_err("Unble to allocate filters\n");
+    }
+
+    /* buffer video source: the decoded frames from the decoder will be inserted here. */
+    snprintf(args, sizeof args,
+            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+            ictx->vc->width, ictx->vc->height, ictx->vc->pix_fmt,
+            time_base.num, time_base.den,
+            ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den);
+
+    ret = avfilter_graph_create_filter(&vf->src_ctx, buffersrc,
+                                       "in", args, NULL, vf->graph);
+    if (ret < 0) filters_err("Cannot create video buffer source\n");
+
+    /* buffer video sink: to terminate the filter chain. */
+    ret = avfilter_graph_create_filter(&vf->sink_ctx, buffersink,
+                                       "out", NULL, NULL, vf->graph);
+    if (ret < 0) filters_err("Cannot create video buffer sink\n");
+
+    ret = av_opt_set_int_list(vf->sink_ctx, "pix_fmts", pix_fmts,
+                              AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0) filters_err("Cannot set output pixel format\n");
+
+    /*
+     * Set the endpoints for the filter graph. The filter_graph will
+     * be linked to the graph described by filters_descr.
+     */
+
+    /*
+     * The buffer source output must be connected to the input pad of
+     * the first filter described by filters_descr; since the first
+     * filter input label is not specified, it is set to "in" by
+     * default.
+     */
+    outputs->name       = av_strdup("in");
+    outputs->filter_ctx = vf->src_ctx;
+    outputs->pad_idx    = 0;
+    outputs->next       = NULL;
+
+    /*
+     * The buffer sink input must be connected to the output pad of
+     * the last filter described by filters_descr; since the last
+     * filter output label is not specified, it is set to "out" by
+     * default.
+     */
+    inputs->name       = av_strdup("out");
+    inputs->filter_ctx = vf->sink_ctx;
+    inputs->pad_idx    = 0;
+    inputs->next       = NULL;
+
+    ret = avfilter_graph_parse_ptr(vf->graph, filters_descr,
+                                    &inputs, &outputs, NULL);
+    if (ret < 0) filters_err("Unable to parse video filters desc\n");
+
+    ret = avfilter_graph_config(vf->graph, NULL);
+    if (ret < 0) filters_err("Unable configure video filtergraph\n");
+
+    vf->frame = av_frame_alloc();
+    if (!vf->frame) filters_err("Unable to allocate video frame\n");
+
+init_video_filters_cleanup:
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+
+    vf->active = !ret;
+    return ret;
+#undef filters_err
 }
 
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
@@ -359,7 +468,7 @@ dec_flush:
 }
 
 int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
-  AVFrame *inf)
+  struct filter_ctx *filter, AVFrame *inf)
 {
 #define proc_err(msg) { \
   char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
@@ -372,8 +481,18 @@ int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   AVFrame *frame = NULL;
   AVPacket pkt = {0};
   AVRational tb;
-
-  frame = inf;
+  if (filter && filter->active && inf) {
+    frame = filter->frame;
+    av_frame_unref(frame);
+    av_frame_copy_props(frame, inf);
+    ret = av_buffersrc_write_frame(filter->src_ctx, inf);
+    if (ret < 0) proc_err("Error feeding the filtergraph\n");
+    ret = av_buffersink_get_frame(filter->sink_ctx, frame);
+    frame->pict_type = AV_PICTURE_TYPE_NONE;
+    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) return ret; // XXX do properly
+    if (ret < 0) proc_err("Error consuming the filtergraph");
+    tb = av_buffersink_get_time_base(filter->sink_ctx);
+  } else frame = inf;
 
   // encode
   av_init_packet(&pkt);
@@ -438,6 +557,12 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
     octx->height = params[i].h;
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
+    if (ictx.vc) {
+      char filter_str[256];
+      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale=%dx%d:force_original_aspect_ratio=decrease", octx->fps.num, octx->fps.den, octx->width, octx->height);
+      ret = init_video_filters(&ictx, octx, filter_str);
+      if (ret < 0) main_err("Unable to open video filter");
+    }
     ret = open_output(octx, &ictx);
     if (ret < 0) main_err("transcoder: Unable to open output\n");
   }
@@ -456,18 +581,21 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
 
     for (i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];
+      struct filter_ctx *filter = NULL;
       AVStream *ost = NULL;
       AVCodecContext *encoder = NULL;
 
       if (ist->index == ictx.vi && ictx.vc) {
         ost = octx->oc->streams[0];
         encoder = octx->vc;
+        filter = &octx->vf;
       } else if (ist->index == ictx.ai && ictx.ac) {
         ost = octx->oc->streams[!!ictx.vc]; // depends on whether video exists
         encoder = octx->ac;
+        filter = NULL;
       } else main_err("transcoder: Got unknown stream\n"); // XXX could be legit; eg subs, secondary streams
 
-      ret = process_out(octx, encoder, ost, dframe);
+      ret = process_out(octx, encoder, ost, filter, dframe);
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
       else if (ret < 0) main_err("transcoder: verybad\n");
     }
@@ -484,13 +612,13 @@ whileloop_end:
     ret = 0;
     if (octx->vc) { // flush video
       while (!ret || ret == AVERROR(EAGAIN)) {
-        ret = process_out(octx, octx->vc, octx->oc->streams[octx->vi], NULL);
+        ret = process_out(octx, octx->vc, octx->oc->streams[octx->vi], &octx->vf, NULL);
       }
     }
     ret = 0;
     if (octx->ac) { // flush audio
       while (!ret || ret == AVERROR(EAGAIN)) {
-        ret = process_out(octx, octx->ac, octx->oc->streams[octx->ai], NULL);
+        ret = process_out(octx, octx->ac, octx->oc->streams[octx->ai], NULL, NULL);
       }
     }
     av_interleaved_write_frame(octx->oc, NULL); // flush muxer

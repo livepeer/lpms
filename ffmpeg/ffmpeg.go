@@ -9,7 +9,7 @@ import (
 	"unsafe"
 )
 
-// #cgo pkg-config: libavformat
+// #cgo pkg-config: libavformat libavfilter
 // #include <stdlib.h>
 // #include "lpms_ffmpeg.h"
 import "C"
