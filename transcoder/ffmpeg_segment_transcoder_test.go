@@ -1,11 +1,20 @@
 package transcoder
 
 import (
+	"errors"
+	"fmt"
 	"io/ioutil"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/livepeer/lpms/ffmpeg"
 )
+
+func Over1Pct(val int, cmp int) bool {
+	return float32(val) > float32(cmp)*1.01 || float32(val) < float32(cmp)*0.99
+}
 
 func TestTrans(t *testing.T) {
 	testSeg, err := ioutil.ReadFile("./test.ts")
@@ -73,4 +82,71 @@ func TestTooManyProfiles(t *testing.T) {
 	} else if err.Error() != "Invalid argument" {
 		t.Errorf("Did not get the expected error while transcoding: %v", err)
 	}
+}
+
+type StreamTest struct {
+	Tempdir    string
+	Tempfile   string
+	Transcoder *FFMpegSegmentTranscoder
+}
+
+func NewStreamTest(t *testing.T, configs []ffmpeg.VideoProfile) (*StreamTest, error) {
+	d, err := ioutil.TempDir("", "lp-"+t.Name())
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to get tempdir ", err))
+	}
+	f := fmt.Sprintf("%v/tmp.ts", d)
+	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
+	ffmpeg.InitFFmpeg()
+	return &StreamTest{Tempdir: d, Tempfile: f, Transcoder: tr}, nil
+}
+
+func (s *StreamTest) Close() {
+	os.RemoveAll(s.Tempdir)
+	ffmpeg.DeinitFFmpeg()
+}
+
+func (s *StreamTest) CmdCompareSize(cmd string, sz int) error {
+	c := exec.Command("ffmpeg", strings.Split(cmd+" "+s.Tempfile, " ")...)
+	err := c.Run()
+	if err != nil {
+		errors.New(fmt.Sprintf("Unable to run ffmpeg %v %v- %v", cmd, s.Tempfile, err))
+	}
+	testSeg, err := ioutil.ReadFile(s.Tempfile)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Unable to read tmpfile %v", err))
+	}
+	r, err := s.Transcoder.Transcode(testSeg)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Error transcoding ", err))
+	}
+	if Over1Pct(len(r[0]), sz) {
+		errors.New(fmt.Sprintf("Expecting output to be within 1pct of %v, got %v (%v)", sz, len(r[0]), float32(len(r[0]))/float32(sz)))
+	}
+	return nil
+}
+
+func TestSingleStream(t *testing.T) {
+
+	configs := []ffmpeg.VideoProfile{
+		ffmpeg.P144p30fps16x9,
+	}
+	st, err := NewStreamTest(t, configs)
+	if err != nil {
+		t.Error(err)
+	}
+	defer st.Close()
+
+	// omit audio
+	err = st.CmdCompareSize("-i test.ts -an -c:v copy -y", 64108)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// omit video
+	err = st.CmdCompareSize("-i test.ts -vn -c:a copy -y", 204356)
+	if err != nil {
+		t.Error(err)
+	}
+
 }
