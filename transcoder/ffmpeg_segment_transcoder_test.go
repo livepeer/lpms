@@ -46,3 +46,31 @@ func TestTrans(t *testing.T) {
 		t.Errorf("Expecting output size to be between 600000 and 700000, got %v", len(r[2]))
 	}
 }
+
+func TestTooManyProfiles(t *testing.T) {
+
+	testSeg, err := ioutil.ReadFile("./test.ts")
+	// 11 profiles; max 10
+	configs := []ffmpeg.VideoProfile{
+		ffmpeg.P144p30fps16x9,
+		ffmpeg.P240p30fps16x9,
+		ffmpeg.P576p30fps16x9,
+		ffmpeg.P360p30fps16x9,
+		ffmpeg.P720p30fps16x9,
+		ffmpeg.P144p30fps16x9,
+		ffmpeg.P240p30fps16x9,
+		ffmpeg.P576p30fps16x9,
+		ffmpeg.P360p30fps16x9,
+		ffmpeg.P720p30fps16x9,
+		ffmpeg.P144p30fps16x9,
+	}
+	ffmpeg.InitFFmpeg()
+	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
+	_, err = tr.Transcode(testSeg)
+	ffmpeg.DeinitFFmpeg()
+	if err == nil {
+		t.Errorf("Expected an error transcoding too many segments")
+	} else if err.Error() != "Invalid argument" {
+		t.Errorf("Did not get the expected error while transcoding: %v", err)
+	}
+}
