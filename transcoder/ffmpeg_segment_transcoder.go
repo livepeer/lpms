@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/golang/glog"
@@ -23,25 +24,7 @@ func NewFFMpegSegmentTranscoder(ps []ffmpeg.VideoProfile, ffmpegp, workd string)
 	return &FFMpegSegmentTranscoder{tProfiles: ps, ffmpegPath: ffmpegp, workDir: workd}
 }
 
-func (t *FFMpegSegmentTranscoder) Transcode(d []byte) ([][]byte, error) {
-	//Assume d is in the right format, write it to disk
-	inName := randName()
-	// outName := fmt.Sprintf("out%v", inName)
-	if _, err := os.Stat(t.workDir); os.IsNotExist(err) {
-		err := os.Mkdir(t.workDir, 0700)
-		if err != nil {
-			glog.Errorf("Transcoder cannot create workdir: %v", err)
-			return nil, err
-		}
-	}
-
-	fname := path.Join(t.workDir, inName)
-	defer os.Remove(fname)
-	if err := ioutil.WriteFile(fname, d, 0644); err != nil {
-		glog.Errorf("Transcoder cannot write file: %v", err)
-		return nil, err
-	}
-
+func (t *FFMpegSegmentTranscoder) Transcode(fname string) ([][]byte, error) {
 	//Invoke ffmpeg
 	err := ffmpeg.Transcode(fname, t.tProfiles)
 	if err != nil {
@@ -51,12 +34,13 @@ func (t *FFMpegSegmentTranscoder) Transcode(d []byte) ([][]byte, error) {
 
 	dout := make([][]byte, len(t.tProfiles), len(t.tProfiles))
 	for i, _ := range t.tProfiles {
-		d, err := ioutil.ReadFile(path.Join(t.workDir, fmt.Sprintf("out%v%v", i, inName)))
+		ofile := path.Join(t.workDir, fmt.Sprintf("out%v%v", i, filepath.Base(fname)))
+		d, err := ioutil.ReadFile(ofile)
 		if err != nil {
 			glog.Errorf("Cannot read transcode output: %v", err)
 		}
 		dout[i] = d
-		os.Remove(path.Join(t.workDir, fmt.Sprintf("out%v%v", i, inName)))
+		os.Remove(ofile)
 	}
 
 	return dout, nil

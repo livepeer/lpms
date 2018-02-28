@@ -17,11 +17,6 @@ func Over1Pct(val int, cmp int) bool {
 }
 
 func TestTrans(t *testing.T) {
-	testSeg, err := ioutil.ReadFile("./test.ts")
-	if err != nil {
-		t.Errorf("Error reading test segment: %v", err)
-	}
-
 	configs := []ffmpeg.VideoProfile{
 		ffmpeg.P144p30fps16x9,
 		ffmpeg.P240p30fps16x9,
@@ -29,7 +24,7 @@ func TestTrans(t *testing.T) {
 	}
 	ffmpeg.InitFFmpeg()
 	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
-	r, err := tr.Transcode(testSeg)
+	r, err := tr.Transcode("test.ts")
 	ffmpeg.DeinitFFmpeg()
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
@@ -58,7 +53,6 @@ func TestTrans(t *testing.T) {
 
 func TestTooManyProfiles(t *testing.T) {
 
-	testSeg, err := ioutil.ReadFile("./test.ts")
 	// 11 profiles; max 10
 	configs := []ffmpeg.VideoProfile{
 		ffmpeg.P144p30fps16x9,
@@ -75,7 +69,7 @@ func TestTooManyProfiles(t *testing.T) {
 	}
 	ffmpeg.InitFFmpeg()
 	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
-	_, err = tr.Transcode(testSeg)
+	_, err := tr.Transcode("test.ts")
 	ffmpeg.DeinitFFmpeg()
 	if err == nil {
 		t.Errorf("Expected an error transcoding too many segments")
@@ -110,13 +104,9 @@ func (s *StreamTest) CmdCompareSize(cmd string, sz int) error {
 	c := exec.Command("ffmpeg", strings.Split(cmd+" "+s.Tempfile, " ")...)
 	err := c.Run()
 	if err != nil {
-		errors.New(fmt.Sprintf("Unable to run ffmpeg %v %v- %v", cmd, s.Tempfile, err))
+		return errors.New(fmt.Sprintf("Unable to run ffmpeg %v %v- %v", cmd, s.Tempfile, err))
 	}
-	testSeg, err := ioutil.ReadFile(s.Tempfile)
-	if err != nil {
-		return errors.New(fmt.Sprintf("Unable to read tmpfile %v", err))
-	}
-	r, err := s.Transcoder.Transcode(testSeg)
+	r, err := s.Transcoder.Transcode(s.Tempfile)
 	if err != nil {
 		return errors.New(fmt.Sprintf("Error transcoding ", err))
 	}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -37,7 +38,7 @@ func Transcode(input string, ps []VideoProfile) error {
 	inp := C.CString(input)
 	params := make([]C.output_params, len(ps))
 	for i, param := range ps {
-		oname := C.CString(fmt.Sprintf("out%v%v", i, input))
+		oname := C.CString(fmt.Sprintf("out%v%v", i, filepath.Base(input)))
 		res := strings.Split(param.Resolution, "x")
 		if len(res) < 2 {
 			return ErrTranscoderRes
