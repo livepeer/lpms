@@ -139,4 +139,37 @@ func TestSingleStream(t *testing.T) {
 		t.Error(err)
 	}
 
+	// XXX test no stream case
+}
+
+func TestInvalidFile(t *testing.T) {
+	configs := []ffmpeg.VideoProfile{
+		ffmpeg.P144p30fps16x9,
+	}
+	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
+
+	// nonexistent file
+	_, err := tr.Transcode("nothere.ts")
+	if err == nil {
+		t.Errorf("Expected an error transcoding a nonexistent file")
+	} else if err.Error() != "No such file or directory" {
+		t.Errorf("Did not get the expected error while transcoding: %v", err)
+	}
+
+	// existing but invalid file
+	thisfile := "ffmpeg_segment_transcoder_test.go"
+	_, err = os.Stat(thisfile)
+	if os.IsNotExist(err) {
+		t.Errorf("The file '%v' does not exist", thisfile)
+	}
+	_, err = tr.Transcode(thisfile)
+	if err == nil {
+		t.Errorf("Expected an error transcoding an invalid file")
+	} else if err.Error() != "Invalid data found when processing input" {
+		t.Errorf("Did not get the expected error while transcoding: %v", err)
+	}
+
+	// XXX test bad output file names / directories
 }
