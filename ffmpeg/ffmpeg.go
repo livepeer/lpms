@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,11 +35,11 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 	return nil
 }
 
-func Transcode(input string, ps []VideoProfile) error {
+func Transcode(input string, workDir string, ps []VideoProfile) error {
 	inp := C.CString(input)
 	params := make([]C.output_params, len(ps))
 	for i, param := range ps {
-		oname := C.CString(fmt.Sprintf("out%v%v", i, filepath.Base(input)))
+		oname := C.CString(path.Join(workDir, fmt.Sprintf("out%v%v", i, filepath.Base(input))))
 		res := strings.Split(param.Resolution, "x")
 		if len(res) < 2 {
 			return ErrTranscoderRes

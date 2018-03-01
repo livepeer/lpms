@@ -24,7 +24,7 @@ func NewFFMpegSegmentTranscoder(ps []ffmpeg.VideoProfile, ffmpegp, workd string)
 
 func (t *FFMpegSegmentTranscoder) Transcode(fname string) ([][]byte, error) {
 	//Invoke ffmpeg
-	err := ffmpeg.Transcode(fname, t.tProfiles)
+	err := ffmpeg.Transcode(fname, t.workDir, t.tProfiles)
 	if err != nil {
 		glog.Errorf("Error transcoding: %v", err)
 		return nil, err
