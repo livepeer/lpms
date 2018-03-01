@@ -3,11 +3,9 @@ package transcoder
 import (
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -44,13 +42,4 @@ func (t *FFMpegSegmentTranscoder) Transcode(fname string) ([][]byte, error) {
 	}
 
 	return dout, nil
-}
-
-func randName() string {
-	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, 10, 10)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
-	return fmt.Sprintf("%x.ts", x)
 }
