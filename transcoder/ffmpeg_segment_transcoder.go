@@ -3,11 +3,9 @@ package transcoder
 import (
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -26,7 +24,7 @@ func NewFFMpegSegmentTranscoder(ps []ffmpeg.VideoProfile, ffmpegp, workd string)
 
 func (t *FFMpegSegmentTranscoder) Transcode(fname string) ([][]byte, error) {
 	//Invoke ffmpeg
-	err := ffmpeg.Transcode(fname, t.tProfiles)
+	err := ffmpeg.Transcode(fname, t.workDir, t.tProfiles)
 	if err != nil {
 		glog.Errorf("Error transcoding: %v", err)
 		return nil, err
@@ -44,13 +42,4 @@ func (t *FFMpegSegmentTranscoder) Transcode(fname string) ([][]byte, error) {
 	}
 
 	return dout, nil
-}
-
-func randName() string {
-	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, 10, 10)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
-	return fmt.Sprintf("%x.ts", x)
 }
