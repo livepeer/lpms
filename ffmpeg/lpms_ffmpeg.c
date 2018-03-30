@@ -162,6 +162,7 @@ static void free_output(struct output_ctx *octx)
       avio_closep(&octx->oc->pb);
     }
     avformat_free_context(octx->oc);
+    octx->oc = NULL;
   }
   if (octx->vc) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);

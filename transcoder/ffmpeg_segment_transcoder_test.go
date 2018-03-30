@@ -171,5 +171,21 @@ func TestInvalidFile(t *testing.T) {
 		t.Errorf("Did not get the expected error while transcoding: %v", err)
 	}
 
+	// test invalid output params
+	vp := ffmpeg.VideoProfile{
+		Name: "OddDimension", Bitrate: "100k", Framerate: 10,
+		AspectRatio: "6:5", Resolution: "852x481"}
+	st, err := NewStreamTest(t, []ffmpeg.VideoProfile{vp})
+	defer st.Close()
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = st.Transcoder.Transcode("test.ts")
+	// XXX Make the returned error more descriptive;
+	// here x264 doesn't like odd heights
+	if err == nil || err.Error() != "Generic error in an external library" {
+		t.Error(err)
+	}
+
 	// XXX test bad output file names / directories
 }
