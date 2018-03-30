@@ -23,7 +23,7 @@ func TestTrans(t *testing.T) {
 		ffmpeg.P576p30fps16x9,
 	}
 	ffmpeg.InitFFmpeg()
-	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
+	tr := NewFFMpegSegmentTranscoder(configs, "./")
 	r, err := tr.Transcode("test.ts")
 	ffmpeg.DeinitFFmpeg()
 	if err != nil {
@@ -68,7 +68,7 @@ func TestTooManyProfiles(t *testing.T) {
 		ffmpeg.P144p30fps16x9,
 	}
 	ffmpeg.InitFFmpeg()
-	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
+	tr := NewFFMpegSegmentTranscoder(configs, "./")
 	_, err := tr.Transcode("test.ts")
 	ffmpeg.DeinitFFmpeg()
 	if err == nil {
@@ -90,7 +90,7 @@ func NewStreamTest(t *testing.T, configs []ffmpeg.VideoProfile) (*StreamTest, er
 		return nil, errors.New(fmt.Sprintf("Unable to get tempdir ", err))
 	}
 	f := fmt.Sprintf("%v/tmp.ts", d)
-	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
+	tr := NewFFMpegSegmentTranscoder(configs, "./")
 	ffmpeg.InitFFmpeg()
 	return &StreamTest{Tempdir: d, Tempfile: f, Transcoder: tr}, nil
 }
@@ -146,7 +146,7 @@ func TestInvalidFile(t *testing.T) {
 	configs := []ffmpeg.VideoProfile{
 		ffmpeg.P144p30fps16x9,
 	}
-	tr := NewFFMpegSegmentTranscoder(configs, "", "./")
+	tr := NewFFMpegSegmentTranscoder(configs, "./")
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
 
