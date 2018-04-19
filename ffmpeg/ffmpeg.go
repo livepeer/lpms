@@ -59,7 +59,9 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 			return err
 		}
 		fps := C.AVRational{num: C.int(param.Framerate), den: 1}
-		params[i] = C.output_params{fname: oname, fps: fps,
+		dar := C.CString(strings.Replace(param.AspectRatio, ":", "/", 1))
+		defer C.free(unsafe.Pointer(dar))
+		params[i] = C.output_params{fname: oname, fps: fps, dar: dar,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate)}
 	}
 	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), C.int(len(params))))

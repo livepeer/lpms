@@ -1,7 +1,7 @@
 #include <libavutil/rational.h>
 
 typedef struct {
-  char *fname;
+  char *fname, *dar;
   int w, h, bitrate;
   AVRational fps;
 } output_params;

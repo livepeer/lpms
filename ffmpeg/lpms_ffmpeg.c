@@ -26,6 +26,7 @@ struct filter_ctx {
 
 struct output_ctx {
   char *fname;         // required output file name
+  char *dar;           // display aspect ratio
   int width, height, bitrate; // w, h, br required
   AVRational fps;
   AVFormatContext *oc; // muxer required
@@ -653,9 +654,11 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
     octx->height = params[i].h;
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
+    if (params[i].dar) octx->dar = params[i].dar;
+    else octx->dar = "0:1";
     if (ictx.vc) {
       char filter_str[256];
-      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale=%dx%d:force_original_aspect_ratio=decrease", octx->fps.num, octx->fps.den, octx->width, octx->height);
+      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale=%dx%d:force_original_aspect_ratio=decrease,setdar=dar=%s", octx->fps.num, octx->fps.den, octx->width, octx->height, octx->dar);
       ret = init_video_filters(&ictx, octx, filter_str);
       if (ret < 0) main_err("Unable to open video filter");
     }
