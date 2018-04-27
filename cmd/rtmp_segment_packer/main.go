@@ -300,7 +300,7 @@ func main() {
 	// 		fileStream := stream.NewFileStream(streamID + "_file")
 	// 		return fileStream, nil
 	// 	})
-	lpms.Start(context.Background())
+	lpms.Start(context.Background(), true, true)
 }
 
 func getStreamIDFromPath(reqPath string) string {

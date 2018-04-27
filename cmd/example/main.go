@@ -182,7 +182,7 @@ func main() {
 			return nil, fmt.Errorf("Cannot find stream")
 		})
 
-	lpms.Start(context.Background())
+	lpms.Start(context.Background(), true, true)
 }
 
 func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool), error) {

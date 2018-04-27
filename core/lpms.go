@@ -10,6 +10,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
@@ -47,26 +48,34 @@ func New(rtmpPort, httpPort, ffmpegPath, vodPath, workDir string) *LPMS {
 }
 
 //Start starts the rtmp and http server
-func (l *LPMS) Start(ctx context.Context) error {
+func (l *LPMS) Start(ctx context.Context, startRTMP, startHTTP bool) error {
 	ec := make(chan error, 1)
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
-	go func() {
-		glog.Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
-		ec <- l.rtmpServer.ListenAndServe()
-	}()
-	go func() {
-		glog.Infof("HTTP Server listening on :%v", l.httpPort)
-		ec <- http.ListenAndServe(":"+l.httpPort, nil)
-	}()
-
-	select {
-	case err := <-ec:
-		glog.Errorf("LPMS Server Error: %v.  Quitting...", err)
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
+	if startRTMP {
+		go func() {
+			glog.V(common.SHORT).Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
+			ec <- l.rtmpServer.ListenAndServe()
+		}()
 	}
+	if startHTTP {
+		go func() {
+			glog.V(common.SHORT).Infof("HTTP Server listening on :%v", l.httpPort)
+			ec <- http.ListenAndServe(":"+l.httpPort, nil)
+		}()
+	}
+
+	if startRTMP || startHTTP {
+		select {
+		case err := <-ec:
+			glog.Errorf("LPMS Server Error: %v.  Quitting...", err)
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 //HandleRTMPPublish offload to the video listener
