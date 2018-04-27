@@ -21,14 +21,14 @@ import (
 )
 
 type LPMS struct {
-	rtmpServer  *joy4rtmp.Server
-	vidPlayer   *vidplayer.VidPlayer
-	vidListen   *vidlistener.VidListener
-	httpPort    string
-	srsRTMPPort string
-	srsHTTPPort string
-	ffmpegPath  string
-	workDir     string
+	rtmpServer      *joy4rtmp.Server
+	vidPlayer       *vidplayer.VidPlayer
+	vidListen       *vidlistener.VidListener
+	httpPort        string
+	srsRTMPPort     string
+	srsHTTPPort     string
+	workDir         string
+	startHTTPServer bool
 }
 
 type transcodeReq struct {
@@ -40,32 +40,35 @@ type transcodeReq struct {
 }
 
 //New creates a new LPMS server object.  It really just brokers everything to the components.
-func New(rtmpPort, httpPort, ffmpegPath, vodPath, workDir string) *LPMS {
-	server := &joy4rtmp.Server{Addr: (":" + rtmpPort)}
-	player := vidplayer.NewVidPlayer(server, vodPath)
-	listener := &vidlistener.VidListener{RtmpServer: server, FfmpegPath: ffmpegPath}
-	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, httpPort: httpPort, ffmpegPath: ffmpegPath, workDir: workDir}
+func New(rtmpPort, httpPort, vodPath, workDir string, startRTMP, startHTTP bool) *LPMS {
+	var rtmpServer *joy4rtmp.Server
+	if startRTMP {
+		rtmpServer = &joy4rtmp.Server{Addr: (":" + rtmpPort)}
+	}
+	player := vidplayer.NewVidPlayer(rtmpServer, vodPath)
+	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
+	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, httpPort: httpPort, workDir: workDir, startHTTPServer: startHTTP}
 }
 
 //Start starts the rtmp and http server
-func (l *LPMS) Start(ctx context.Context, startRTMP, startHTTP bool) error {
+func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
-	if startRTMP {
+	if l.rtmpServer != nil {
 		go func() {
 			glog.V(common.SHORT).Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
 			ec <- l.rtmpServer.ListenAndServe()
 		}()
 	}
-	if startHTTP {
+	if l.startHTTPServer {
 		go func() {
 			glog.V(common.SHORT).Infof("HTTP Server listening on :%v", l.httpPort)
 			ec <- http.ListenAndServe(":"+l.httpPort, nil)
 		}()
 	}
 
-	if startRTMP || startHTTP {
+	if l.rtmpServer != nil || l.startHTTPServer {
 		select {
 		case err := <-ec:
 			glog.Errorf("LPMS Server Error: %v.  Quitting...", err)

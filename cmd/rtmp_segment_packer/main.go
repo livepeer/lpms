@@ -256,7 +256,7 @@ func main() {
 	if err != nil {
 		glog.Infof("Error getting work directory: %v", err)
 	}
-	lpms := core.New("1935", "8000", "", "", fmt.Sprintf("%v/.tmp", dir))
+	lpms := core.New("1935", "8000", "", fmt.Sprintf("%v/.tmp", dir), true, true)
 
 	lpms.HandleRTMPPublish(
 		//makeStreamID
@@ -300,7 +300,7 @@ func main() {
 	// 		fileStream := stream.NewFileStream(streamID + "_file")
 	// 		return fileStream, nil
 	// 	})
-	lpms.Start(context.Background(), true, true)
+	lpms.Start(context.Background())
 }
 
 func getStreamIDFromPath(reqPath string) string {
