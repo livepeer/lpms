@@ -15,7 +15,6 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
@@ -237,7 +236,7 @@ func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, ne
 }
 
 func (s *FFMpegVideoSegmenter) Cleanup() {
-	glog.V(common.DEBUG).Infof("Cleaning up video segments.....")
+	glog.V(4).Infof("Cleaning up video segments.....")
 	files, _ := filepath.Glob(path.Join(s.WorkDir, s.StrmID) + "*")
 	for _, fn := range files {
 		os.Remove(fn)

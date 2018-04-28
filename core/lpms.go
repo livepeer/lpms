@@ -10,7 +10,6 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
@@ -57,13 +56,13 @@ func (l *LPMS) Start(ctx context.Context) error {
 	defer ffmpeg.DeinitFFmpeg()
 	if l.rtmpServer != nil {
 		go func() {
-			glog.V(common.SHORT).Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
+			glog.V(4).Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
 			ec <- l.rtmpServer.ListenAndServe()
 		}()
 	}
 	if l.startHTTPServer {
 		go func() {
-			glog.V(common.SHORT).Infof("HTTP Server listening on :%v", l.httpPort)
+			glog.V(4).Infof("HTTP Server listening on :%v", l.httpPort)
 			ec <- http.ListenAndServe(":"+l.httpPort, nil)
 		}()
 	}
