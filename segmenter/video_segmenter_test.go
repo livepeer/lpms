@@ -451,7 +451,7 @@ func TestMissingKeyframe(t *testing.T) {
 	// actually segment
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
-	err = ffmpeg.RTMPToHLS(fname, oname, path.Join(dir, "out")+"_%d.ts", "4")
+	err = ffmpeg.RTMPToHLS(fname, oname, path.Join(dir, "out")+"_%d.ts", "4", 0)
 	if err != nil {
 		t.Errorf("Error segmenting - %v", err)
 		return
