@@ -9,12 +9,14 @@ as input format and RTMP/HLS as output formats.
 LPMS can be integrated into another service, or run as a standalone service.  To try LPMS as a 
 standalone service, simply get the package:
 ```
-go get github.com/livepeer/lpms
+go get -d github.com/livepeer/lpms/cmd/example
 ```
 
-Go to the lpms root directory, and run 
+Go to the lpms root directory at `$GOPATH/src/github.com/livepeer/lpms`. If needed, install the required dependencies; see the Requirements section below. Then build the sample app and run it:
+
 ```
-./lpms
+go build cmd/example/main.go
+./example
 ```
 
 ### Requirements
