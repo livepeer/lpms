@@ -111,7 +111,7 @@ func TestSegmenter(t *testing.T) {
 	opt := SegmenterOptions{SegLength: time.Second * 4}
 	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, opt)
 	server := &rtmp.Server{Addr: ":1935"}
-	player := vidplayer.NewVidPlayer(server, "")
+	player := vidplayer.NewVidPlayer(server, "", nil)
 
 	player.HandleRTMPPlay(
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
@@ -255,7 +255,7 @@ func TestSetStartSeq(t *testing.T) {
 	opt := SegmenterOptions{SegLength: time.Second * 4, StartSeq: startSeq}
 	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, opt)
 	server := &rtmp.Server{Addr: ":1936"}
-	player := vidplayer.NewVidPlayer(server, "")
+	player := vidplayer.NewVidPlayer(server, "", nil)
 
 	player.HandleRTMPPlay(
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
@@ -442,7 +442,7 @@ func TestServerDisconnectMidStream(t *testing.T) {
 	opt := SegmenterOptions{SegLength: time.Second * 4}
 	vs := NewFFMpegVideoSegmenter("tmp", strm.GetStreamID(), strmUrl, opt)
 	server := &rtmp.Server{Addr: ":" + port}
-	player := vidplayer.NewVidPlayer(server, "")
+	player := vidplayer.NewVidPlayer(server, "", nil)
 	player.HandleRTMPPlay(
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
 			return strm, nil

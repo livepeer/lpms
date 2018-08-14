@@ -45,6 +45,13 @@ type LPMSOpts struct {
 	HttpHost     string
 	VodPath      string
 	WorkDir      string
+
+	// Pass in a custom HTTP mux.
+	// Useful if a non-default mux needs to be used.
+	// The caller is responsible for setting up the listener
+	// on the mux; LPMS won't initialize it.
+	// If set, HttpPort and HttpDisabled are ignored.
+	HttpMux *http.ServeMux
 }
 
 func defaultLPMSOpts(opts *LPMSOpts) {
@@ -64,10 +71,10 @@ func New(opts *LPMSOpts) *LPMS {
 		rtmpServer = &joy4rtmp.Server{Addr: (opts.RtmpHost + ":" + opts.RtmpPort)}
 	}
 	var httpAddr string
-	if !opts.HttpDisabled {
+	if !opts.HttpDisabled && opts.HttpMux == nil {
 		httpAddr = opts.HttpHost + ":" + opts.HttpPort
 	}
-	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath)
+	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
 	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, workDir: opts.WorkDir, httpAddr: httpAddr}
 }
