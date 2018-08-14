@@ -72,11 +72,10 @@ func New(opts *LPMSOpts) *LPMS {
 	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, workDir: opts.WorkDir, httpAddr: httpAddr}
 }
 
-//Start starts the rtmp and http server
+//Start starts the rtmp and http servers, and initializes ffmpeg
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	ffmpeg.InitFFmpeg()
-	defer ffmpeg.DeinitFFmpeg()
 	if l.rtmpServer != nil {
 		go func() {
 			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.rtmpServer.Addr)
