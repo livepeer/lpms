@@ -40,9 +40,8 @@ type LPMSOpts struct {
 	RtmpPort     string
 	RtmpDisabled bool
 	RtmpHost     string
-	HttpPort     string
+	HttpAddr     string
 	HttpDisabled bool
-	HttpHost     string
 	VodPath      string
 	WorkDir      string
 
@@ -58,8 +57,8 @@ func defaultLPMSOpts(opts *LPMSOpts) {
 	if opts.RtmpPort == "" {
 		opts.RtmpPort = "1935"
 	}
-	if opts.HttpPort == "" {
-		opts.HttpPort = "8935"
+	if opts.HttpAddr == "" {
+		opts.HttpAddr = "127.0.0.1:7935"
 	}
 }
 
@@ -72,7 +71,7 @@ func New(opts *LPMSOpts) *LPMS {
 	}
 	var httpAddr string
 	if !opts.HttpDisabled && opts.HttpMux == nil {
-		httpAddr = opts.HttpHost + ":" + opts.HttpPort
+		httpAddr = opts.HttpAddr
 	}
 	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
