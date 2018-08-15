@@ -37,9 +37,8 @@ type transcodeReq struct {
 }
 
 type LPMSOpts struct {
-	RtmpPort     string
+	RtmpAddr     string
 	RtmpDisabled bool
-	RtmpHost     string
 	HttpAddr     string
 	HttpDisabled bool
 	VodPath      string
@@ -54,8 +53,8 @@ type LPMSOpts struct {
 }
 
 func defaultLPMSOpts(opts *LPMSOpts) {
-	if opts.RtmpPort == "" {
-		opts.RtmpPort = "1935"
+	if opts.RtmpAddr == "" {
+		opts.RtmpAddr = "127.0.0.1:1935"
 	}
 	if opts.HttpAddr == "" {
 		opts.HttpAddr = "127.0.0.1:7935"
@@ -67,7 +66,7 @@ func New(opts *LPMSOpts) *LPMS {
 	defaultLPMSOpts(opts)
 	var rtmpServer *joy4rtmp.Server
 	if !opts.RtmpDisabled {
-		rtmpServer = &joy4rtmp.Server{Addr: (opts.RtmpHost + ":" + opts.RtmpPort)}
+		rtmpServer = &joy4rtmp.Server{Addr: opts.RtmpAddr}
 	}
 	var httpAddr string
 	if !opts.HttpDisabled && opts.HttpMux == nil {
