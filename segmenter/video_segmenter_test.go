@@ -495,7 +495,7 @@ func TestMissingKeyframe(t *testing.T) {
 	dir, err := ioutil.TempDir("", "lp-"+t.Name())
 	defer os.RemoveAll(dir)
 	if err != nil {
-		t.Errorf(fmt.Sprintf("Unable to get tempfile ", err))
+		t.Errorf(fmt.Sprintf("Unable to get tempfile : %s", err))
 		return
 	}
 	fname := path.Join(dir, "tmp.flv")
@@ -526,6 +526,28 @@ func TestMissingKeyframe(t *testing.T) {
 	out, err = ffprobe_firstframeflags(path.Join(dir, "out_0.ts"))
 	if err != nil || out != "flags=K_" {
 		t.Errorf("Segment did not have keyframe at beginning %v - %v", out, err)
+		return
+	}
+}
+
+func TestRetryRTMPToHLS(t *testing.T) {
+	url := "rtmp://localhost:19355"
+	hs := stream.NewBasicHLSVideoStream("test", 3)
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+	opt := SegmenterOptions{SegLength: 8 * time.Second}
+	s := NewFFMpegVideoSegmenter("tmp", hs.GetStreamID(), url, opt)
+
+	var err error
+	for i:=0; i<3; i++ {
+		err = s.RTMPToHLS(ctx, true)
+		if err == nil {
+			break
+		}
+		url := "rtmp://localhost:1935"
+		s = NewFFMpegVideoSegmenter("tmp", hs.GetStreamID(), url, opt)
+	}
+	if err != nil {
+		t.Error("Unable to retry after initial fail")
 		return
 	}
 }

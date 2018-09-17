@@ -20,6 +20,8 @@ import (
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
+var RETRY_COUNT = 3
+
 type LPMS struct {
 	rtmpServer *joy4rtmp.Server
 	vidPlayer  *vidplayer.VidPlayer
@@ -131,6 +133,19 @@ func (l *LPMS) HandleHLSPlay(
 	l.vidPlayer.HandleHLSPlay(getMasterPlaylist, getMediaPlaylist, getSegment)
 }
 
+func (l *LPMS) RTMPToHLS(s *segmenter.FFMpegVideoSegmenter, ctx context.Context, cleanup bool) error{
+	var err error
+	for i:=0; i < RETRY_COUNT; i++ {
+		err = s.RTMPToHLS(ctx, true)
+		if err == nil {
+			break
+		} else if i < RETRY_COUNT {
+			glog.Errorf("Error Invoking Segmenter: %v, Retrying", err)
+		}
+	}
+	return err
+}
+
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
 func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
 	// set localhost if necessary. Check more problematic addrs? [::] ?
@@ -146,7 +161,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions)
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
-	go func() { c <- s.RTMPToHLS(ffmpegCtx, true) }()
+	go func() { c <- l.RTMPToHLS(s, ffmpegCtx, true) }()
 
 	//Kick off go routine to write HLS segments
 	segCtx, segCancel := context.WithCancel(context.Background())
@@ -159,10 +174,16 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 					glog.Errorf("HLS Stream is nil")
 					return segmenter.ErrSegmenter
 				}
-				seg, err = s.PollSegment(segCtx)
-				if err != nil {
-					return err
+
+				for i:=0; i < RETRY_COUNT; i++ {
+					seg, err = s.PollSegment(segCtx)
+					if err == nil {
+						break
+					} else if i < RETRY_COUNT {
+						glog.Errorf("Error polling Segment: %v, Retrying", err)
+					}
 				}
+
 				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
 				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
 				if err = hs.AddHLSSegment(&ss); err != nil {
