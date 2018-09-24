@@ -495,7 +495,7 @@ func TestMissingKeyframe(t *testing.T) {
 	dir, err := ioutil.TempDir("", "lp-"+t.Name())
 	defer os.RemoveAll(dir)
 	if err != nil {
-		t.Errorf(fmt.Sprintf("Unable to get tempfile : %s", err))
+		t.Errorf(fmt.Sprintf("Unable to get tempfile ", err))
 		return
 	}
 	fname := path.Join(dir, "tmp.flv")
