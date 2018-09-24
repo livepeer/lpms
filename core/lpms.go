@@ -182,7 +182,9 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 					seg, err = s.PollSegment(segCtx)
 					if err == nil {
 						break
-					} else if i < RetryCount && err != context.Canceled && err != context.DeadlineExceeded {
+					} else if err != context.Canceled && err != context.DeadlineExceeded {
+						break
+					} else if i < RetryCount {
 						glog.Errorf("Error polling Segment: %v, Retrying", err)
 						time.Sleep(SegmenterRetryWait)
 					}
