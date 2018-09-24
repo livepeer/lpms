@@ -18,9 +18,11 @@ import (
 	"github.com/livepeer/lpms/vidplayer"
 
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
+	"time"
 )
 
-var RETRY_COUNT = 3
+var RetryCount = 3
+var SegmenterRetryWait = 500 * time.Millisecond
 
 type LPMS struct {
 	rtmpServer *joy4rtmp.Server
@@ -135,12 +137,13 @@ func (l *LPMS) HandleHLSPlay(
 
 func (l *LPMS) RTMPToHLS(s *segmenter.FFMpegVideoSegmenter, ctx context.Context, cleanup bool) error{
 	var err error
-	for i:=0; i < RETRY_COUNT; i++ {
-		err = s.RTMPToHLS(ctx, true)
+	for i:=0; i < RetryCount; i++ {
+		err = s.RTMPToHLS(ctx, cleanup)
 		if err == nil {
 			break
-		} else if i < RETRY_COUNT {
+		} else if i < RetryCount {
 			glog.Errorf("Error Invoking Segmenter: %v, Retrying", err)
+			time.Sleep(SegmenterRetryWait)
 		}
 	}
 	return err
@@ -175,13 +178,18 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 					return segmenter.ErrSegmenter
 				}
 
-				for i:=0; i < RETRY_COUNT; i++ {
+				for i:=0; i < RetryCount; i++ {
 					seg, err = s.PollSegment(segCtx)
 					if err == nil {
 						break
-					} else if i < RETRY_COUNT {
+					} else if i < RetryCount && err != context.Canceled && err != context.DeadlineExceeded {
 						glog.Errorf("Error polling Segment: %v, Retrying", err)
+						time.Sleep(SegmenterRetryWait)
 					}
+				}
+
+				if err != nil {
+					return err
 				}
 
 				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}

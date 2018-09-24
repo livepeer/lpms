@@ -529,25 +529,3 @@ func TestMissingKeyframe(t *testing.T) {
 		return
 	}
 }
-
-func TestRetryRTMPToHLS(t *testing.T) {
-	url := "rtmp://localhost:19355"
-	hs := stream.NewBasicHLSVideoStream("test", 3)
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-	opt := SegmenterOptions{SegLength: 8 * time.Second}
-	s := NewFFMpegVideoSegmenter("tmp", hs.GetStreamID(), url, opt)
-
-	var err error
-	for i:=0; i<3; i++ {
-		err = s.RTMPToHLS(ctx, true)
-		if err == nil {
-			break
-		}
-		url := "rtmp://localhost:1935"
-		s = NewFFMpegVideoSegmenter("tmp", hs.GetStreamID(), url, opt)
-	}
-	if err != nil {
-		t.Error("Unable to retry after initial fail")
-		return
-	}
-}
