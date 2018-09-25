@@ -164,13 +164,14 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 					return segmenter.ErrSegmenter
 				}
 
-				for i:=0; i < RetryCount; i++ {
+				for i:=1; i <= RetryCount; i++ {
 					seg, err = s.PollSegment(segCtx)
 					if err == nil || err == context.Canceled || err == context.DeadlineExceeded {
 						break
+					} else if i < RetryCount {
+						glog.Errorf("Error polling Segment: %v, Retrying", err)
+						time.Sleep(SegmenterRetryWait)
 					}
-					glog.Errorf("Error polling Segment: %v, Retrying", err)
-					time.Sleep(SegmenterRetryWait)
 				}
 
 				if err != nil {
@@ -208,13 +209,14 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 
 func rtmpToHLS(s segmenter.VideoSegmenter, ctx context.Context, cleanup bool) error{
 	var err error
-	for i:=0; i < RetryCount; i++ {
+	for i:=1; i <= RetryCount; i++ {
 		err = s.RTMPToHLS(ctx, cleanup)
 		if err == nil {
 			break
+		} else if i < RetryCount {
+			glog.Errorf("Error Invoking Segmenter: %v, Retrying", err)
+			time.Sleep(SegmenterRetryWait)
 		}
-		glog.Errorf("Error Invoking Segmenter: %v, Retrying", err)
-		time.Sleep(SegmenterRetryWait)
 	}
 	return err
 }
