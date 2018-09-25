@@ -135,20 +135,6 @@ func (l *LPMS) HandleHLSPlay(
 	l.vidPlayer.HandleHLSPlay(getMasterPlaylist, getMediaPlaylist, getSegment)
 }
 
-func (l *LPMS) RTMPToHLS(s *segmenter.FFMpegVideoSegmenter, ctx context.Context, cleanup bool) error{
-	var err error
-	for i:=0; i < RetryCount; i++ {
-		err = s.RTMPToHLS(ctx, cleanup)
-		if err == nil {
-			break
-		} else if i < RetryCount {
-			glog.Errorf("Error Invoking Segmenter: %v, Retrying", err)
-			time.Sleep(SegmenterRetryWait)
-		}
-	}
-	return err
-}
-
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
 func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
 	// set localhost if necessary. Check more problematic addrs? [::] ?
@@ -164,7 +150,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions)
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
-	go func() { c <- l.RTMPToHLS(s, ffmpegCtx, true) }()
+	go func() { c <- rtmpToHLS(s, ffmpegCtx, true) }()
 
 	//Kick off go routine to write HLS segments
 	segCtx, segCancel := context.WithCancel(context.Background())
@@ -180,14 +166,11 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 
 				for i:=0; i < RetryCount; i++ {
 					seg, err = s.PollSegment(segCtx)
-					if err == nil {
+					if err == nil || err == context.Canceled || err == context.DeadlineExceeded {
 						break
-					} else if err == context.Canceled || err == context.DeadlineExceeded {
-						break
-					} else if i < RetryCount {
-						glog.Errorf("Error polling Segment: %v, Retrying", err)
-						time.Sleep(SegmenterRetryWait)
 					}
+					glog.Errorf("Error polling Segment: %v, Retrying", err)
+					time.Sleep(SegmenterRetryWait)
 				}
 
 				if err != nil {
@@ -221,6 +204,19 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 		segCancel()
 		return nil
 	}
+}
+
+func rtmpToHLS(s segmenter.VideoSegmenter, ctx context.Context, cleanup bool) error{
+	var err error
+	for i:=0; i < RetryCount; i++ {
+		err = s.RTMPToHLS(ctx, cleanup)
+		if err == nil {
+			break
+		}
+		glog.Errorf("Error Invoking Segmenter: %v, Retrying", err)
+		time.Sleep(SegmenterRetryWait)
+	}
+	return err
 }
 
 // //HandleTranscode kicks off a transcoding process, keeps a local HLS buffer, and returns the new stream ID.
