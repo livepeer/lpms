@@ -13,7 +13,7 @@ type TestVideoSegmenter struct {
 
 func (t *TestVideoSegmenter) RTMPToHLS(ctx context.Context, cleanup bool) error {
 	t.count++
-	if t.count < 3 {
+	if t.count < RetryCount {
 		return errors.New("Test Retry")
 	}
 	return nil
@@ -25,10 +25,10 @@ func (t *TestVideoSegmenter) GetCount() int {
 
 func TestRetryRTMPToHLS(t *testing.T) {
 	var testVideoSegmenter = &TestVideoSegmenter{}
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, _ := context.WithTimeout(context.Background(), time.Millisecond)
 	rtmpToHLS(testVideoSegmenter, ctx, true)
 	count := testVideoSegmenter.GetCount()
-	if count != 3 {
+	if count != RetryCount {
 		t.Error("Not enough retries attempted")
 		t.Fail()
 	}
