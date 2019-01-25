@@ -649,7 +649,8 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
     if (params[i].fps.den) octx->fps = params[i].fps;
     if (ictx.vc) {
       char filter_str[256];
-      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale=%dx%d:force_original_aspect_ratio=decrease", octx->fps.num, octx->fps.den, octx->width, octx->height);
+      // preserve aspect ratio along the larger dimension when rescaling
+      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale='w=if(gte(iw,ih),%d,-2):h=if(lt(iw, ih),%d,-2)'", octx->fps.num, octx->fps.den, octx->width, octx->height);
       ret = init_video_filters(&ictx, octx, filter_str);
       if (ret < 0) main_err("Unable to open video filter");
     }
