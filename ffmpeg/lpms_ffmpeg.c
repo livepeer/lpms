@@ -107,8 +107,8 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
     if (pkt.stream_index == stream_map[0]) pkt.stream_index = 0;
     else if (pkt.stream_index == stream_map[1]) pkt.stream_index = 1;
     else goto r2hloop_end;
-    ist = ic->streams[pkt.stream_index];
-    ost = oc->streams[stream_map[pkt.stream_index]];
+    ist = ic->streams[stream_map[pkt.stream_index]];
+    ost = oc->streams[pkt.stream_index];
     int64_t dts_next = pkt.dts, dts_prev = prev_ts[pkt.stream_index];
     if (oc->streams[pkt.stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
         AV_NOPTS_VALUE == dts_prev &&
