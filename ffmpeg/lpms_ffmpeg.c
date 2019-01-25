@@ -93,6 +93,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
   av_dict_set(&md, "hls_time", seg_time, 0);
   av_dict_set(&md, "hls_segment_filename", ts_tmpl, 0);
   av_dict_set(&md, "start_number", seg_start, 0);
+  av_dict_set(&md, "hls_flags", "delete_segments", 0);
   ret = avformat_write_header(oc, &md);
   if (ret < 0) r2h_err("Error writing header\n");
 

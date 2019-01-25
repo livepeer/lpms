@@ -7,6 +7,56 @@ import (
 	"testing"
 )
 
+func TestSegmenter_DeleteSegments(t *testing.T) {
+	// Ensure that old segments are deleted as they fall off the playlist
+
+	dir, err := ioutil.TempDir("", t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	InitFFmpeg() // hide some log noise
+
+	// sanity check that segmented outputs > playlist length
+	cmd := `
+		set -eux
+		cd "$0"
+		# default test.ts is a bit short so make it a bit longer
+		cp "$1/../transcoder/test.ts" test.ts
+		ffmpeg -loglevel warning -i "concat:test.ts|test.ts|test.ts" -c copy long.ts
+		ffmpeg -loglevel warning -i long.ts -c copy -f hls -hls_time 1 long.m3u8
+		# ensure we have more segments than playlist length
+		[ $(ls long*.ts | wc -l) -ge 6 ]
+	`
+	out, err := exec.Command("bash", "-c", cmd, dir, wd).CombinedOutput()
+	t.Log(string(out))
+	if err != nil {
+		t.Error(err)
+	}
+
+	// actually do the segmentation
+	err = RTMPToHLS(dir+"/long.ts", dir+"/out.m3u8", dir+"/out_%d.ts", "1", 0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// check that segments have been deleted by counting output ts files
+	cmd = `
+		set -eux
+		cd "$0"
+		[ $(ls out_*.ts | wc -l) -eq 6 ]
+	`
+	out, err = exec.Command("bash", "-c", cmd, dir, wd).CombinedOutput()
+	t.Log(string(out))
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func TestSegmenter_StreamOrdering(t *testing.T) {
 	// Ensure segmented output contains [video, audio] streams in that order
 	// regardless of stream ordering in the input
