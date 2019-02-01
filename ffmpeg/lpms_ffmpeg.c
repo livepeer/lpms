@@ -241,6 +241,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     ret = avcodec_open2(ac, codec, NULL);
     if (ret < 0) em_err("Error opening audio encoder\n");
+    av_buffersink_set_frame_size(octx->af.sink_ctx, ac->frame_size);
 
     // audio stream in muxer
     st = avformat_new_stream(oc, NULL);
