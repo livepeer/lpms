@@ -116,6 +116,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
         (pkt.flags & AV_PKT_FLAG_KEY)) got_video_kf = 1;
     if (!got_video_kf) goto r2hloop_end; // skip everyting until first video KF
     if (AV_NOPTS_VALUE == dts_prev) dts_prev = dts_next;
+    else if (dts_next <= dts_prev) goto r2hloop_end; // drop late packets
     pkt.pts = av_rescale_q_rnd(pkt.pts, ist->time_base, ost->time_base,
         AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
     pkt.dts = av_rescale_q_rnd(pkt.dts, ist->time_base, ost->time_base,
