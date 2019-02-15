@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net/url"
@@ -52,4 +53,6 @@ func main() {
 			return nil
 		},
 	)
+	lpms.Start(context.Background())
+
 }
