@@ -97,7 +97,7 @@ type SRSHLSDownloader struct {
 func (d SRSHLSDownloader) Download(pc chan *m3u8.MediaPlaylist, sc chan *stream.HLSSegment) error {
 	before := time.Now()
 	plURL := d.localEndpoint + d.streamID + ".m3u8"
-	glog.Infof("SRS Playlist Download Path: ", plURL)
+	glog.Infof("SRS Playlist Download Path: %v", plURL)
 
 	for {
 		pl, errp := DownloadPlaylist(plURL)

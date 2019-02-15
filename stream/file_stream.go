@@ -49,7 +49,7 @@ func (s *FileStream) WriteHLSSegmentToStream(seg HLSSegment) error {
 	glog.Infof("Writting HLS Segment to File")
 	err := ioutil.WriteFile("./data/"+s.StreamID+"_"+seg.Name, seg.Data, 0644)
 	if err != nil {
-		glog.Infof("Cannot write to file: ", err)
+		glog.Infof("Cannot write to file: %v", err)
 	}
 
 	return err

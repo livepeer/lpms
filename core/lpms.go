@@ -24,12 +24,14 @@ import (
 var RetryCount = 3
 var SegmenterRetryWait = 500 * time.Millisecond
 
+// LPMS struct is the container of all the LPMS server related tools.
 type LPMS struct {
-	rtmpServer *joy4rtmp.Server
-	vidPlayer  *vidplayer.VidPlayer
-	vidListen  *vidlistener.VidListener
-	workDir    string
-	httpAddr   string
+	// rtmpServer *joy4rtmp.Server
+	vidPlayer   *vidplayer.VidPlayer
+	vidListener *vidlistener.VidListener
+	workDir     string
+	httpAddr    string
+	rtmpAddr    string
 }
 
 type transcodeReq struct {
@@ -78,17 +80,17 @@ func New(opts *LPMSOpts) *LPMS {
 	}
 	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
-	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, workDir: opts.WorkDir, httpAddr: httpAddr}
+	return &LPMS{vidPlayer: player, vidListener: listener, workDir: opts.WorkDir, rtmpAddr: opts.RtmpAddr, httpAddr: httpAddr}
 }
 
 //Start starts the rtmp and http servers, and initializes ffmpeg
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	ffmpeg.InitFFmpeg()
-	if l.rtmpServer != nil {
+	if l.vidListener.RtmpServer != nil {
 		go func() {
-			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.rtmpServer.Addr)
-			ec <- l.rtmpServer.ListenAndServe()
+			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.vidListener.RtmpServer.Addr)
+			ec <- l.vidListener.RtmpServer.ListenAndServe()
 		}()
 	}
 	startHTTP := l.httpAddr != ""
@@ -99,7 +101,7 @@ func (l *LPMS) Start(ctx context.Context) error {
 		}()
 	}
 
-	if l.rtmpServer != nil || startHTTP {
+	if l.vidListener.RtmpServer != nil || startHTTP {
 		select {
 		case err := <-ec:
 			glog.Errorf("LPMS Server Error: %v.  Quitting...", err)
@@ -118,7 +120,7 @@ func (l *LPMS) HandleRTMPPublish(
 	gotStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error),
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
-	l.vidListen.HandleRTMPPublish(makeStreamID, gotStream, endStream)
+	l.vidListener.HandleRTMPPublish(makeStreamID, gotStream, endStream)
 }
 
 //HandleRTMPPlay offload to the video player
@@ -138,7 +140,7 @@ func (l *LPMS) HandleHLSPlay(
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
 func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
 	// set localhost if necessary. Check more problematic addrs? [::] ?
-	rtmpAddr := l.rtmpServer.Addr
+	rtmpAddr := l.rtmpAddr
 	if strings.HasPrefix(rtmpAddr, "0.0.0.0") {
 		rtmpAddr = "127.0.0.1" + rtmpAddr[len("0.0.0.0"):]
 	}
