@@ -97,6 +97,6 @@ func TestListenerError(t *testing.T) {
 		t.Error("Expected a failure; got none")
 	}
 	if end.Sub(start) > time.Duration(time.Second*1) {
-		t.Error("Took longer than expected; %v", end.Sub(start))
+		t.Errorf("Took longer than expected; %v", end.Sub(start))
 	}
 }
