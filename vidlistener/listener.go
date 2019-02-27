@@ -37,6 +37,7 @@ func (self *VidListener) HandleRTMPPublish(
 
 			strmID := makeStreamID(conn.URL)
 			if strmID == "" {
+				conn.Close()
 				return
 			}
 			s := stream.NewBasicRTMPVideoStream(strmID)
