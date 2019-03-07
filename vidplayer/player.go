@@ -161,7 +161,11 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		seg, err := getSegment(r.URL)
 		if err != nil {
 			glog.Errorf("Error getting segment %v: %v", r.URL, err)
-			http.Error(w, "Error getting segment", 500)
+			if err == ErrNotFound {
+				http.Error(w, "ErrNotFound", 404)
+			} else {
+				http.Error(w, "Error getting segment", 500)
+			}
 			return
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
