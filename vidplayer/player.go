@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 
 	"strings"
 
@@ -167,6 +168,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Content-Length", strconv.Itoa(len(seg)))
 		_, err = w.Write(seg)
 		if err != nil {
 			glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
