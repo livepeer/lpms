@@ -1,6 +1,13 @@
 version: 2
+machine:
+  environment:
+    GOROOT: /usr/local/go
+    PATH: $PATH:$HOME/compiled/bin
+    PKG_CONFIG_PATH: "$HOME/compiled/lib/pkgconfig"
 jobs:
   build:
+    docker:
+      - image: "circleci/golang:1.11.5"
     steps:
       - checkout
 
