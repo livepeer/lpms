@@ -17,7 +17,7 @@ jobs:
       - run:
           name: "Build LPMS"
           command: |
-            ./install_ffmpeg.sh
+            bash ./install_ffmpeg.sh
             mkdir -p "$HOME/.go_workspace/src/github.com/livepeer"
             cd "$HOME/.go_workspace/src/github.com/livepeer"
             rm -rf go-livepeer
