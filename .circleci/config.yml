@@ -17,6 +17,8 @@ jobs:
       - run:
           name: "Build LPMS"
           command: |
+            sudo apt-get update
+            sudo apt-get install autoconf
             bash ./install_ffmpeg.sh
             mkdir -p "$HOME/.go_workspace/src/github.com/livepeer"
             cd "$HOME/.go_workspace/src/github.com/livepeer"
