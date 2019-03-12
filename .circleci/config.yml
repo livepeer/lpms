@@ -1,6 +1,6 @@
 version: 2
 jobs:
-  build-ffmpeg:
+  build:
     steps:
       - checkout
 
