@@ -17,7 +17,7 @@ jobs:
       - run:
           name: "Build LPMS"
           command: |
-            pwd
+            echo $GOPATH
             exit 1
             sudo apt-get update
             sudo apt-get install -y autoconf build-essential pkg-config autoconf gnutls-dev
