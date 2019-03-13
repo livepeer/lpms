@@ -6,13 +6,18 @@ jobs:
       - image: "circleci/golang:1.11.5"
         environment:
           GOROOT: /usr/local/go
-          PATH: $PATH:$HOME/compiled/bin
-          PKG_CONFIG_PATH: "$HOME/compiled/lib/pkgconfig"
+          PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
     steps:
       - checkout
 
       - restore_cache:
           key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
+
+      - run:
+          name: "Tweak PATH"
+          command: |
+            echo 'export PATH=/home/circleci/compiled/bin:$PATH' >> $BASH_ENV
+            source $BASH_ENV
 
       - run:
           name: "Build FFMpeg"
