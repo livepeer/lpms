@@ -6,6 +6,7 @@ machine:
     PKG_CONFIG_PATH: "$HOME/compiled/lib/pkgconfig"
 jobs:
   build:
+    working_directory: /go/src/github.com/livepeer/lpms
     docker:
       - image: "circleci/golang:1.11.5"
     steps:
@@ -17,30 +18,17 @@ jobs:
       - run:
           name: "Build LPMS"
           command: |
-            echo $GOPATH
-            exit 1
             sudo apt-get update
             sudo apt-get install -y autoconf build-essential pkg-config autoconf gnutls-dev
             bash ./install_ffmpeg.sh
-            mkdir -p "$HOME/.go_workspace/src/github.com/livepeer"
-            cd "$HOME/.go_workspace/src/github.com/livepeer"
-            rm -rf go-livepeer
-            git clone https://github.com/livepeer/go-livepeer
-            cd $HOME/.go_workspace/src/github.com/livepeer
-            rm -rf lpms
-            go get -d github.com/livepeer/lpms/cmd/example
-            cd lpms
-            git fetch
-            git checkout $CIRCLE_BRANCH
-            git pull
+            go get ./cmd/example
             go build cmd/example/*.go
+            bash test.sh
 
       - save_cache:
           paths:
-            - "/usr/local/go/pkg"
-            - "/home/ubuntu/.go_workspace/"
-            - "/home/ubuntu/nasm"
-            - "/home/ubuntu/x264"
-            - "/home/ubuntu/ffmpeg"
-            - "/home/ubuntu/compiled"
+            - "/home/circleci/nasm"
+            - "/home/circleci/x264"
+            - "/home/circleci/ffmpeg"
+            - "/home/circleci/compiled"
           key: lpms-cache
