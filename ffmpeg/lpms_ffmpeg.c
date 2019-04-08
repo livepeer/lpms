@@ -33,6 +33,8 @@ struct output_ctx {
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
   struct filter_ctx vf, af;
+
+  int64_t drop_ts;     // preroll audio ts to drop
 };
 
 void lpms_init()
@@ -250,6 +252,9 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     st->time_base = ac->time_base;
     if (ret < 0) em_err("Unable to copy audio codec params\n");
     octx->ai = st->index;
+
+    // signal whether to drop preroll audio
+    if (st->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
   }
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
@@ -607,6 +612,14 @@ int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
     pkt.pts = av_rescale_q_rnd(pkt.pts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
     pkt.dts = av_rescale_q_rnd(pkt.dts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
     pkt.duration = av_rescale_q(pkt.duration, encoder->time_base, ost->time_base);
+  }
+
+  // drop any preroll audio. may need to drop multiple packets for multichannel
+  // XXX this breaks if preroll isn't exactly one AVPacket or drop_ts == 0
+  //     hasn't been a problem in practice (so far)
+  if (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type) {
+      if (octx->drop_ts == AV_NOPTS_VALUE) octx->drop_ts = pkt.pts;
+      if (pkt.pts && pkt.pts == octx->drop_ts) return 0;
   }
 
   ret = av_interleaved_write_frame(octx->oc, &pkt);
