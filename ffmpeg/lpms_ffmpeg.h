@@ -5,6 +5,8 @@
 
 typedef struct {
   char *fname;
+  char *vencoder;
+  char *vfilters;
   int w, h, bitrate;
   AVRational fps;
 } output_params;

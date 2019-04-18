@@ -17,6 +17,21 @@ import (
 import "C"
 
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
+var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
+
+type Acceleration int
+
+const (
+	Software Acceleration = iota
+	Nvidia
+	Amd
+)
+
+type TranscodeOptions struct {
+	Oname   string
+	Profile VideoProfile
+	Accel   Acceleration
+}
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
 	inp := C.CString(localRTMPUrl)
@@ -38,14 +53,43 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 }
 
 func Transcode(input string, workDir string, ps []VideoProfile) error {
+
+	opts := make([]TranscodeOptions, len(ps))
+	for i, param := range ps {
+		oname := path.Join(workDir, fmt.Sprintf("out%v%v", i, filepath.Base(input)))
+		opt := TranscodeOptions{
+			Oname:   oname,
+			Profile: param,
+			Accel:   Software,
+		}
+		opts[i] = opt
+	}
+	return Transcode2(input, opts)
+}
+
+// return encoding specific options for the given accel
+func configAccel(accel Acceleration) (string, string, error) {
+	switch accel {
+	case Software:
+		return "libx264", "scale", nil
+	case Nvidia:
+		return "h264_nvenc", "hwupload_cuda,scale_npp", nil
+	}
+	return "", "", ErrTranscoderHw
+}
+
+func Transcode2(input string, ps []TranscodeOptions) error {
+
 	if len(ps) <= 0 {
 		return nil
 	}
 	inp := C.CString(input)
 	params := make([]C.output_params, len(ps))
-	for i, param := range ps {
-		oname := C.CString(path.Join(workDir, fmt.Sprintf("out%v%v", i, filepath.Base(input))))
+	for i, p := range ps {
+		oname := C.CString(p.Oname)
 		defer C.free(unsafe.Pointer(oname))
+
+		param := p.Profile
 		res := strings.Split(param.Resolution, "x")
 		if len(res) < 2 {
 			return ErrTranscoderRes
@@ -63,9 +107,20 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 		if err != nil {
 			return err
 		}
+		encoder, scale_filter, err := configAccel(p.Accel)
+		if err != nil {
+			return err
+		}
+		// preserve aspect ratio along the larger dimension when rescaling
+		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)", param.Framerate, 1, scale_filter, w, h)
+		venc := C.CString(encoder)
+		vfilt := C.CString(filters)
+		defer C.free(unsafe.Pointer(venc))
+		defer C.free(unsafe.Pointer(vfilt))
 		fps := C.AVRational{num: C.int(param.Framerate), den: 1}
 		params[i] = C.output_params{fname: oname, fps: fps,
-			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate)}
+			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
+			vencoder: venc, vfilters: vfilt}
 	}
 	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), C.int(len(params))))
 	C.free(unsafe.Pointer(inp))

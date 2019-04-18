@@ -26,6 +26,8 @@ struct filter_ctx {
 
 struct output_ctx {
   char *fname;         // required output file name
+  char *vencoder;      // required output video encoder
+  char *vfilters;      // required output video filters
   int width, height, bitrate; // w, h, br required
   AVRational fps;
   AVFormatContext *oc; // muxer required
@@ -662,6 +664,8 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
     octx->fname = params[i].fname;
     octx->width = params[i].w;
     octx->height = params[i].h;
+    octx->vencoder = params[i].vencoder;
+    octx->vfilters = params[i].vfilters;
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
     if (ictx.vc) {
