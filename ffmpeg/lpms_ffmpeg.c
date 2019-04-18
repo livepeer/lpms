@@ -194,19 +194,23 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   octx->oc = oc;
 
   if (ictx->vc) {
-    codec = avcodec_find_encoder_by_name("libx264"); // XXX make more flexible?
-    if (!codec) em_err("Unable to find libx264");
+    codec = avcodec_find_encoder_by_name(octx->vencoder);
+    if (!codec) em_err("Unable to find encoder");
 
     // open video encoder
     // XXX use avoptions rather than manual enumeration
     vc = avcodec_alloc_context3(codec);
-    if (!vc) em_err("Unable to alloc video encoder\n"); // XXX shld be optional
+    if (!vc) em_err("Unable to alloc video encoder\n");
     octx->vc = vc;
     vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
     vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
     if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
     if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
     if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+    if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
+      vc->hw_frames_ctx =
+        av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
+    }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     /*
@@ -334,8 +338,7 @@ open_input_err:
 #undef dd_err
 }
 
-static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx,
-    const char *filters_descr)
+static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
 #define filters_err(msg) { \
   if (!ret) ret = -1; \
@@ -349,8 +352,9 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx,
     AVFilterInOut *outputs = avfilter_inout_alloc();
     AVFilterInOut *inputs  = avfilter_inout_alloc();
     AVRational time_base = ictx->ic->streams[ictx->vi]->time_base;
-    enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
+    enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
     struct filter_ctx *vf = &octx->vf;
+    char *filters_descr = octx->vfilters;
 
     vf->graph = avfilter_graph_alloc();
     if (!outputs || !inputs || !vf->graph) {
@@ -669,10 +673,7 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
     if (ictx.vc) {
-      char filter_str[256];
-      // preserve aspect ratio along the larger dimension when rescaling
-      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale='w=if(gte(iw,ih),%d,-2):h=if(lt(iw, ih),%d,-2)'", octx->fps.num, octx->fps.den, octx->width, octx->height);
-      ret = init_video_filters(&ictx, octx, filter_str);
+      ret = init_video_filters(&ictx, octx);
       if (ret < 0) main_err("Unable to open video filter");
     }
     if (ictx.ac) {
