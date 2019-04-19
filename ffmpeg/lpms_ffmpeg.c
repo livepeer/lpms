@@ -14,6 +14,10 @@ struct input_ctx {
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
+
+  // Hardware decoding support
+  AVBufferRef *hw_device_ctx;
+  enum AVHWDeviceType hw_type;
 };
 
 struct filter_ctx {
@@ -170,6 +174,24 @@ static void free_output(struct output_ctx *octx)
   free_filter(&octx->af);
 }
 
+static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts)
+{
+  const AVCodec *decoder = ctx->codec;
+  struct input_ctx *params = (struct input_ctx*)ctx->opaque;
+  for (int i = 0;; i++) {
+    const AVCodecHWConfig *config = avcodec_get_hw_config(decoder, i);
+    if (!config) {
+      fprintf(stderr, "Decoder %s does not support hw decoding\n", decoder->name);
+      return AV_PIX_FMT_NONE;
+    }
+    if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+        config->device_type == params->hw_type) {
+      return  config->pix_fmt;
+    }
+  }
+  return AV_PIX_FMT_NONE;
+}
+
 
 static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
@@ -283,6 +305,7 @@ static void free_input(struct input_ctx *inctx)
   if (inctx->ic) avformat_close_input(&inctx->ic);
   if (inctx->vc) avcodec_free_context(&inctx->vc);
   if (inctx->ac) avcodec_free_context(&inctx->ac);
+  if (inctx->hw_device_ctx) av_buffer_unref(&inctx->hw_device_ctx);
 }
 
 static int open_input(input_params *params, struct input_ctx *ctx)
@@ -313,6 +336,14 @@ static int open_input(input_params *params, struct input_ctx *ctx)
     ctx->vc = vc;
     ret = avcodec_parameters_to_context(vc, ic->streams[ctx->vi]->codecpar);
     if (ret < 0) dd_err("Unable to assign video params\n");
+    if (params->hw_type != AV_HWDEVICE_TYPE_NONE) {
+      ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, NULL, NULL, 0);
+      if (ret < 0) dd_err("Unable to open hardware context for decoding\n")
+      ctx->hw_type = params->hw_type;
+      vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
+      vc->get_format = get_hw_pixfmt;
+      vc->opaque = (void*)ctx;
+    }
     ret = avcodec_open2(vc, codec, NULL);
     if (ret < 0) dd_err("Unable to open video decoder\n");
   }
@@ -373,6 +404,12 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     ret = avfilter_graph_create_filter(&vf->src_ctx, buffersrc,
                                        "in", args, NULL, vf->graph);
     if (ret < 0) filters_err("Cannot create video buffer source\n");
+    if (ictx->vc && ictx->vc->hw_frames_ctx) {
+      AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
+      srcpar->hw_frames_ctx = ictx->vc->hw_frames_ctx;
+      av_buffersrc_parameters_set(vf->src_ctx, srcpar);
+      av_freep(&srcpar);
+    }
 
     /* buffer video sink: to terminate the filter chain. */
     ret = avfilter_graph_create_filter(&vf->sink_ctx, buffersink,
