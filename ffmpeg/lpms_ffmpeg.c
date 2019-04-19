@@ -285,7 +285,7 @@ static void free_input(struct input_ctx *inctx)
   if (inctx->ac) avcodec_free_context(&inctx->ac);
 }
 
-static int open_input(char *inp, struct input_ctx *ctx)
+static int open_input(input_params *params, struct input_ctx *ctx)
 {
 #define dd_err(msg) { \
   if (!ret) ret = -1; \
@@ -294,6 +294,7 @@ static int open_input(char *inp, struct input_ctx *ctx)
 }
   AVCodec *codec = NULL;
   AVFormatContext *ic   = NULL;
+  char *inp = params->fname;
 
   // open demuxer
   int ret = avformat_open_input(&ic, inp, NULL, NULL);
@@ -640,7 +641,7 @@ proc_cleanup:
 
 #define MAX_OUTPUT_SIZE 10
 
-int lpms_transcode(char *inp, output_params *params, int nb_outputs)
+int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
 {
 #define main_err(msg) { \
   if (!ret) ret = AVERROR(EINVAL); \
@@ -656,6 +657,7 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
   memset(&ictx, 0, sizeof ictx);
   memset(outputs, 0, sizeof outputs);
 
+  if (!inp) main_err("transcoder: Missing input params\n")
   if (nb_outputs > MAX_OUTPUT_SIZE) main_err("transcoder: Too many outputs\n");
 
   // populate input context

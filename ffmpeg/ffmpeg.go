@@ -18,6 +18,7 @@ import "C"
 
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
 var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
+var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
 
 type Acceleration int
 
@@ -26,6 +27,11 @@ const (
 	Nvidia
 	Amd
 )
+
+type TranscodeOptionsIn struct {
+	Fname string
+	Accel Acceleration
+}
 
 type TranscodeOptions struct {
 	Oname   string
@@ -64,7 +70,11 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 		}
 		opts[i] = opt
 	}
-	return Transcode2(input, opts)
+	inopts := &TranscodeOptionsIn{
+		Fname: input,
+		Accel: Software,
+	}
+	return Transcode2(inopts, opts)
 }
 
 // return encoding specific options for the given accel
@@ -77,13 +87,31 @@ func configAccel(accel Acceleration) (string, string, error) {
 	}
 	return "", "", ErrTranscoderHw
 }
+func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
+	switch accel {
+	case Software:
+		return C.AV_HWDEVICE_TYPE_NONE, nil
+	case Nvidia:
+		return C.AV_HWDEVICE_TYPE_CUDA, nil
 
-func Transcode2(input string, ps []TranscodeOptions) error {
+	}
+	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw
+}
 
+func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
+
+	if input == nil {
+		return ErrTranscoderInp
+	}
 	if len(ps) <= 0 {
 		return nil
 	}
-	inp := C.CString(input)
+	hw_type, err := accelDeviceType(input.Accel)
+	if err != nil {
+		return err
+	}
+	fname := C.CString(input.Fname)
+	defer C.free(unsafe.Pointer(fname))
 	params := make([]C.output_params, len(ps))
 	for i, p := range ps {
 		oname := C.CString(p.Oname)
@@ -122,8 +150,8 @@ func Transcode2(input string, ps []TranscodeOptions) error {
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			vencoder: venc, vfilters: vfilt}
 	}
+	inp := &C.input_params{fname: fname, hw_type: hw_type}
 	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), C.int(len(params))))
-	C.free(unsafe.Pointer(inp))
 	if 0 != ret {
 		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
 		return ErrorMap[ret]
