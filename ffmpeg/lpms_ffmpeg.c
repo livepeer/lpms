@@ -619,7 +619,7 @@ int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   //     hasn't been a problem in practice (so far)
   if (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type) {
       if (octx->drop_ts == AV_NOPTS_VALUE) octx->drop_ts = pkt.pts;
-      if (pkt.pts && pkt.pts == octx->drop_ts) return 0;
+      if (pkt.pts && pkt.pts == octx->drop_ts) goto proc_cleanup;
   }
 
   ret = av_interleaved_write_frame(octx->oc, &pkt);
