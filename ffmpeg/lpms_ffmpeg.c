@@ -174,7 +174,7 @@ static void free_output(struct output_ctx *octx)
   free_filter(&octx->af);
 }
 
-static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts)
+static enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
 {
   const AVCodec *decoder = ctx->codec;
   struct input_ctx *params = (struct input_ctx*)ctx->opaque;
@@ -192,6 +192,11 @@ static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *ctx, const enum AVPixelF
   return AV_PIX_FMT_NONE;
 }
 
+static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts)
+{
+  // XXX see avcodec_get_hw_frames_parameters if fmt changes mid-stream
+  return hw2pixfmt(ctx);
+}
 
 static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
@@ -337,12 +342,27 @@ static int open_input(input_params *params, struct input_ctx *ctx)
     ret = avcodec_parameters_to_context(vc, ic->streams[ctx->vi]->codecpar);
     if (ret < 0) dd_err("Unable to assign video params\n");
     if (params->hw_type != AV_HWDEVICE_TYPE_NONE) {
+      // First set the hw device then set the hw frame
+      AVHWFramesContext *frames;
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, NULL, NULL, 0);
       if (ret < 0) dd_err("Unable to open hardware context for decoding\n")
       ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
       vc->opaque = (void*)ctx;
+      // XXX Ideally this would be auto initialized by the HW device ctx
+      //     However the initialization doesn't occur in time to set up filters
+      //     So we do it here. Also see avcodec_get_hw_frames_parameters
+      vc->hw_frames_ctx = av_hwframe_ctx_alloc(vc->hw_device_ctx);
+      if (!vc->hw_frames_ctx) dd_err("Unable to allocate hwframe context for decoding\n")
+      frames = (AVHWFramesContext*)vc->hw_frames_ctx->data;
+      frames->format = hw2pixfmt(vc);
+      frames->sw_format = vc->pix_fmt;
+      frames->width = vc->width;
+      frames->height = vc->height;
+      vc->extra_hw_frames = 16 + 1; // H.264 max refs but increases mem usage
+      ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
+      if (ret < 0) dd_err("Unable to initialize a hardware frame pool\n")
     }
     ret = avcodec_open2(vc, codec, NULL);
     if (ret < 0) dd_err("Unable to open video decoder\n");
@@ -387,17 +407,19 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
     struct filter_ctx *vf = &octx->vf;
     char *filters_descr = octx->vfilters;
+    enum AVPixelFormat in_pix_fmt = ictx->vc->pix_fmt;
 
     vf->graph = avfilter_graph_alloc();
     if (!outputs || !inputs || !vf->graph) {
       ret = AVERROR(ENOMEM);
       filters_err("Unble to allocate filters\n");
     }
+    if (ictx->vc->hw_device_ctx) in_pix_fmt = hw2pixfmt(ictx->vc);
 
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
     snprintf(args, sizeof args,
             "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
-            ictx->vc->width, ictx->vc->height, ictx->vc->pix_fmt,
+            ictx->vc->width, ictx->vc->height, in_pix_fmt,
             time_base.num, time_base.den,
             ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den);
 
@@ -405,6 +427,7 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
                                        "in", args, NULL, vf->graph);
     if (ret < 0) filters_err("Cannot create video buffer source\n");
     if (ictx->vc && ictx->vc->hw_frames_ctx) {
+      // XXX a bit problematic in that it's set before decoder is fully ready
       AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
       srcpar->hw_frames_ctx = ictx->vc->hw_frames_ctx;
       av_buffersrc_parameters_set(vf->src_ctx, srcpar);

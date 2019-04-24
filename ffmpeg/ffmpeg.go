@@ -78,12 +78,22 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 }
 
 // return encoding specific options for the given accel
-func configAccel(accel Acceleration) (string, string, error) {
-	switch accel {
+func configAccel(inAcc, outAcc Acceleration) (string, string, error) {
+	switch inAcc {
 	case Software:
-		return "libx264", "scale", nil
+		switch outAcc {
+		case Software:
+			return "libx264", "scale", nil
+		case Nvidia:
+			return "h264_nvenc", "hwupload_cuda,scale_npp", nil
+		}
 	case Nvidia:
-		return "h264_nvenc", "hwupload_cuda,scale_npp", nil
+		switch outAcc {
+		case Software:
+			return "libx264", "scale_cuda", nil
+		case Nvidia:
+			return "h264_nvenc", "scale_npp", nil
+		}
 	}
 	return "", "", ErrTranscoderHw
 }
@@ -135,12 +145,16 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 		if err != nil {
 			return err
 		}
-		encoder, scale_filter, err := configAccel(p.Accel)
+		encoder, scale_filter, err := configAccel(input.Accel, p.Accel)
 		if err != nil {
 			return err
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
-		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)", param.Framerate, 1, scale_filter, w, h)
+		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", param.Framerate, 1, scale_filter, w, h)
+		if input.Accel != Software && p.Accel == Software {
+			// needed for hw dec -> hw rescale -> sw enc
+			filters = filters + ",hwdownload,format=yuv420p"
+		}
 		venc := C.CString(encoder)
 		vfilt := C.CString(filters)
 		defer C.free(unsafe.Pointer(venc))
