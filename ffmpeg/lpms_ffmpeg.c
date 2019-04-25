@@ -344,7 +344,7 @@ static int open_input(input_params *params, struct input_ctx *ctx)
     if (params->hw_type != AV_HWDEVICE_TYPE_NONE) {
       // First set the hw device then set the hw frame
       AVHWFramesContext *frames;
-      ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, NULL, NULL, 0);
+      ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) dd_err("Unable to open hardware context for decoding\n")
       ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);

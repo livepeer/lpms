@@ -17,6 +17,7 @@ typedef struct {
 
   // Optional hardware acceleration
   enum AVHWDeviceType hw_type;
+  char *device;
 } input_params;
 
 void lpms_init();

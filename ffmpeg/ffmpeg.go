@@ -29,8 +29,9 @@ const (
 )
 
 type TranscodeOptionsIn struct {
-	Fname string
-	Accel Acceleration
+	Fname  string
+	Accel  Acceleration
+	Device string
 }
 
 type TranscodeOptions struct {
@@ -164,7 +165,12 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			vencoder: venc, vfilters: vfilt}
 	}
-	inp := &C.input_params{fname: fname, hw_type: hw_type}
+	var device *C.char
+	if input.Device != "" {
+		device = C.CString(input.Device)
+		defer C.free(unsafe.Pointer(device))
+	}
+	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device}
 	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), C.int(len(params))))
 	if 0 != ret {
 		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
