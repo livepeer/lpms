@@ -38,6 +38,7 @@ type TranscodeOptions struct {
 	Oname   string
 	Profile VideoProfile
 	Accel   Acceleration
+	Device  string
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
@@ -79,21 +80,29 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 }
 
 // return encoding specific options for the given accel
-func configAccel(inAcc, outAcc Acceleration) (string, string, error) {
+func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, string, error) {
 	switch inAcc {
 	case Software:
 		switch outAcc {
 		case Software:
 			return "libx264", "scale", nil
 		case Nvidia:
-			return "h264_nvenc", "hwupload_cuda,scale_npp", nil
+			upload := "hwupload_cuda"
+			if outDev != "" {
+				upload = upload + "=device=" + outDev
+			}
+			return "h264_nvenc", upload + ",scale_cuda", nil
 		}
 	case Nvidia:
 		switch outAcc {
 		case Software:
 			return "libx264", "scale_cuda", nil
 		case Nvidia:
-			return "h264_nvenc", "scale_npp", nil
+			// If we encode on a different device from decode then need to transfer
+			if outDev != "" && outDev != inDev {
+				return "", "", ErrTranscoderInp // XXX not allowed
+			}
+			return "h264_nvenc", "scale_cuda", nil
 		}
 	}
 	return "", "", ErrTranscoderHw
@@ -146,7 +155,7 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 		if err != nil {
 			return err
 		}
-		encoder, scale_filter, err := configAccel(input.Accel, p.Accel)
+		encoder, scale_filter, err := configAccel(input.Accel, p.Accel, input.Device, p.Device)
 		if err != nil {
 			return err
 		}
