@@ -3,12 +3,13 @@ package ffmpeg
 import (
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"github.com/golang/glog"
 )
 
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
@@ -37,14 +38,14 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 	return nil
 }
 
-func Transcode(input string, workDir string, ps []VideoProfile) error {
+func Transcode(input string, workDir string, ps []VideoProfile, prefix string) error {
 	if len(ps) <= 0 {
 		return nil
 	}
 	inp := C.CString(input)
 	params := make([]C.output_params, len(ps))
 	for i, param := range ps {
-		oname := C.CString(path.Join(workDir, fmt.Sprintf("out%v%v", i, filepath.Base(input))))
+		oname := C.CString(path.Join(workDir, fmt.Sprintf("%sout%v%v", prefix, i, filepath.Base(input))))
 		defer C.free(unsafe.Pointer(oname))
 		res := strings.Split(param.Resolution, "x")
 		if len(res) < 2 {
