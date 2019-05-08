@@ -101,6 +101,90 @@ func TestNvidia_Transcoding(t *testing.T) {
 
 }
 
+func TestNvidia_Pixfmts(t *testing.T) {
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	prof := P240p30fps16x9
+
+	// check valid and invalid pixel formats
+	cmd := `
+    set -eux
+    cd "$0"
+    cp "$1/../transcoder/test.ts" test.ts
+
+    # sanity check original input type is 420p
+    ffmpeg -loglevel warning -i test.ts -an -c:v copy -t 1 in420p.mp4
+    ffprobe -loglevel warning in420p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
+
+    # generate invalid 422p type
+    ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuv422p -t 1 in422p.mp4
+    ffprobe -loglevel warning in422p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv422p
+  `
+	run(cmd)
+
+	// sanity check
+	err := Transcode2(&TranscodeOptionsIn{
+		Fname: dir + "/in420p.mp4",
+		Accel: Nvidia,
+	}, []TranscodeOptions{
+		TranscodeOptions{
+			Oname:   dir + "/out420p.mp4",
+			Profile: prof,
+			Accel:   Nvidia,
+		},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// check an input pixel format that is not GPU decodeable
+	err = Transcode2(&TranscodeOptionsIn{
+		Fname: dir + "/in422p.mp4",
+		Accel: Nvidia,
+	}, []TranscodeOptions{
+		TranscodeOptions{
+			Oname:   dir + "/out422p.mp4",
+			Profile: prof,
+			Accel:   Software,
+		},
+	})
+	if err == nil || err.Error() != "Unsupported input pixel format" {
+		t.Error(err)
+	}
+
+	// Software decode an and attempt to encode an invalid GPU pixfmt
+	// This implicitly selects a supported pixfmt for output
+	// The default Seems to be 444p for P100 but may be 420p for others
+	err = Transcode2(&TranscodeOptionsIn{
+		Fname: dir + "/in422p.mp4",
+		Accel: Software,
+	}, []TranscodeOptions{
+		TranscodeOptions{
+			Oname:   dir + "/out422_to_default.mp4",
+			Profile: prof,
+			Accel:   Nvidia,
+		},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	cmd = `
+    set -eux
+    cd "$0"
+
+    # Check that 420p input produces 420p output for hw -> hw
+    ffprobe -loglevel warning out420p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
+
+    # 422p input (with sw decode) produces 444p on P100.
+    # Cards that don't do 444p may do 420p instead (untested)
+    ffprobe -loglevel warning out422_to_default.mp4  -show_streams -select_streams v | grep 'pix_fmt=\(yuv420p\|yuv444p\)'
+  `
+	run(cmd)
+}
+
 func TestNvidia_Transcoding_Multiple(t *testing.T) {
 
 	// Tests multiple encoding profiles.

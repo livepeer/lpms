@@ -6,6 +6,9 @@
 #include <libavfilter/buffersrc.h>
 #include <libavutil/opt.h>
 
+// Not great to appropriate internal API like this...
+const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
+
 //
 // Internal transcoder data structures
 //
@@ -362,6 +365,7 @@ static int open_input(input_params *params, struct input_ctx *ctx)
       frames->height = vc->height;
       vc->extra_hw_frames = 16 + 1; // H.264 max refs but increases mem usage
       ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
+      if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
       if (ret < 0) dd_err("Unable to initialize a hardware frame pool\n")
     }
     ret = avcodec_open2(vc, codec, NULL);

@@ -4,6 +4,9 @@
 #include <libavutil/hwcontext.h>
 #include <libavutil/rational.h>
 
+// LPMS specific errors
+extern const int lpms_ERR_INPUT_PIXFMT;
+
 typedef struct {
   char *fname;
   char *vencoder;
