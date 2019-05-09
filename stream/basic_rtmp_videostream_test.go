@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,8 +98,8 @@ func TestWriteBasicRTMP(t *testing.T) {
 	}
 
 	time.Sleep(time.Millisecond * 100) //Sleep to make sure the last segment comes through
-	if len(l.packets) != 10 {
-		t.Errorf("Expecting packets length to be 10, but got: %v", l.packets)
+	if l.numPackets() != 10 {
+		t.Errorf("Expecting packets length to be 10, but got: %v", l.numPackets())
 	}
 }
 
@@ -177,26 +178,41 @@ type PacketsMuxer struct {
 	header      []av.CodecData
 	trailer     bool
 	CalledClose bool
+	mu          sync.Mutex
 }
 
 func (d *PacketsMuxer) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.CalledClose = true
 	return nil
 }
 func (d *PacketsMuxer) WriteHeader(h []av.CodecData) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.header = h
 	return nil
 }
 func (d *PacketsMuxer) WriteTrailer() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.trailer = true
 	return nil
 }
 func (d *PacketsMuxer) WritePacket(pkt av.Packet) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.packets == nil {
 		d.packets = make([]av.Packet, 0)
 	}
 	d.packets = append(d.packets, pkt)
 	return nil
+}
+
+func (d *PacketsMuxer) numPackets() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.packets)
 }
 
 func TestReadBasicRTMP(t *testing.T) {
