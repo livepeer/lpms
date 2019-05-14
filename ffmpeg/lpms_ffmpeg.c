@@ -8,6 +8,7 @@
 
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
+const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
 
 //
 // Internal transcoder data structures
@@ -29,6 +30,8 @@ struct filter_ctx {
   AVFrame *frame;
   AVFilterContext *sink_ctx;
   AVFilterContext *src_ctx;
+
+  uint8_t *hwframes; // GPU frame pool data
 };
 
 struct output_ctx {
@@ -434,6 +437,7 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
       // XXX a bit problematic in that it's set before decoder is fully ready
       AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
       srcpar->hw_frames_ctx = ictx->vc->hw_frames_ctx;
+      vf->hwframes = ictx->vc->hw_frames_ctx->data;
       av_buffersrc_parameters_set(vf->src_ctx, srcpar);
       av_freep(&srcpar);
     }
@@ -635,7 +639,7 @@ dec_flush:
 #undef dec_err
 }
 
-int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
+int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   struct filter_ctx *filter, AVFrame *inf)
 {
 #define proc_err(msg) { \
@@ -650,6 +654,15 @@ int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   AVPacket pkt = {0};
   AVRational tb;
   if (filter && filter->active) {
+      // Because we initially set the filter before the decoder is fully ready
+      // sometimes we have to reset the filter if the HW context is updated
+      if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
+        inf && inf->hw_frames_ctx && filter->hwframes &&
+        inf->hw_frames_ctx->data != filter->hwframes) {
+      free_filter(&octx->vf); // XXX really should flush filter first
+      ret = init_video_filters(ictx, octx);
+      if (ret < 0) return lpms_ERR_FILTERS;
+    }
     frame = filter->frame;
     av_frame_unref(frame);
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
@@ -781,7 +794,7 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
         filter = &octx->af;
       } else main_err("transcoder: Got unknown stream\n"); // XXX could be legit; eg subs, secondary streams
 
-      ret = process_out(octx, encoder, ost, filter, dframe);
+      ret = process_out(&ictx, octx, encoder, ost, filter, dframe);
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
       else if (ret < 0) main_err("transcoder: verybad\n");
     }
@@ -798,13 +811,13 @@ whileloop_end:
     ret = 0;
     if (octx->vc) { // flush video
       while (!ret || ret == AVERROR(EAGAIN)) {
-        ret = process_out(octx, octx->vc, octx->oc->streams[octx->vi], &octx->vf, NULL);
+        ret = process_out(&ictx, octx, octx->vc, octx->oc->streams[octx->vi], &octx->vf, NULL);
       }
     }
     ret = 0;
     if (octx->ac) { // flush audio
       while (!ret || ret == AVERROR(EAGAIN)) {
-        ret = process_out(octx, octx->ac, octx->oc->streams[octx->ai], &octx->af, NULL);
+        ret = process_out(&ictx, octx, octx->ac, octx->oc->streams[octx->ai], &octx->af, NULL);
       }
     }
     av_interleaved_write_frame(octx->oc, NULL); // flush muxer

@@ -6,6 +6,7 @@
 
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
+extern const int lpms_ERR_FILTERS;
 
 typedef struct {
   char *fname;

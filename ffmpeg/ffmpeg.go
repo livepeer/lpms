@@ -163,7 +163,7 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", param.Framerate, 1, scale_filter, w, h)
 		if input.Accel != Software && p.Accel == Software {
 			// needed for hw dec -> hw rescale -> sw enc
-			filters = filters + ",hwdownload,format=yuv420p"
+			filters = filters + ":format=yuv420p,hwdownload"
 		}
 		venc := C.CString(encoder)
 		vfilt := C.CString(filters)
