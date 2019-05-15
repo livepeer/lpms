@@ -118,9 +118,13 @@ func TestNvidia_Pixfmts(t *testing.T) {
     ffmpeg -loglevel warning -i test.ts -an -c:v copy -t 1 in420p.mp4
     ffprobe -loglevel warning in420p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
 
-    # generate invalid 422p type
+    # generate unsupported 422p type
     ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuv422p -t 1 in422p.mp4
     ffprobe -loglevel warning in422p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv422p
+
+    # generate semi-supported 444p type (encoding only)
+    ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuv444p -t 1 in444p.mp4
+    ffprobe -loglevel warning in444p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv444p
   `
 	run(cmd)
 
@@ -151,6 +155,22 @@ func TestNvidia_Pixfmts(t *testing.T) {
 		},
 	})
 	if err == nil || err.Error() != "Unsupported input pixel format" {
+		t.Error(err)
+	}
+
+	// 444p is encodeable but not decodeable; produces a different error
+	// that is only caught at decode time. Attempt to detect decode bailout.
+	err = Transcode2(&TranscodeOptionsIn{
+		Fname: dir + "/in444p.mp4",
+		Accel: Nvidia,
+	}, []TranscodeOptions{
+		TranscodeOptions{
+			Oname:   dir + "/out444p.mp4",
+			Profile: prof,
+			Accel:   Nvidia,
+		},
+	})
+	if err == nil || err.Error() != "Invalid data found when processing input" {
 		t.Error(err)
 	}
 

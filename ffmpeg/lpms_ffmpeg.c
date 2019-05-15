@@ -775,7 +775,8 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
     av_frame_unref(dframe);
     ret = process_in(&ictx, dframe, &ipkt);
     if (ret == AVERROR_EOF) break;
-    else if (ret < 0) goto whileloop_end; // XXX fix
+                            // Bail out on streams that appear to be broken
+    else if (ret < 0) main_err("transcoder: Could not decode; stopping\n");
     ist = ictx.ic->streams[ipkt.stream_index];
 
     for (i = 0; i < nb_outputs; i++) {
@@ -796,7 +797,7 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
 
       ret = process_out(&ictx, octx, encoder, ost, filter, dframe);
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
-      else if (ret < 0) main_err("transcoder: verybad\n");
+      else if (ret < 0) main_err("transcoder: Error encoding\n");
     }
 
 whileloop_end:
