@@ -14,6 +14,9 @@ typedef struct {
   char *vfilters;
   int w, h, bitrate;
   AVRational fps;
+
+  char *muxer;
+  AVDictionary *mux_opts;
 } output_params;
 
 typedef struct {

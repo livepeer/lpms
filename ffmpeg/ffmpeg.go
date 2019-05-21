@@ -39,6 +39,8 @@ type TranscodeOptions struct {
 	Profile VideoProfile
 	Accel   Acceleration
 	Device  string
+	Muxer   string
+	MuxOpts map[string]string
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
@@ -77,6 +79,18 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 		Accel: Software,
 	}
 	return Transcode2(inopts, opts)
+}
+
+func newMuxOpts(opts map[string]string) *C.AVDictionary {
+	var dict *C.AVDictionary
+	for key, value := range opts {
+		k := C.CString(key)
+		v := C.CString(value)
+		defer C.free(unsafe.Pointer(k))
+		defer C.free(unsafe.Pointer(v))
+		C.av_dict_set(&dict, k, v, 0)
+	}
+	return dict
 }
 
 // return encoding specific options for the given accel
@@ -165,6 +179,12 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ":format=yuv420p,hwdownload"
 		}
+		var muxer *C.char
+		if p.Muxer != "" {
+			muxer = C.CString(p.Muxer)
+			defer C.free(unsafe.Pointer(muxer))
+		}
+		muxOpts := newMuxOpts(p.MuxOpts) // don't free this bc of avformat_write_header API
 		venc := C.CString(encoder)
 		vfilt := C.CString(filters)
 		defer C.free(unsafe.Pointer(venc))
@@ -172,7 +192,7 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 		fps := C.AVRational{num: C.int(param.Framerate), den: 1}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			vencoder: venc, vfilters: vfilt}
+			vencoder: venc, vfilters: vfilt, muxer: muxer, mux_opts: muxOpts}
 	}
 	var device *C.char
 	if input.Device != "" {

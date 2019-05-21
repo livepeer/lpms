@@ -46,6 +46,9 @@ struct output_ctx {
   int vi, ai; // video and audio stream indices
   struct filter_ctx vf, af;
 
+  char *muxer;
+  AVDictionary *mux_opts; // muxer parameters optional
+
   int64_t drop_ts;     // preroll audio ts to drop
 };
 
@@ -220,7 +223,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   AVStream *st        = NULL;
 
   // open muxer
-  fmt = av_guess_format(NULL, octx->fname, NULL);
+  fmt = av_guess_format(octx->muxer, octx->fname, NULL);
   if (!fmt) em_err("Unable to guess output format\n");
   ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
   if (ret < 0) em_err("Unable to alloc output context\n");
@@ -301,8 +304,9 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) em_err("Error opening output file\n");
   }
 
-  ret = avformat_write_header(oc, NULL);
+  ret = avformat_write_header(oc, &octx->mux_opts);
   if (ret < 0) em_err("Error writing header\n");
+  av_dict_free(&octx->mux_opts); // avformat_write_header replaces this
 
   return 0;
 
@@ -749,6 +753,8 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
     octx->height = params[i].h;
     octx->vencoder = params[i].vencoder;
     octx->vfilters = params[i].vfilters;
+    octx->muxer = params[i].muxer;
+    octx->mux_opts = params[i].mux_opts;
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
     if (ictx.vc) {

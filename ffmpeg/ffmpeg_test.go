@@ -374,3 +374,69 @@ func TestTranscoder_Timestamp(t *testing.T) {
 	`
 	run(cmd)
 }
+
+func TestMuxOpts(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Prepare test environment : truncate input file
+	cmd := `
+    set -eux
+    cd $0
+
+    cp "$1/../transcoder/test.ts" inp.ts
+    ffmpeg -i inp.ts -c:a copy -c:v copy -t 1 inp-short.ts
+
+    ls -lha
+    du -sh
+    df -h
+    #exit 1
+  `
+	run(cmd)
+
+	prof := P240p30fps16x9
+
+	// Set the muxer itself given a different extension
+	err := Transcode2(&TranscodeOptionsIn{
+		Fname: dir + "/inp-short.ts",
+	}, []TranscodeOptions{TranscodeOptions{
+		Oname:   dir + "/out-mkv.mp4",
+		Profile: prof,
+		Muxer:   "matroska",
+	}})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Pass in some options to muxer
+	err = Transcode2(&TranscodeOptionsIn{
+		Fname: dir + "/inp.ts",
+	}, []TranscodeOptions{TranscodeOptions{
+		Oname:   dir + "/out.mpd",
+		Profile: prof,
+		Muxer:   "dash",
+		MuxOpts: map[string]string{
+			"media_seg_name": "lpms-test-$RepresentationID$-$Number%05d$.m4s",
+		}}})
+	if err != nil {
+		t.Error(err)
+	}
+
+	cmd = `
+    set -eux
+    cd $0
+
+    # check formats and that options were used
+    ffprobe -loglevel warning -show_format out-mkv.mp4 | grep format_name=matroska
+    #ffprobe -loglevel warning show_format out.mpd | grep format_name=dash # this fails so skip for now
+
+    # chunks are annoying
+    cat init-stream0.m4s lpms-test-0-00001.m4s > video.m4s
+    cat init-stream1.m4s lpms-test-1-00001.m4s > audio.m4s
+    ffprobe -show_format video.m4s | grep nb_streams=1
+    ffprobe -show_format audio.m4s | grep nb_streams=1
+    ffprobe -show_streams -select_streams v video.m4s | grep codec_name=h264
+    ffprobe -show_streams -select_streams a audio.m4s | grep codec_name=aac
+  `
+	run(cmd)
+}
