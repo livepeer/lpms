@@ -575,3 +575,122 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
 		t.Error(fmt.Errorf("Results did not match: %v ", r))
 	}
 }
+
+func TestMuxerOpts(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Prepare test environment : truncate input file
+	cmd := `
+        set -eux
+        cd $0
+
+        cp "$1/../transcoder/test.ts" inp.ts
+        ffmpeg -i inp.ts -c:a copy -c:v copy -t 1 inp-short.ts
+    `
+	run(cmd)
+
+	prof := P240p30fps16x9
+
+	// Set the muxer itself given a different extension
+	_, err := Transcode3(&TranscodeOptionsIn{
+		Fname: dir + "/inp-short.ts",
+	}, []TranscodeOptions{TranscodeOptions{
+		Oname:   dir + "/out-mkv.mp4",
+		Profile: prof,
+		Muxer:   ComponentOpts{Name: "matroska"},
+	}})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Pass in some options to muxer
+	_, err = Transcode3(&TranscodeOptionsIn{
+		Fname: dir + "/inp.ts",
+	}, []TranscodeOptions{TranscodeOptions{
+		Oname:   dir + "/out.mpd",
+		Profile: prof,
+		Muxer: ComponentOpts{
+			Name: "dash",
+			Opts: map[string]string{
+				"media_seg_name": "lpms-test-$RepresentationID$-$Number%05d$.m4s",
+				"init_seg_name":  "lpms-init-$RepresentationID$.m4s",
+			},
+		},
+	}})
+	if err != nil {
+		t.Error(err)
+	}
+
+	cmd = `
+        set -eux
+        cd $0
+
+        # check formats and that options were used
+        ffprobe -loglevel warning -show_format out-mkv.mp4 | grep format_name=matroska
+        # ffprobe -loglevel warning -show_format out.mpd | grep format_name=dash # this fails so skip for now
+
+        # concat headers. mp4 chunks are annoying
+        cat lpms-init-0.m4s lpms-test-0-00001.m4s > video.m4s
+        cat lpms-init-1.m4s lpms-test-1-00001.m4s > audio.m4s
+        ffprobe -show_format video.m4s | grep nb_streams=1
+        ffprobe -show_format audio.m4s | grep nb_streams=1
+        ffprobe -show_streams -select_streams v video.m4s | grep codec_name=h264
+        ffprobe -show_streams -select_streams a audio.m4s | grep codec_name=aac
+    `
+	run(cmd)
+}
+
+func TestEncoderOpts(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Prepare test environment : truncate input file
+	cmd := `
+        set -eux
+        cd $0
+
+        # truncate input
+        ffmpeg -i "$1/../transcoder/test.ts" -c:a copy -c:v copy -t 1 test.ts
+
+        # we will sanity check image quality with ssim
+        # since ssim needs res and framecount to match, sanity check those
+        ffprobe -show_streams -select_streams v test.ts | grep width=1280
+        ffprobe -show_streams -select_streams v test.ts | grep height=720
+        ffprobe -count_frames -show_streams -select_streams v test.ts | grep nb_read_frames=60
+    `
+	run(cmd)
+
+	prof := P720p60fps16x9
+	in := &TranscodeOptionsIn{Fname: dir + "/test.ts"}
+	out := []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/out.nut",
+		Profile:      prof,
+		VideoEncoder: ComponentOpts{Name: "snow"},
+		AudioEncoder: ComponentOpts{
+			Name: "vorbis",
+			// required since vorbis implementation is marked experimental
+			// also, gives us an opportunity to test the audio opts
+			Opts: map[string]string{"strict": "experimental"}},
+	}}
+	_, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+
+	cmd = `
+        set -eux
+        cd $0
+
+        # Check codecs are what we expect them to be
+        ffprobe -show_streams -select_streams v out.nut | grep codec_name=snow
+        ffprobe -show_streams -select_streams a out.nut | grep codec_name=vorbis
+
+        # sanity check image quality : compare using ssim
+        ffmpeg -loglevel warning -i out.nut -i test.ts -lavfi '[0:v][1:v]ssim=stats.log' -f null -
+        # ensure that no more than 5 frames have ssim < 0.95
+        grep -Po 'All:\K\d+.\d+' stats.log | awk '{ if ($1 < 0.95) count=count+1 } END{ exit count > 5 }'
+    `
+	run(cmd)
+}
