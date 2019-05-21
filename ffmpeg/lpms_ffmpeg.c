@@ -271,11 +271,12 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   }
 
   if (ictx->ac) {
-    codec = avcodec_find_encoder_by_name("aac"); // XXX make more flexible?
-    if (!codec) em_err("Unable to find aac\n");
+    codec = avcodec_find_encoder_by_name("aac");
+    //codec = avcodec_find_encoder_by_name(octx->aencoder);
+    if (!codec) em_err("Unable to find audio encoder\n");
     // open audio encoder
     ac = avcodec_alloc_context3(codec);
-    if (!ac) em_err("Unable to alloc audio encoder\n"); // XXX shld be optional
+    if (!ac) em_err("Unable to alloc audio encoder\n");
     octx->ac = ac;
     ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
     ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);

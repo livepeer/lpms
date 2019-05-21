@@ -15,6 +15,8 @@ typedef struct {
   int w, h, bitrate;
   AVRational fps;
 
+  char *aencoder;
+
   char *muxer;
   AVDictionary *mux_opts;
 } output_params;
