@@ -9,11 +9,20 @@ extern const int lpms_ERR_INPUT_PIXFMT;
 extern const int lpms_ERR_FILTERS;
 
 typedef struct {
+    char *name;
+    AVDictionary *opts;
+} component_opts;
+
+typedef struct {
   char *fname;
-  char *vencoder;
   char *vfilters;
   int w, h, bitrate;
   AVRational fps;
+
+  component_opts muxer;
+  component_opts audio;
+  component_opts video;
+
 } output_params;
 
 typedef struct {

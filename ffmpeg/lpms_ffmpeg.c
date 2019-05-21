@@ -36,7 +36,6 @@ struct filter_ctx {
 
 struct output_ctx {
   char *fname;         // required output file name
-  char *vencoder;      // required output video encoder
   char *vfilters;      // required output video filters
   int width, height, bitrate; // w, h, br required
   AVRational fps;
@@ -45,6 +44,11 @@ struct output_ctx {
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
   struct filter_ctx vf, af;
+
+  // muxer and encoder information (name + options)
+  component_opts *muxer;
+  component_opts *video;
+  component_opts *audio;
 
   int64_t drop_ts;     // preroll audio ts to drop
 
@@ -222,14 +226,14 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   AVStream *st        = NULL;
 
   // open muxer
-  fmt = av_guess_format(NULL, octx->fname, NULL);
+  fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
   if (!fmt) em_err("Unable to guess output format\n");
   ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
   if (ret < 0) em_err("Unable to alloc output context\n");
   octx->oc = oc;
 
   if (ictx->vc) {
-    codec = avcodec_find_encoder_by_name(octx->vencoder);
+    codec = avcodec_find_encoder_by_name(octx->video->name);
     if (!codec) em_err("Unable to find encoder");
 
     // open video encoder
@@ -248,7 +252,8 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    ret = avcodec_open2(vc, codec, NULL);
+    ret = avcodec_open2(vc, codec, &octx->video->opts);
+    av_dict_free(&octx->video->opts); // avcodec_open2 replaces this
     if (ret < 0) em_err("Error opening video encoder\n");
 
     // video stream in muxer
@@ -262,11 +267,11 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   }
 
   if (ictx->ac) {
-    codec = avcodec_find_encoder_by_name("aac"); // XXX make more flexible?
-    if (!codec) em_err("Unable to find aac\n");
+    codec = avcodec_find_encoder_by_name(octx->audio->name);
+    if (!codec) em_err("Unable to find audio encoder\n");
     // open audio encoder
     ac = avcodec_alloc_context3(codec);
-    if (!ac) em_err("Unable to alloc audio encoder\n"); // XXX shld be optional
+    if (!ac) em_err("Unable to alloc audio encoder\n");
     octx->ac = ac;
     ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
     ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);
@@ -274,7 +279,8 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ac->sample_rate = av_buffersink_get_sample_rate(octx->af.sink_ctx);
     ac->time_base = av_buffersink_get_time_base(octx->af.sink_ctx);
     if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    ret = avcodec_open2(ac, codec, NULL);
+    ret = avcodec_open2(ac, codec, &octx->audio->opts);
+    av_dict_free(&octx->audio->opts); // avcodec_open2 replaces this
     if (ret < 0) em_err("Error opening audio encoder\n");
     av_buffersink_set_frame_size(octx->af.sink_ctx, ac->frame_size);
 
@@ -295,7 +301,8 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) em_err("Error opening output file\n");
   }
 
-  ret = avformat_write_header(oc, NULL);
+  ret = avformat_write_header(oc, &octx->muxer->opts);
+  av_dict_free(&octx->muxer->opts); // avformat_write_header replaces this
   if (ret < 0) em_err("Error writing header\n");
 
   return 0;
@@ -780,7 +787,9 @@ int lpms_transcode(input_params *inp, output_params *params,
     octx->fname = params[i].fname;
     octx->width = params[i].w;
     octx->height = params[i].h;
-    octx->vencoder = params[i].vencoder;
+    octx->muxer = &params[i].muxer;
+    octx->audio = &params[i].audio;
+    octx->video = &params[i].video;
     octx->vfilters = params[i].vfilters;
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;

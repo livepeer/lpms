@@ -28,6 +28,11 @@ const (
 	Amd
 )
 
+type ComponentOptions struct {
+	Name string
+	Opts map[string]string
+}
+
 type TranscodeOptionsIn struct {
 	Fname  string
 	Accel  Acceleration
@@ -39,6 +44,10 @@ type TranscodeOptions struct {
 	Profile VideoProfile
 	Accel   Acceleration
 	Device  string
+
+	Muxer        ComponentOptions
+	VideoEncoder ComponentOptions
+	AudioEncoder ComponentOptions
 }
 
 type MediaInfo struct {
@@ -87,6 +96,18 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 		Accel: Software,
 	}
 	return Transcode2(inopts, opts)
+}
+
+func newAVOpts(opts map[string]string) *C.AVDictionary {
+	var dict *C.AVDictionary
+	for key, value := range opts {
+		k := C.CString(key)
+		v := C.CString(value)
+		defer C.free(unsafe.Pointer(k))
+		defer C.free(unsafe.Pointer(v))
+		C.av_dict_set(&dict, k, v, 0)
+	}
+	return dict
 }
 
 // return encoding specific options for the given accel
@@ -158,9 +179,12 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 		if err != nil {
 			return nil, err
 		}
-		encoder, scale_filter, err := configAccel(input.Accel, p.Accel, input.Device, p.Device)
-		if err != nil {
-			return nil, err
+		encoder, scale_filter := p.VideoEncoder.Name, "scale"
+		if encoder == "" {
+			encoder, scale_filter, err = configAccel(input.Accel, p.Accel, input.Device, p.Device)
+			if err != nil {
+				return nil, err
+			}
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
 		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", param.Framerate, 1, scale_filter, w, h)
@@ -168,14 +192,33 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ":format=yuv420p,hwdownload"
 		}
-		venc := C.CString(encoder)
+		muxOpts := C.component_opts{
+			opts: newAVOpts(p.Muxer.Opts), // don't free this bc of avformat_write_header API
+		}
+		if p.Muxer.Name != "" {
+			muxOpts.name = C.CString(p.Muxer.Name)
+			defer C.free(unsafe.Pointer(muxOpts.name))
+		}
+		vidOpts := C.component_opts{
+			name: C.CString(encoder),
+			opts: newAVOpts(p.VideoEncoder.Opts),
+		}
+		audioEncoder := p.AudioEncoder.Name
+		if audioEncoder == "" {
+			audioEncoder = "aac"
+		}
+		audioOpts := C.component_opts{
+			name: C.CString(audioEncoder),
+			opts: newAVOpts(p.AudioEncoder.Opts),
+		}
 		vfilt := C.CString(filters)
-		defer C.free(unsafe.Pointer(venc))
+		defer C.free(unsafe.Pointer(vidOpts.name))
+		defer C.free(unsafe.Pointer(audioOpts.name))
 		defer C.free(unsafe.Pointer(vfilt))
 		fps := C.AVRational{num: C.int(param.Framerate), den: 1}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			vencoder: venc, vfilters: vfilt}
+			muxer: muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
 	}
 	var device *C.char
 	if input.Device != "" {
