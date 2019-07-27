@@ -121,72 +121,8 @@ func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 
 func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 
-	if input == nil {
-		return ErrTranscoderInp
-	}
-	if len(ps) <= 0 {
-		return nil
-	}
-	hw_type, err := accelDeviceType(input.Accel)
-	if err != nil {
-		return err
-	}
-	fname := C.CString(input.Fname)
-	defer C.free(unsafe.Pointer(fname))
-	params := make([]C.output_params, len(ps))
-	for i, p := range ps {
-		oname := C.CString(p.Oname)
-		defer C.free(unsafe.Pointer(oname))
-
-		param := p.Profile
-		res := strings.Split(param.Resolution, "x")
-		if len(res) < 2 {
-			return ErrTranscoderRes
-		}
-		w, err := strconv.Atoi(res[0])
-		if err != nil {
-			return err
-		}
-		h, err := strconv.Atoi(res[1])
-		if err != nil {
-			return err
-		}
-		br := strings.Replace(param.Bitrate, "k", "000", 1)
-		bitrate, err := strconv.Atoi(br)
-		if err != nil {
-			return err
-		}
-		encoder, scale_filter, err := configAccel(input.Accel, p.Accel, input.Device, p.Device)
-		if err != nil {
-			return err
-		}
-		// preserve aspect ratio along the larger dimension when rescaling
-		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", param.Framerate, 1, scale_filter, w, h)
-		if input.Accel != Software && p.Accel == Software {
-			// needed for hw dec -> hw rescale -> sw enc
-			filters = filters + ":format=yuv420p,hwdownload"
-		}
-		venc := C.CString(encoder)
-		vfilt := C.CString(filters)
-		defer C.free(unsafe.Pointer(venc))
-		defer C.free(unsafe.Pointer(vfilt))
-		fps := C.AVRational{num: C.int(param.Framerate), den: 1}
-		params[i] = C.output_params{fname: oname, fps: fps,
-			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			vencoder: venc, vfilters: vfilt}
-	}
-	var device *C.char
-	if input.Device != "" {
-		device = C.CString(input.Device)
-		defer C.free(unsafe.Pointer(device))
-	}
-	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device}
-	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), C.int(len(params))))
-	if 0 != ret {
-		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
-		return ErrorMap[ret]
-	}
-	return nil
+	_, ret := Transcode3(input, ps)
+	return ret
 }
 
 type TranscodeReceipt struct {
