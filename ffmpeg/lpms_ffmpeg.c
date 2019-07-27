@@ -751,7 +751,7 @@ proc_cleanup:
 
 #define MAX_OUTPUT_SIZE 10
 
-int lpms_transcode_and_count(input_params *inp, output_params *params, int nb_outputs, int *framecount, int *pixelcount)
+int lpms_transcode_and_count(input_params *inp, output_params *params, int nb_outputs, int64_t *framecount, int64_t *pixelcount)
 {
 #define main_err(msg) { \
   if (!ret) ret = AVERROR(EINVAL); \

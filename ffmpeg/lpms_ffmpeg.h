@@ -27,6 +27,6 @@ typedef struct {
 void lpms_init();
 int  lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char *seg_start);
 int  lpms_transcode(input_params *inp, output_params *params, int nb_outputs);
-int  lpms_transcode_and_count(input_params *inp, output_params *params, int nb_outputs, int *frames, int *pixels);
+int  lpms_transcode_and_count(input_params *inp, output_params *params, int nb_outputs, int64_t *frames, int64_t *pixels);
 
 #endif // _LPMS_FFMPEG_H_
