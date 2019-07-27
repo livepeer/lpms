@@ -751,14 +751,14 @@ proc_cleanup:
 
 #define MAX_OUTPUT_SIZE 10
 
-int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
+int lpms_transcode_and_count(input_params *inp, output_params *params, int nb_outputs, int *framecount, int *pixelcount)
 {
 #define main_err(msg) { \
   if (!ret) ret = AVERROR(EINVAL); \
   fprintf(stderr, msg); \
   goto transcode_cleanup; \
 }
-  int ret = 0, i = 0;
+  int ret = 0, i = 0, area = 0, frames = 0;
   struct input_ctx ictx;
   AVPacket ipkt;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
@@ -797,6 +797,7 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
     }
     ret = open_output(octx, &ictx);
     if (ret < 0) main_err("transcoder: Unable to open output\n");
+    area += params[i].h * params[i].w;
   }
 
   av_init_packet(&ipkt);
@@ -804,6 +805,7 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
   if (!dframe) main_err("transcoder: Unable to allocate frame\n");
 
   while (1) {
+    frames++;
     AVStream *ist = NULL;
     av_frame_unref(dframe);
     ret = process_in(&ictx, dframe, &ipkt);
@@ -859,10 +861,22 @@ whileloop_end:
     if (ret < 0) main_err("transcoder: Unable to write trailer");
   }
 
+  if (framecount) {
+    *framecount = frames;
+  }
+  if (pixelcount) {
+    *pixelcount = frames * area;
+  }
+
 transcode_cleanup:
   free_input(&ictx);
   for (i = 0; i < MAX_OUTPUT_SIZE; i++) free_output(&outputs[i]);
   if (dframe) av_frame_free(&dframe);
   return ret == AVERROR_EOF ? 0 : ret;
 #undef main_err
+}
+
+int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
+{
+  return lpms_transcode_and_count(inp, params, nb_outputs, NULL, NULL);
 }
