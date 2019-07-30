@@ -35,6 +35,7 @@ func error_map() map[int]error {
 	}{
 		{code: C.lpms_ERR_INPUT_PIXFMT, desc: "Unsupported input pixel format"},
 		{code: C.lpms_ERR_FILTERS, desc: "Error initializing filtergraph"},
+		{code: C.lpms_ERR_OUTPUTS, desc: "Too many outputs"},
 	}
 	for _, v := range lpmsErrors {
 		m[int(v.code)] = errors.New(v.desc)

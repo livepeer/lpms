@@ -71,7 +71,7 @@ func TestInvalidProfiles(t *testing.T) {
 	_, err := tr.Transcode("test.ts")
 	if err == nil {
 		t.Errorf("Expected an error transcoding too many segments")
-	} else if err.Error() != "Invalid argument" {
+	} else if err.Error() != "Too many outputs" {
 		t.Errorf("Did not get the expected error while transcoding: %v", err)
 	}
 
