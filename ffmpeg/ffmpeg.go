@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
@@ -19,6 +20,7 @@ import "C"
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
 var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
 var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
+var ErrTranscoderStp = errors.New("TranscoderStopped")
 
 type Acceleration int
 
@@ -31,6 +33,12 @@ const (
 type ComponentOptions struct {
 	Name string
 	Opts map[string]string
+}
+
+type Transcoder struct {
+	handle  *C.struct_transcode_thread
+	stopped bool
+	mu      *sync.Mutex
 }
 
 type TranscodeOptionsIn struct {
@@ -155,6 +163,17 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 }
 
 func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	t := NewTranscoder()
+	defer t.StopTranscoder()
+	return t.Transcode(input, ps)
+}
+
+func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped || t.handle == nil {
+		return nil, ErrTranscoderStp
+	}
 	if input == nil {
 		return nil, ErrTranscoderInp
 	}
@@ -198,7 +217,7 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 		filters += fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
 		if input.Accel != Software && p.Accel == Software {
 			// needed for hw dec -> hw rescale -> sw enc
-			filters = filters + ":format=yuv420p,hwdownload"
+			filters = filters + ",hwdownload,format=nv12"
 		}
 		muxOpts := C.component_opts{
 			opts: newAVOpts(p.Muxer.Opts), // don't free this bc of avformat_write_header API
@@ -206,6 +225,12 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 		if p.Muxer.Name != "" {
 			muxOpts.name = C.CString(p.Muxer.Name)
 			defer C.free(unsafe.Pointer(muxOpts.name))
+		}
+		// Set some default encoding options
+		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
+			p.VideoEncoder.Opts = map[string]string{
+				"forced-idr": "1",
+			}
 		}
 		vidOpts := C.component_opts{
 			name: C.CString(encoder),
@@ -230,13 +255,28 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			muxer: muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
+		defer func(param *C.output_params) {
+			// Work around the ownership rules:
+			// ffmpeg normally takes ownership of the following AVDictionary options
+			// However, if we don't pass these opts to ffmpeg, then we need to free
+			if param.muxer.opts != nil {
+				C.av_dict_free(&param.muxer.opts)
+			}
+			if param.audio.opts != nil {
+				C.av_dict_free(&param.audio.opts)
+			}
+			if param.video.opts != nil {
+				C.av_dict_free(&param.video.opts)
+			}
+		}(&params[i])
 	}
 	var device *C.char
 	if input.Device != "" {
 		device = C.CString(input.Device)
 		defer C.free(unsafe.Pointer(device))
 	}
-	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device}
+	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
+		handle: t.handle}
 	results := make([]C.output_results, len(ps))
 	decoded := &C.output_results{}
 	var (
@@ -249,7 +289,7 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 	}
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if 0 != ret {
-		glog.Error("Transcoder Return : ", Strerror(ret))
+		glog.Error("Transcoder Return : ", ErrorMap[ret])
 		return nil, ErrorMap[ret]
 	}
 	tr := make([]MediaInfo, len(ps))
@@ -264,6 +304,24 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 		Pixels: int64(decoded.pixels),
 	}
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
+}
+
+func NewTranscoder() *Transcoder {
+	return &Transcoder{
+		handle: C.lpms_transcode_new(),
+		mu:     &sync.Mutex{},
+	}
+}
+
+func (t *Transcoder) StopTranscoder() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped {
+		return
+	}
+	C.lpms_transcode_stop(t.handle)
+	t.handle = nil // prevent accidental reuse
+	t.stopped = true
 }
 
 func InitFFmpeg() {

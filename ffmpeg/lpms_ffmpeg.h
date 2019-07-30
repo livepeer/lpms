@@ -7,6 +7,9 @@
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
 extern const int lpms_ERR_FILTERS;
+extern const int lpms_ERR_OUTPUTS;
+
+struct transcode_thread;
 
 typedef struct {
     char *name;
@@ -28,6 +31,12 @@ typedef struct {
 typedef struct {
   char *fname;
 
+  // Handle to a transcode thread.
+  // If null, a new transcode thread is allocated.
+  // The transcode thread is returned within `output_results`.
+  // Must be freed with lpms_transcode_stop.
+  struct transcode_thread *handle;
+
   // Optional hardware acceleration
   enum AVHWDeviceType hw_type;
   char *device;
@@ -41,5 +50,7 @@ typedef struct {
 void lpms_init();
 int  lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char *seg_start);
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
+struct transcode_thread* lpms_transcode_new();
+void lpms_transcode_stop(struct transcode_thread* handle);
 
 #endif // _LPMS_FFMPEG_H_
