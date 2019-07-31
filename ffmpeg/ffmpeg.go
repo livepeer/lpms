@@ -125,22 +125,22 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 	return ret
 }
 
-type TranscodeReceipt struct {
+type TranscodeResults struct {
 	Frames int64
 	Pixels int64
 }
 
-func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (res TranscodeReceipt, err error) {
+func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (res TranscodeResults, err error) {
 
 	if input == nil {
-		return TranscodeReceipt{}, ErrTranscoderInp
+		return TranscodeResults{}, ErrTranscoderInp
 	}
 	if len(ps) <= 0 {
-		return TranscodeReceipt{}, nil
+		return TranscodeResults{}, nil
 	}
 	hw_type, err := accelDeviceType(input.Accel)
 	if err != nil {
-		return TranscodeReceipt{}, err
+		return TranscodeResults{}, err
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
@@ -152,24 +152,24 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (res Transcode
 		param := p.Profile
 		res := strings.Split(param.Resolution, "x")
 		if len(res) < 2 {
-			return TranscodeReceipt{}, ErrTranscoderRes
+			return TranscodeResults{}, ErrTranscoderRes
 		}
 		w, err := strconv.Atoi(res[0])
 		if err != nil {
-			return TranscodeReceipt{}, err
+			return TranscodeResults{}, err
 		}
 		h, err := strconv.Atoi(res[1])
 		if err != nil {
-			return TranscodeReceipt{}, err
+			return TranscodeResults{}, err
 		}
 		br := strings.Replace(param.Bitrate, "k", "000", 1)
 		bitrate, err := strconv.Atoi(br)
 		if err != nil {
-			return TranscodeReceipt{}, err
+			return TranscodeResults{}, err
 		}
 		encoder, scale_filter, err := configAccel(input.Accel, p.Accel, input.Device, p.Device)
 		if err != nil {
-			return TranscodeReceipt{}, err
+			return TranscodeResults{}, err
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
 		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", param.Framerate, 1, scale_filter, w, h)
@@ -196,9 +196,9 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (res Transcode
 	ret := int(C.lpms_transcode_and_count(inp, (*C.output_params)(&params[0]), C.int(len(params)), &frames, &pixels))
 	if 0 != ret {
 		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
-		return TranscodeReceipt{}, ErrorMap[ret]
+		return TranscodeResults{}, ErrorMap[ret]
 	}
-	return TranscodeReceipt{
+	return TranscodeResults{
 		Frames: int64(frames),
 		Pixels: int64(pixels),
 	}, nil
