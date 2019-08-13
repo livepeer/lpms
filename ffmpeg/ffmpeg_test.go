@@ -1,6 +1,8 @@
 package ffmpeg
 
 import (
+	"bufio"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -373,4 +375,117 @@ func TestTranscoder_Timestamp(t *testing.T) {
 		grep start_pts=138000 test.out
 	`
 	run(cmd)
+}
+
+func TestTranscoder_Statistics(t *testing.T) {
+	// Checks the stats returned after transcoding
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+        set -eux
+        cd $0
+
+        # prepare 1-second input
+        cp "$1/../transcoder/test.ts" inp.ts
+        ffmpeg -loglevel warning -i inp.ts -c:a copy -c:v copy -t 1 test.ts
+    `
+	run(cmd)
+
+	// set a 60fps input at a small resolution (to help runtime)
+	p144p60fps := P144p30fps16x9
+	p144p60fps.Framerate = 60
+	// odd / nonstandard input just to sanity check.
+	podd123fps := VideoProfile{Resolution: "124x70", Framerate: 123, Bitrate: "100k"}
+
+	// Construct output parameters.
+	// Quickcheck style tests would be nice here one day?
+	profiles := []VideoProfile{P240p30fps16x9, P144p30fps16x9, p144p60fps, podd123fps}
+	out := make([]TranscodeOptions, len(profiles))
+	for i, p := range profiles {
+		out[i] = TranscodeOptions{Profile: p, Oname: fmt.Sprintf("%s/out%d.mp4", dir, i)}
+	}
+
+	res, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/test.ts"}, out)
+	if err != nil {
+		t.Error(err)
+	}
+
+	for i, r := range res {
+		w, h, err := VideoProfileResolution(out[i].Profile)
+		if err != nil {
+			t.Error(err)
+		}
+
+		// Check pixel counts
+		if r.Pixels != int64(w*h*r.Frames) {
+			t.Error("Mismatched pixel counts")
+		}
+		// Since this is a 1-second input we should ideally have count of frames
+		if r.Frames != int(out[i].Profile.Framerate) {
+			t.Error("Mismatched frame counts")
+		}
+
+		// Check frame counts against ffprobe-reported output
+
+		// First, generate stats file
+		f, err := os.Create(fmt.Sprintf("%s/out%d.res.stats", dir, i))
+		if err != nil {
+			t.Error(err)
+		}
+		b := bufio.NewWriter(f)
+		fmt.Fprintf(b, `[STREAM]
+width=%d
+height=%d
+nb_read_frames=%d
+[/STREAM]
+`, w, h, r.Frames)
+		b.Flush()
+		f.Close()
+
+		cmd = fmt.Sprintf(`
+            set -eux
+            cd $0
+
+            fname=out%d
+
+            ffprobe -loglevel warning -hide_banner -count_frames  -select_streams v -show_entries stream=width,height,nb_read_frames $fname.mp4 > $fname.stats
+            ls -lha
+            diff -u $fname.stats $fname.res.stats
+		`, i)
+
+		run(cmd)
+	}
+}
+
+func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
+	// Check that we correctly account for aspect ratio adjustments
+	//  Eg, the transcoded resolution we receive may be smaller than
+	//  what we initially requested
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+        set -eux
+        cd $0
+
+        # prepare 1-second input
+        cp "$1/../transcoder/test.ts" inp.ts
+        ffmpeg -loglevel warning -i inp.ts -c:a copy -c:v copy -t 1 test.ts
+    `
+	run(cmd)
+
+	// This will be adjusted to 124x70 by the rescaler (since source is 16:9)
+	pAdj := VideoProfile{Resolution: "124x456", Framerate: 15, Bitrate: "100k"}
+	out := []TranscodeOptions{TranscodeOptions{Profile: pAdj, Oname: dir + "/adj.mp4"}}
+	res, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/test.ts"}, out)
+	if err != nil || len(res) <= 0 {
+		t.Error(err)
+	}
+	r := res[0]
+	if r.Frames != int(pAdj.Framerate) || r.Pixels != int64(r.Frames*124*70) {
+		t.Error(fmt.Errorf("Results did not match: %v ", r))
+	}
 }
