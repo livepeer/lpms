@@ -138,15 +138,7 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 		defer C.free(unsafe.Pointer(oname))
 
 		param := p.Profile
-		res := strings.Split(param.Resolution, "x")
-		if len(res) < 2 {
-			return ErrTranscoderRes
-		}
-		w, err := strconv.Atoi(res[0])
-		if err != nil {
-			return err
-		}
-		h, err := strconv.Atoi(res[1])
+		w, h, err := VideoProfileResolution(param)
 		if err != nil {
 			return err
 		}
