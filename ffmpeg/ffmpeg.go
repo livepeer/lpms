@@ -46,6 +46,11 @@ type MediaInfo struct {
 	Pixels int64
 }
 
+type TranscodeResults struct {
+	Decoded MediaInfo
+	Encoded []MediaInfo
+}
+
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
 	inp := C.CString(localRTMPUrl)
 	outp := C.CString(outM3U8)
@@ -128,7 +133,7 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 	return err
 }
 
-func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]MediaInfo, error) {
+func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
 	if input == nil {
 		return nil, ErrTranscoderInp
 	}
@@ -182,7 +187,8 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]MediaInfo, 
 	}
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device}
 	results := make([]C.output_results, len(ps))
-	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), (*C.output_results)(&results[0]), C.int(len(params))))
+	decoded := &C.output_results{}
+	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), (*C.output_results)(&results[0]), C.int(len(params)), decoded))
 	if 0 != ret {
 		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
 		return nil, ErrorMap[ret]
@@ -194,7 +200,11 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]MediaInfo, 
 			Pixels: int64(r.pixels),
 		}
 	}
-	return tr, nil
+	dec := MediaInfo{
+		Frames: int(decoded.frames),
+		Pixels: int64(decoded.pixels),
+	}
+	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
 }
 
 func InitFFmpeg() {

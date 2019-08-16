@@ -75,7 +75,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	for i, r := range res {
+	fmt.Printf("profile=input frames=%v pixels=%v\n", res.Decoded.Frames, res.Decoded.Pixels)
+	for i, r := range res.Encoded {
 		fmt.Printf("profile=%v frames=%v pixels=%v\n", profiles[i].Name, r.Frames, r.Pixels)
 	}
 }
