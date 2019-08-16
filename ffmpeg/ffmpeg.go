@@ -137,9 +137,6 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 	if input == nil {
 		return nil, ErrTranscoderInp
 	}
-	if len(ps) <= 0 {
-		return nil, nil
-	}
 	hw_type, err := accelDeviceType(input.Accel)
 	if err != nil {
 		return nil, err
@@ -188,7 +185,15 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device}
 	results := make([]C.output_results, len(ps))
 	decoded := &C.output_results{}
-	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), (*C.output_results)(&results[0]), C.int(len(params)), decoded))
+	var (
+		paramsPointer  *C.output_params
+		resultsPointer *C.output_results
+	)
+	if len(params) > 0 {
+		paramsPointer = (*C.output_params)(&params[0])
+		resultsPointer = (*C.output_results)(&results[0])
+	}
+	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if 0 != ret {
 		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
 		return nil, ErrorMap[ret]

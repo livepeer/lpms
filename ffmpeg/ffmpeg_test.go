@@ -411,11 +411,10 @@ func TestTranscoderStatistics_Decoded(t *testing.T) {
 		info := res.Encoded[0]
 
 		// Now attempt to re-encode the transcoded data
+		// Pass in an empty output to achieve a decode-only flow
 		// and check decoded results from *that*
-		p.Framerate = 10
 		in = &TranscodeOptionsIn{Fname: oname}
-		out = []TranscodeOptions{TranscodeOptions{Profile: p, Oname: "out.ts"}}
-		res, err = Transcode3(in, out)
+		res, err = Transcode3(in, nil)
 		if err != nil {
 			t.Error(err)
 		}
@@ -452,9 +451,7 @@ func TestTranscoderStatistics_Decoded(t *testing.T) {
     `
 	run(cmd)
 	in := &TranscodeOptionsIn{Fname: dir + "/combined.ts"}
-	out := []TranscodeOptions{TranscodeOptions{Profile: P240p30fps16x9, Oname: "out.ts"}}
-
-	res, err := Transcode3(in, out)
+	res, err := Transcode3(in, nil)
 	if err != nil {
 		t.Error(err)
 	}
