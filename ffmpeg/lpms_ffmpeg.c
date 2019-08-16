@@ -759,7 +759,7 @@ proc_cleanup:
 #define MAX_OUTPUT_SIZE 10
 
 int lpms_transcode(input_params *inp, output_params *params,
-    output_results *results, int nb_outputs)
+    output_results *results, int nb_outputs, output_results *decoded_results)
 {
 #define main_err(msg) { \
   if (!ret) ret = AVERROR(EINVAL); \
@@ -820,6 +820,11 @@ int lpms_transcode(input_params *inp, output_params *params,
                             // Bail out on streams that appear to be broken
     else if (ret < 0) main_err("transcoder: Could not decode; stopping\n");
     ist = ictx.ic->streams[ipkt.stream_index];
+
+    if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+      decoded_results->frames++;
+      decoded_results->pixels += dframe->width * dframe->height;
+    }
 
     for (i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];

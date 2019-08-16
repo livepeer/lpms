@@ -377,8 +377,97 @@ func TestTranscoder_Timestamp(t *testing.T) {
 	run(cmd)
 }
 
-func TestTranscoder_Statistics(t *testing.T) {
-	// Checks the stats returned after transcoding
+func TestTranscoderStatistics_Decoded(t *testing.T) {
+	// Checks the decoded stats returned after transcoding
+
+	var (
+		totalPixels int64
+		totalFrames int
+	)
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// segment using our muxer. This should produce 4 segments.
+	err := RTMPToHLS("../transcoder/test.ts", dir+"/test.m3u8", dir+"/test_%d.ts", "1", 0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Use various resolutions to test input
+	// Quickcheck style tests would be nice here one day?
+	profiles := []VideoProfile{P144p30fps16x9, P240p30fps16x9, P360p30fps16x9, P576p30fps16x9}
+
+	// Transcode some data, save encoded statistics, then attempt to re-transcode
+	// Ensure decoded re-transcode stats match original transcoded statistics
+	for i, p := range profiles {
+		oname := fmt.Sprintf("%s/out_%d.ts", dir, i)
+		out := []TranscodeOptions{TranscodeOptions{Profile: p, Oname: oname}}
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test_%d.ts", dir, i)}
+		res, err := Transcode3(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		info := res.Encoded[0]
+
+		// Now attempt to re-encode the transcoded data
+		// and check decoded results from *that*
+		p.Framerate = 10
+		in = &TranscodeOptionsIn{Fname: oname}
+		out = []TranscodeOptions{TranscodeOptions{Profile: p, Oname: "out.ts"}}
+		res, err = Transcode3(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		w, h, err := VideoProfileResolution(p)
+		if err != nil {
+			t.Error(err)
+		}
+
+		// Check pixel counts
+		if info.Pixels != res.Decoded.Pixels {
+			t.Error("Mismatched pixel counts")
+		}
+		if info.Pixels != int64(w*h*res.Decoded.Frames) {
+			t.Error("Mismatched pixel counts")
+		}
+		// Check frame counts
+		if info.Frames != res.Decoded.Frames {
+			t.Error("Mismatched frame counts")
+		}
+		if info.Frames != int(res.Decoded.Pixels/int64(w*h)) {
+			t.Error("Mismatched frame counts")
+		}
+		totalPixels += info.Pixels
+		totalFrames += info.Frames
+	}
+
+	// Now for something fun. Concatenate our segments of various resolutions
+	// Run them through the transcoder, and check the sum of pixels / frames match
+	// Ensures we can properly accommodate mid-stream resolution changes.
+	cmd := `
+        set -eux
+        cd "$0"
+        cat out_0.ts out_1.ts out_2.ts out_3.ts > combined.ts
+    `
+	run(cmd)
+	in := &TranscodeOptionsIn{Fname: dir + "/combined.ts"}
+	out := []TranscodeOptions{TranscodeOptions{Profile: P240p30fps16x9, Oname: "out.ts"}}
+
+	res, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if totalPixels != res.Decoded.Pixels {
+		t.Error("Mismatched total pixel counts")
+	}
+	if totalFrames != res.Decoded.Frames {
+		t.Errorf("Mismatched total frame counts - %d vs %d", totalFrames, res.Decoded.Frames)
+	}
+}
+
+func TestTranscoder_Statistics_Encoded(t *testing.T) {
+	// Checks the encoded stats returned after transcoding
 
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
@@ -412,7 +501,7 @@ func TestTranscoder_Statistics(t *testing.T) {
 		t.Error(err)
 	}
 
-	for i, r := range res {
+	for i, r := range res.Encoded {
 		w, h, err := VideoProfileResolution(out[i].Profile)
 		if err != nil {
 			t.Error(err)
@@ -481,10 +570,10 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
 	pAdj := VideoProfile{Resolution: "124x456", Framerate: 15, Bitrate: "100k"}
 	out := []TranscodeOptions{TranscodeOptions{Profile: pAdj, Oname: dir + "/adj.mp4"}}
 	res, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/test.ts"}, out)
-	if err != nil || len(res) <= 0 {
+	if err != nil || len(res.Encoded) <= 0 {
 		t.Error(err)
 	}
-	r := res[0]
+	r := res.Encoded[0]
 	if r.Frames != int(pAdj.Framerate) || r.Pixels != int64(r.Frames*124*70) {
 		t.Error(fmt.Errorf("Results did not match: %v ", r))
 	}
