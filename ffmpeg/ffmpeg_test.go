@@ -694,3 +694,192 @@ func TestEncoderOpts(t *testing.T) {
     `
 	run(cmd)
 }
+
+func TestStreamCopyAndDrop(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	in := &TranscodeOptionsIn{Fname: "../transcoder/test.ts"}
+	out := []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly.mp4",
+		VideoEncoder: ComponentOpts{Name: "copy"},
+		AudioEncoder: ComponentOpts{Name: "drop"},
+	}, TranscodeOptions{
+		Oname:        dir + "/audioonly.mp4",
+		VideoEncoder: ComponentOpts{Name: "drop"},
+		AudioEncoder: ComponentOpts{Name: "copy"},
+	}, TranscodeOptions{
+		// Avoids ADTS to ASC conversion
+		// which changes the bitstream
+		Oname:        dir + "/audioonly.ts",
+		VideoEncoder: ComponentOpts{Name: "drop"},
+		AudioEncoder: ComponentOpts{Name: "copy"},
+	}, TranscodeOptions{
+		Oname:        dir + "/audio.md5",
+		VideoEncoder: ComponentOpts{Name: "drop"},
+		AudioEncoder: ComponentOpts{Name: "copy"},
+		Muxer:        ComponentOpts{Name: "md5"},
+	}, TranscodeOptions{
+		Oname:        dir + "/video.md5",
+		VideoEncoder: ComponentOpts{Name: "copy"},
+		AudioEncoder: ComponentOpts{Name: "drop"},
+		Muxer:        ComponentOpts{Name: "md5"},
+	}, TranscodeOptions{
+		Oname:        dir + "/copy.mp4",
+		VideoEncoder: ComponentOpts{Name: "copy"},
+		AudioEncoder: ComponentOpts{Name: "copy"},
+	}}
+	_, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	cmd := `
+        set -eux
+        cd $0
+
+        cp "$1"/../transcoder/test.ts .
+
+        # truncate input for later use
+        ffmpeg -i test.ts -t 1 -c:a copy -c:v copy test-short.ts
+
+        # check some results
+        ffprobe -loglevel warning -show_format videoonly.mp4 | grep nb_streams=1
+        ffprobe -loglevel warning -show_streams videoonly.mp4 | grep codec_name=h264
+
+        ffprobe -loglevel warning -show_format audioonly.mp4 | grep nb_streams=1
+        ffprobe -loglevel warning -show_streams audioonly.mp4 | grep codec_name=aac
+
+        ffprobe -loglevel warning -show_format copy.mp4 | grep nb_streams=2
+
+        # Verify video md5sum
+        ffmpeg -i test.ts -an -c:v copy -f md5 ffmpeg-video-orig.md5
+        diff -u video.md5 ffmpeg-video-orig.md5
+
+        # Verify audio md5sums
+        ffmpeg -i test.ts -vn -c:a copy -f md5 ffmpeg-audio-orig.md5
+        ffmpeg -i audioonly.ts -vn -c:a copy -f md5 ffmpeg-audio-ts.md5
+        ffmpeg -i copy.mp4 -vn -c:a copy -f md5 ffmpeg-audio-copy.md5
+        ffmpeg -i audioonly.mp4 -c:a copy -f md5 ffmpeg-audio-mp4.md5
+        diff -u audio.md5 ffmpeg-audio-orig.md5
+        diff -u audio.md5 ffmpeg-audio-ts.md5
+        diff -u ffmpeg-audio-mp4.md5 ffmpeg-audio-copy.md5
+
+        # TODO test timestamps? should they be copied?
+    `
+	run(cmd)
+
+	// Test specifying a copy or a drop for a stream that does not exist
+	in.Fname = dir + "/videoonly.mp4"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly-copy.mp4",
+		VideoEncoder: ComponentOpts{Name: "copy"},
+		AudioEncoder: ComponentOpts{Name: "copy"},
+	}, TranscodeOptions{
+		Oname:        dir + "/videoonly-copy-2.mp4",
+		VideoEncoder: ComponentOpts{Name: "copy"},
+		AudioEncoder: ComponentOpts{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err, in.Fname)
+	}
+
+	// Test mp4-to-mpegts; involves an implicit bitstream conversion to annex B
+	in.Fname = dir + "/videoonly.mp4"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly-copy.ts",
+		VideoEncoder: ComponentOpts{Name: "copy"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	// sanity check the md5sum of the mp4-to-mpegts result
+	in.Fname = dir + "/videoonly-copy.ts"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly-copy.md5",
+		VideoEncoder: ComponentOpts{Name: "copy"},
+		Muxer:        ComponentOpts{Name: "md5"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	cmd = `
+        set -eux
+        cd "$0"
+
+        # use ffmpeg to convert the existing mp4 to ts and check match
+        # for some reason this does NOT match the original mpegts
+        ffmpeg -i videoonly.mp4 -c:v copy -f mpegts ffmpeg-mp4to.ts
+        ffmpeg -i ffmpeg-mp4to.ts -c:v copy -f md5 ffmpeg-mp4tots.md5
+        diff -u videoonly-copy.md5 ffmpeg-mp4tots.md5
+    `
+	run(cmd)
+
+	// Test failure of audio copy in mpegts-to-(not-mp4). eg, flv
+	// Fixing this requires using the aac_adtstoasc bitstream filter.
+	// (mp4 muxer automatically inserts it if necessary; others don't)
+	in.Fname = "../transcoder/test.ts"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        "fail.flv",
+		VideoEncoder: ComponentOpts{Name: "drop"},
+		AudioEncoder: ComponentOpts{Name: "copy"},
+	}}
+	_, err = Transcode3(in, out)
+	if err == nil || err.Error() != "Invalid data found when processing input" {
+		t.Error("Expected error converting audio from ts to flv but got ", err)
+	}
+
+	// Test error when trying to mux no streams
+	in.Fname = "../transcoder/test.ts"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/none.mp4",
+		VideoEncoder: ComponentOpts{Name: "drop"},
+		AudioEncoder: ComponentOpts{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err == nil || err.Error() != "Invalid argument" {
+		t.Error("Did not get expected error: ", err)
+	}
+
+	// Test error when missing profile in default video configuration
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/profile.mp4",
+		AudioEncoder: ComponentOpts{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err == nil || err != ErrTranscoderRes {
+		t.Error("Expected res err related to profile, but got ", err)
+	}
+
+	// Encode one stream of a short sample while copying / dropping another
+	in.Fname = dir + "/test-short.ts"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/encoded-video.mp4",
+		Profile:      P144p30fps16x9,
+		AudioEncoder: ComponentOpts{Name: "drop"},
+	}, TranscodeOptions{
+		Oname:        dir + "/encoded-audio.mp4",
+		VideoEncoder: ComponentOpts{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+
+	}
+
+	// Sanity check default transcode options with single-stream input
+	in.Fname = dir + "/encoded-video.mp4"
+	out = []TranscodeOptions{TranscodeOptions{Oname: dir + "/encoded-video2.mp4", Profile: P144p30fps16x9}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	in.Fname = dir + "/encoded-audio.mp4"
+	out = []TranscodeOptions{TranscodeOptions{Oname: dir + "/encoded-audio2.mp4", Profile: P144p30fps16x9}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+}
