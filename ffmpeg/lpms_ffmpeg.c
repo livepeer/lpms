@@ -248,14 +248,6 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    /*
-    if (ictx->vc->extradata) {
-      // XXX only if transmuxing!
-      vc->extradata = av_mallocz(ictx->vc->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-      if (!vc->extradata) em_err("Unable to allocate video extradata\n");
-      memcpy(vc->extradata, ictx->vc->extradata, ictx->vc->extradata_size);
-      vc->extradata_size = ictx->vc->extradata_size;
-    }*/
     ret = avcodec_open2(vc, codec, NULL);
     if (ret < 0) em_err("Error opening video encoder\n");
 
