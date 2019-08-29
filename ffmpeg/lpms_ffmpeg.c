@@ -9,6 +9,7 @@
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
 const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
+const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 
 //
 // Internal transcoder data structures
@@ -18,6 +19,7 @@ struct input_ctx {
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
+  int dv, da; // flags whether to drop video or audio
 
   // Hardware decoding support
   AVBufferRef *hw_device_ctx;
@@ -43,6 +45,7 @@ struct output_ctx {
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
+  int dv, da; // flags whether to drop video or audio
   struct filter_ctx vf, af;
 
   // muxer and encoder information (name + options)
@@ -186,6 +189,20 @@ static void free_output(struct output_ctx *octx)
   free_filter(&octx->af);
 }
 
+static int is_copy(char *encoder) {
+  return encoder && !strcmp("copy", encoder);
+}
+
+static int is_drop(char *encoder) {
+  return !encoder || !strcmp("drop", encoder) || !strcmp("", encoder);
+}
+
+static int needs_decoder(char *encoder) {
+  // Checks whether the given "encoder" depends on having a decoder.
+  // Do this by enumerating special cases that do *not* need encoding
+  return !(is_copy(encoder) || is_drop(encoder));
+}
+
 static enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
 {
   const AVCodec *decoder = ctx->codec;
@@ -217,7 +234,8 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   fprintf(stderr, msg); \
   goto open_output_err; \
 }
-  int ret = 0;
+  int ret = 0, inp_has_stream;
+
   AVOutputFormat *fmt = NULL;
   AVFormatContext *oc = NULL;
   AVCodecContext *vc  = NULL;
@@ -232,7 +250,8 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   if (ret < 0) em_err("Unable to alloc output context\n");
   octx->oc = oc;
 
-  if (ictx->vc) {
+  // add video encoder if a decoder exists and this output requires one
+  if (ictx->vc && needs_decoder(octx->video->name)) {
     codec = avcodec_find_encoder_by_name(octx->video->name);
     if (!codec) em_err("Unable to find encoder");
 
@@ -255,18 +274,34 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = avcodec_open2(vc, codec, &octx->video->opts);
     av_dict_free(&octx->video->opts); // avcodec_open2 replaces this
     if (ret < 0) em_err("Error opening video encoder\n");
+  }
 
+  // add video stream if input contains video
+  inp_has_stream = ictx->vi >= 0;
+  if (inp_has_stream && !octx->dv) {
     // video stream in muxer
     st = avformat_new_stream(oc, NULL);
     if (!st) em_err("Unable to alloc video stream\n");
     octx->vi = st->index;
     st->avg_frame_rate = octx->fps;
-    st->time_base = vc->time_base;
-    ret = avcodec_parameters_from_context(st->codecpar, vc);
-    if (ret < 0) em_err("Error setting video encoder params\n");
+    if (is_copy(octx->video->name)) {
+      AVStream *ist = ictx->ic->streams[ictx->vi];
+      st->time_base = ist->time_base;
+      ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
+      if (ret < 0) em_err("Error copying video params from input stream\n");
+      // Sometimes the codec tag is wonky for some reason, so correct it
+      ret = av_codec_get_tag2(fmt->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
+      //if (!ret) fprintf(stderr, "Video codec tag not found. Continuing anyway\n");
+      avformat_transfer_internal_stream_timing_info(fmt, st, ist, AVFMT_TBCF_DEMUXER);
+    } else if (vc) {
+      st->time_base = vc->time_base;
+      ret = avcodec_parameters_from_context(st->codecpar, vc);
+      if (ret < 0) em_err("Error setting video params from encoder\n");
+    } else em_err("No video encoder, not a copy; what is this?\n");
   }
 
-  if (ictx->ac) {
+  // add audio encoder if a decoder exists and this output requires one
+  if (ictx->ac && needs_decoder(octx->audio->name)) {
     codec = avcodec_find_encoder_by_name(octx->audio->name);
     if (!codec) em_err("Unable to find audio encoder\n");
     // open audio encoder
@@ -283,13 +318,28 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     av_dict_free(&octx->audio->opts); // avcodec_open2 replaces this
     if (ret < 0) em_err("Error opening audio encoder\n");
     av_buffersink_set_frame_size(octx->af.sink_ctx, ac->frame_size);
+  }
 
+  // add audio stream if input contains audio
+  inp_has_stream = ictx->ai >= 0;
+  if (inp_has_stream && !octx->da) {
     // audio stream in muxer
     st = avformat_new_stream(oc, NULL);
     if (!st) em_err("Unable to alloc audio stream\n");
-    ret = avcodec_parameters_from_context(st->codecpar, ac);
-    st->time_base = ac->time_base;
-    if (ret < 0) em_err("Unable to copy audio codec params\n");
+    if (is_copy(octx->audio->name)) {
+      AVStream *ist = ictx->ic->streams[ictx->ai];
+      st->time_base = ist->time_base;
+      ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
+      if (ret < 0) em_err("Error copying audio params from input stream\n");
+      // Sometimes the codec tag is wonky for some reason, so correct it
+      ret = av_codec_get_tag2(fmt->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
+      //if (!ret) fprintf(stderr, "Audio codec tag not found. Continuing anyway\n");
+      avformat_transfer_internal_stream_timing_info(fmt, st, ist, AVFMT_TBCF_DEMUXER);
+    } else if (ac) {
+      st->time_base = ac->time_base;
+      ret = avcodec_parameters_from_context(st->codecpar, ac);
+      if (ret < 0) em_err("Error setting audio params from encoder\n");
+    } else em_err("No audio encoder; not a copy; what is this?\n");
     octx->ai = st->index;
 
     // signal whether to drop preroll audio
@@ -340,7 +390,8 @@ static int open_input(input_params *params, struct input_ctx *ctx)
 
   // open video decoder
   ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
-  if (ctx->vi < 0) {
+  if (ctx->dv) ; // skip decoding video
+  else if (ctx->vi < 0) {
     fprintf(stderr, "No video stream found in input\n");
   } else {
     AVCodecContext *vc = avcodec_alloc_context3(codec);
@@ -383,7 +434,8 @@ static int open_input(input_params *params, struct input_ctx *ctx)
 
   // open audio decoder
   ctx->ai = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
-  if (ctx->ai < 0) {
+  if (ctx->da) ; // skip decoding audio
+  else if (ctx->ai < 0) {
     fprintf(stderr, "No audio stream found in input\n");
   } else {
     AVCodecContext * ac = avcodec_alloc_context3(codec);
@@ -421,6 +473,8 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     struct filter_ctx *vf = &octx->vf;
     char *filters_descr = octx->vfilters;
     enum AVPixelFormat in_pix_fmt = ictx->vc->pix_fmt;
+
+    if (!needs_decoder(octx->video->name)) return 0; // no need for filters
 
     vf->graph = avfilter_graph_alloc();
     if (!outputs || !inputs || !vf->graph) {
@@ -611,21 +665,23 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     ist = ictx->ic->streams[pkt->stream_index];
     if (ist->index == ictx->vi && ictx->vc) decoder = ictx->vc;
     else if (ist->index == ictx->ai && ictx->ac) decoder = ictx->ac;
-    else dec_err("Could not find decoder for stream\n");
+    else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai) break;
+    else dec_err("Could not find decoder or stream\n");
 
     ret = avcodec_send_packet(decoder, pkt);
     if (ret < 0) dec_err("Error sending packet to decoder\n");
     ret = avcodec_receive_frame(decoder, frame);
     if (ret == AVERROR(EAGAIN)) {
-      av_packet_unref(pkt);
-      continue;
+      // Distinguish from EAGAIN that may occur with
+      // av_read_frame or avcodec_send_packet
+      ret = lpms_ERR_PACKET_ONLY;
+      break;
     }
     else if (ret < 0) dec_err("Error receiving frame from decoder\n");
     break;
   }
 
 dec_cleanup:
-  if (ret < 0) av_packet_unref(pkt); // XXX necessary? or have caller do it?
   return ret;
 
 dec_flush:
@@ -766,6 +822,7 @@ int lpms_transcode(input_params *inp, output_params *params,
   goto transcode_cleanup; \
 }
   int ret = 0, i = 0;
+  int decode_a = 0, decode_v = 0;
   struct input_ctx ictx;
   AVPacket ipkt;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
@@ -776,6 +833,12 @@ int lpms_transcode(input_params *inp, output_params *params,
 
   if (!inp) main_err("transcoder: Missing input params\n")
   if (nb_outputs > MAX_OUTPUT_SIZE) main_err("transcoder: Too many outputs\n");
+
+  // Check to see if we can skip decoding
+  for (i = 0; i < nb_outputs; i++) {
+    if (!needs_decoder(params[i].video.name)) ictx.dv = ++decode_v == nb_outputs;
+    if (!needs_decoder(params[i].audio.name)) ictx.da = ++decode_a == nb_outputs;
+  }
 
   // populate input context
   ret = open_input(inp, &ictx);
@@ -793,6 +856,8 @@ int lpms_transcode(input_params *inp, output_params *params,
     octx->vfilters = params[i].vfilters;
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
+    octx->dv = ictx.vi < 0 || is_drop(octx->video->name);
+    octx->da = ictx.ai < 0 || is_drop(octx->audio->name);
     octx->res = &results[i];
     if (ictx.vc) {
       ret = init_video_filters(&ictx, octx);
@@ -814,16 +879,20 @@ int lpms_transcode(input_params *inp, output_params *params,
   if (!dframe) main_err("transcoder: Unable to allocate frame\n");
 
   while (1) {
+    int has_frame = 0;
     AVStream *ist = NULL;
     av_frame_unref(dframe);
     ret = process_in(&ictx, dframe, &ipkt);
     if (ret == AVERROR_EOF) break;
                             // Bail out on streams that appear to be broken
+    else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
     else if (ret < 0) main_err("transcoder: Could not decode; stopping\n");
     ist = ictx.ic->streams[ipkt.stream_index];
+    has_frame = lpms_ERR_PACKET_ONLY != ret;
 
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
-      decoded_results->frames++;
+      // width / height will be zero for pure streamcopy (no decoding)
+      decoded_results->frames += dframe->width && dframe->height;
       decoded_results->pixels += dframe->width * dframe->height;
     }
 
@@ -832,18 +901,39 @@ int lpms_transcode(input_params *inp, output_params *params,
       struct filter_ctx *filter = NULL;
       AVStream *ost = NULL;
       AVCodecContext *encoder = NULL;
+      ret = 0; // reset to avoid any carry-through
 
-      if (ist->index == ictx.vi && ictx.vc) {
+      if (ist->index == ictx.vi) {
+        if (octx->dv) continue; // drop video stream for this output
         ost = octx->oc->streams[0];
-        encoder = octx->vc;
-        filter = &octx->vf;
-      } else if (ist->index == ictx.ai && ictx.ac) {
-        ost = octx->oc->streams[!!ictx.vc]; // depends on whether video exists
-        encoder = octx->ac;
-        filter = &octx->af;
-      } else main_err("transcoder: Got unknown stream\n"); // XXX could be legit; eg subs, secondary streams
+        if (ictx.vc) {
+          encoder = octx->vc;
+          filter = &octx->vf;
+        }
+      } else if (ist->index == ictx.ai) {
+        if (octx->da) continue; // drop audio stream for this output
+        ost = octx->oc->streams[!octx->dv]; // depends on whether video exists
+        if (ictx.ac) {
+          encoder = octx->ac;
+          filter = &octx->af;
+        }
+      } else continue; // dropped or unrecognized stream
 
-      ret = process_out(&ictx, octx, encoder, ost, filter, dframe);
+      if (!encoder && ost) {
+        // stream copy
+        AVPacket *pkt;
+
+        // we hit this case when decoder is flushing; will be no input packet
+        // (we don't need decoded frames since this stream is doing a copy)
+        if (ipkt.pts == AV_NOPTS_VALUE) continue;
+
+        pkt = av_packet_clone(&ipkt);
+        if (!pkt) main_err("transcoder: Error allocating packet\n");
+        ret = mux(pkt, ist->time_base, octx, ost);
+        av_packet_unref(pkt);
+      } else if (has_frame) {
+        ret = process_out(&ictx, octx, encoder, ost, filter, dframe);
+      }
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
       else if (ret < 0) main_err("transcoder: Error encoding\n");
     }

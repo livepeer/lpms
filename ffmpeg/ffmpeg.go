@@ -172,12 +172,16 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 		param := p.Profile
 		w, h, err := VideoProfileResolution(param)
 		if err != nil {
-			return nil, err
+			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+				return nil, err
+			}
 		}
 		br := strings.Replace(param.Bitrate, "k", "000", 1)
 		bitrate, err := strconv.Atoi(br)
 		if err != nil {
-			return nil, err
+			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+				return nil, err
+			}
 		}
 		encoder, scale_filter := p.VideoEncoder.Name, "scale"
 		if encoder == "" {

@@ -694,3 +694,346 @@ func TestTranscoder_EncoderOpts(t *testing.T) {
     `
 	run(cmd)
 }
+
+func TestTranscoder_StreamCopy(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Set up inputs, truncate test file
+	cmd := `
+        set -eux
+        cd "$0"
+        cp "$1"/../transcoder/test.ts .
+        ffmpeg -i test.ts -c:a copy -c:v copy -t 1 test-short.ts
+
+        # sanity check some assumptions here for the following set of tests
+        ffprobe -count_frames -show_streams -select_streams v test-short.ts | grep nb_read_frames=60
+    `
+	run(cmd)
+
+	// Test normal stream-copy case
+	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
+	out := []TranscodeOptions{
+		TranscodeOptions{
+			Oname:        dir + "/audiocopy.ts",
+			Profile:      P144p30fps16x9,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+		},
+		TranscodeOptions{
+			Oname: dir + "/videocopy.ts",
+			VideoEncoder: ComponentOptions{Name: "copy", Opts: map[string]string{
+				"mpegts_flags": "resend_headers,initial_discontinuity",
+			}},
+		},
+	}
+	res, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 ||
+		res.Encoded[1].Frames != 0 {
+		t.Error("Unexpected frame counts from stream copy")
+		t.Error(res)
+	}
+
+	cmd = `
+        set -eux
+        cd "$0"
+
+        # extract video track only, compare md5sums
+        ffmpeg -i test-short.ts -an -c:v copy -f md5 test-video.md5
+        ffmpeg -i videocopy.ts -an -c:v copy -f md5 videocopy.md5
+        diff -u test-video.md5 videocopy.md5
+
+        # extract audio track only, compare md5sums
+        ffmpeg -i test-short.ts -vn -c:a copy -f md5 test-audio.md5
+        ffmpeg -i audiocopy.ts -vn -c:a copy -f md5 audiocopy.md5
+        diff -u test-audio.md5 audiocopy.md5
+    `
+	run(cmd)
+
+	// Test stream copy when no stream exists in file
+	cmd = `
+        set -eux
+        cd "$0"
+
+        ffmpeg -i test-short.ts -an -c:v copy videoonly.ts
+        ffmpeg -i test-short.ts -vn -c:a copy audioonly.ts
+
+    `
+	run(cmd)
+	in = &TranscodeOptionsIn{Fname: dir + "/videoonly.ts"}
+	out = []TranscodeOptions{
+		TranscodeOptions{
+			Oname:        dir + "/novideo.ts",
+			VideoEncoder: ComponentOptions{Name: "copy"},
+		},
+	}
+	res, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
+		t.Error("Unexpected count of decoded/encoded frames")
+	}
+	in = &TranscodeOptionsIn{Fname: dir + "/audioonly.ts"}
+	out = []TranscodeOptions{
+		TranscodeOptions{
+			Oname:        dir + "/noaudio.ts",
+			Profile:      P144p30fps16x9,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+		},
+	}
+	res, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
+		t.Error("Unexpected count of decoded frames")
+	}
+}
+
+func TestTranscoder_Drop(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+        set -eux
+        cd "$0"
+        cp "$1"/../transcoder/test.ts .
+        ffmpeg -i test.ts -c:a copy -c:v copy -t 1 test-short.ts
+
+        # sanity check some assumptions here for the following set of tests
+        ffprobe -count_frames -show_streams -select_streams v test-short.ts | grep nb_read_frames=60
+    `
+	run(cmd)
+
+	// Normal case : drop only video
+	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
+	out := []TranscodeOptions{
+		TranscodeOptions{
+			Oname:        dir + "/novideo.ts",
+			VideoEncoder: ComponentOptions{Name: "drop"},
+		},
+	}
+	res, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
+		t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
+	}
+
+	// Normal case: drop only audio
+	out = []TranscodeOptions{
+		TranscodeOptions{
+			Oname:        dir + "/noaudio.ts",
+			AudioEncoder: ComponentOptions{Name: "drop"},
+			Profile:      P144p30fps16x9,
+		},
+	}
+	res, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 {
+		t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
+	}
+
+	// Test error when trying to mux no streams
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/none.mp4",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err == nil || err.Error() != "Invalid argument" {
+		t.Error("Did not get expected error: ", err)
+	}
+
+	// Test error when missing profile in default video configuration
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/profile.mp4",
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err == nil || err != ErrTranscoderRes {
+		t.Error("Expected res err related to profile, but got ", err)
+	}
+
+	// Sanity check default transcode options with single-stream input
+	in.Fname = dir + "/noaudio.ts"
+	out = []TranscodeOptions{TranscodeOptions{Oname: dir + "/encoded-video.mp4", Profile: P144p30fps16x9}}
+	res, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 30 || res.Encoded[0].Frames != 29 { // XXX 29 ?!?
+		t.Error("Unexpected encoded/decoded frame counts ", res.Decoded.Frames, res.Encoded[0].Frames)
+	}
+	in.Fname = dir + "/novideo.ts"
+	out = []TranscodeOptions{TranscodeOptions{Oname: dir + "/encoded-audio.mp4", Profile: P144p30fps16x9}}
+	res, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
+		t.Error("Unexpected encoded/decoded frame counts ")
+	}
+}
+
+func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	in := &TranscodeOptionsIn{Fname: "../transcoder/test.ts"}
+	out := []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly.mp4",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}, TranscodeOptions{
+		Oname:        dir + "/audioonly.mp4",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+	}, TranscodeOptions{
+		// Avoids ADTS to ASC conversion
+		// which changes the bitstream
+		Oname:        dir + "/audioonly.ts",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+	}, TranscodeOptions{
+		Oname:        dir + "/audio.md5",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+		Muxer:        ComponentOptions{Name: "md5"},
+	}, TranscodeOptions{
+		Oname:        dir + "/video.md5",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		AudioEncoder: ComponentOptions{Name: "drop"},
+		Muxer:        ComponentOptions{Name: "md5"},
+	}, TranscodeOptions{
+		Oname:        dir + "/copy.mp4",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+	}}
+	res, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 0 {
+		t.Error("Unexpected count for decoded frames ", res.Decoded.Frames)
+	}
+	cmd := `
+        set -eux
+        cd $0
+
+        cp "$1"/../transcoder/test.ts .
+
+        # truncate input for later use
+        ffmpeg -i test.ts -t 1 -c:a copy -c:v copy test-short.ts
+
+        # check some results
+        ffprobe -loglevel warning -show_format videoonly.mp4 | grep nb_streams=1
+        ffprobe -loglevel warning -show_streams videoonly.mp4 | grep codec_name=h264
+
+        ffprobe -loglevel warning -show_format audioonly.mp4 | grep nb_streams=1
+        ffprobe -loglevel warning -show_streams audioonly.mp4 | grep codec_name=aac
+
+        ffprobe -loglevel warning -show_format copy.mp4 | grep nb_streams=2
+
+        # Verify video md5sum
+        ffmpeg -i test.ts -an -c:v copy -f md5 ffmpeg-video-orig.md5
+        diff -u video.md5 ffmpeg-video-orig.md5
+
+        # Verify audio md5sums
+        ffmpeg -i test.ts -vn -c:a copy -f md5 ffmpeg-audio-orig.md5
+        ffmpeg -i audioonly.ts -vn -c:a copy -f md5 ffmpeg-audio-ts.md5
+        ffmpeg -i copy.mp4 -vn -c:a copy -f md5 ffmpeg-audio-copy.md5
+        ffmpeg -i audioonly.mp4 -c:a copy -f md5 ffmpeg-audio-mp4.md5
+        diff -u audio.md5 ffmpeg-audio-orig.md5
+        diff -u audio.md5 ffmpeg-audio-ts.md5
+        diff -u ffmpeg-audio-mp4.md5 ffmpeg-audio-copy.md5
+
+        # TODO test timestamps? should they be copied?
+    `
+	run(cmd)
+
+	// Test specifying a copy or a drop for a stream that does not exist
+	in.Fname = dir + "/videoonly.mp4"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly-copy.mp4",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+	}, TranscodeOptions{
+		Oname:        dir + "/videoonly-copy-2.mp4",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err, in.Fname)
+	}
+
+	// Test mp4-to-mpegts; involves an implicit bitstream conversion to annex B
+	in.Fname = dir + "/videoonly.mp4"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly-copy.ts",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	// sanity check the md5sum of the mp4-to-mpegts result
+	in.Fname = dir + "/videoonly-copy.ts"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/videoonly-copy.md5",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		Muxer:        ComponentOptions{Name: "md5"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	cmd = `
+        set -eux
+        cd "$0"
+
+        # use ffmpeg to convert the existing mp4 to ts and check match
+        # for some reason this does NOT match the original mpegts
+        ffmpeg -i videoonly.mp4 -c:v copy -f mpegts ffmpeg-mp4to.ts
+        ffmpeg -i ffmpeg-mp4to.ts -c:v copy -f md5 ffmpeg-mp4tots.md5
+        diff -u videoonly-copy.md5 ffmpeg-mp4tots.md5
+    `
+	run(cmd)
+
+	// Test failure of audio copy in mpegts-to-(not-mp4). eg, flv
+	// Fixing this requires using the aac_adtstoasc bitstream filter.
+	// (mp4 muxer automatically inserts it if necessary; others don't)
+	in.Fname = "../transcoder/test.ts"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/fail.flv",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+	}}
+	_, err = Transcode3(in, out)
+	if err == nil || err.Error() != "Invalid data found when processing input" {
+		t.Error("Expected error converting audio from ts to flv but got ", err)
+	}
+
+	// Encode one stream of a short sample while copying / dropping another
+	in.Fname = dir + "/test-short.ts"
+	out = []TranscodeOptions{TranscodeOptions{
+		Oname:        dir + "/encoded-video.mp4",
+		Profile:      P144p30fps16x9,
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}, TranscodeOptions{
+		Oname:        dir + "/encoded-audio.mp4",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+
+	}
+}
