@@ -666,17 +666,17 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     if (ist->index == ictx->vi && ictx->vc) decoder = ictx->vc;
     else if (ist->index == ictx->ai && ictx->ac) decoder = ictx->ac;
     else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai) break;
-    else dec_err("Could not find decoder or stream\n");
+    else goto drop_packet; // could be an extra stream; skip
 
     ret = avcodec_send_packet(decoder, pkt);
     if (ret < 0) dec_err("Error sending packet to decoder\n");
     ret = avcodec_receive_frame(decoder, frame);
-    if (ret == AVERROR(EAGAIN)) {
-      av_packet_unref(pkt);
-      continue;
-    }
+    if (ret == AVERROR(EAGAIN)) goto drop_packet;
     else if (ret < 0) dec_err("Error receiving frame from decoder\n");
     break;
+
+drop_packet:
+    av_packet_unref(pkt);
   }
 
 dec_cleanup:

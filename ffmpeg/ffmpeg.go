@@ -61,6 +61,20 @@ type TranscodeResults struct {
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
+	//glog.Errorf("Segmentating %s - %s - template %s", localRTMPUrl, outM3U8, tmpl)
+	in := &TranscodeOptionsIn{Fname: localRTMPUrl}
+	out := []TranscodeOptions{TranscodeOptions{
+		Oname:        outM3U8,
+		VideoEncoder: ComponentOpts{Name: "copy"},
+		AudioEncoder: ComponentOpts{Name: "copy"},
+		Muxer: ComponentOpts{Name: "hls", Opts: map[string]string{
+			"hls_time":             seglen_secs,
+			"hls_segment_filename": tmpl,
+			"start_number":         fmt.Sprintf("%d", seg_start),
+			"hls_flags":            "delete_segments",
+		}}}}
+	_, err := Transcode3(in, out)
+	return err
 	inp := C.CString(localRTMPUrl)
 	outp := C.CString(outM3U8)
 	ts_tmpl := C.CString(tmpl)
