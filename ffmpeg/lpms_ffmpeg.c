@@ -24,6 +24,8 @@ struct input_ctx {
   // Hardware decoding support
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;
+
+  int64_t next_pts_a, next_pts_v;
 };
 
 struct filter_ctx {
@@ -772,8 +774,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
 
   if (!filter || !filter->active) {
     // No filter in between decoder and encoder, so use input frame directly
-    ret = encode(encoder, inf, octx, ost);
-    if (ret < 0) return ret;
+    return encode(encoder, inf, octx, ost);
   }
 
   // Sometimes we have to reset the filter if the HW context is updated
@@ -786,8 +787,16 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     ret = init_video_filters(ictx, octx);
     if (ret < 0) return lpms_ERR_FILTERS;
   }
-  ret = av_buffersrc_write_frame(filter->src_ctx, inf);
-  if (ret < 0) proc_err("Error feeding the filtergraph\n");
+  if (inf) {
+    ret = av_buffersrc_write_frame(filter->src_ctx, inf);
+    if (ret < 0) proc_err("Error feeding the filtergraph\n");
+  } else {
+    // We need to set the pts at EOF to the *end* of the last packet
+    // in order to avoid discarding any queued packets
+    int64_t next_pts = AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type ?
+      ictx->next_pts_v : ictx->next_pts_a;
+    av_buffersrc_close(filter->src_ctx, next_pts, AV_BUFFERSRC_FLAG_PUSH);
+  }
 
   while (1) {
     // Drain the filter. Each input frame may have multiple output frames
@@ -894,6 +903,9 @@ int lpms_transcode(input_params *inp, output_params *params,
       // width / height will be zero for pure streamcopy (no decoding)
       decoded_results->frames += dframe->width && dframe->height;
       decoded_results->pixels += dframe->width * dframe->height;
+      if (has_frame) ictx.next_pts_v = dframe->pts + dframe->pkt_duration;
+    } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
+      if (has_frame) ictx.next_pts_a = dframe->pts + dframe->pkt_duration;
     }
 
     for (i = 0; i < nb_outputs; i++) {
