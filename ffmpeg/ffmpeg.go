@@ -242,7 +242,7 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 	}
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if 0 != ret {
-		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
+		glog.Error("Transcoder Return : ", Strerror(ret))
 		return nil, ErrorMap[ret]
 	}
 	tr := make([]MediaInfo, len(ps))
