@@ -942,7 +942,7 @@ int lpms_transcode(input_params *inp, output_params *params,
         pkt = av_packet_clone(&ipkt);
         if (!pkt) main_err("transcoder: Error allocating packet\n");
         ret = mux(pkt, ist->time_base, octx, ost);
-        av_packet_unref(pkt);
+        av_packet_free(&pkt);
       } else if (has_frame) {
         ret = process_out(&ictx, octx, encoder, ost, filter, dframe);
       }
