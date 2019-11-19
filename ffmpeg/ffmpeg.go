@@ -36,7 +36,7 @@ type ComponentOptions struct {
 
 type Transcoder struct {
 	handle  *C.struct_transcode_thread
-	stopped bool
+	stopped bool // Protect with a mutex if accessing from multiple threads
 }
 
 type TranscodeOptionsIn struct {
@@ -221,8 +221,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		// Set some default encoding options
 		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
 			p.VideoEncoder.Opts = map[string]string{
-				"forced-idr": "1",
-				"flags":      "+cgop",
+				"forced-idr": "1", // XXX check if still needed
 			}
 		}
 		vidOpts := C.component_opts{

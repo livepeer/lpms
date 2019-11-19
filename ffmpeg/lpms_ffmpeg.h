@@ -45,10 +45,6 @@ typedef struct {
 typedef struct {
     int frames;
     int64_t pixels;
-
-  // Returns
-  int ret; // return code for this segment
-
 } output_results;
 
 void lpms_init();

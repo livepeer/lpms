@@ -903,18 +903,18 @@ dec_flush:
   if (ictx->vc) {
     send_first(ictx);
 
-    //avcodec_send_packet(ictx->vc, NULL); // XXX fix
+    // XXX sanity check this works as expected with SW encoding!
     ret = avcodec_receive_frame(ictx->vc, frame);
-    pkt->stream_index = ictx->vi; // XXX ugly?
+    pkt->stream_index = ictx->vi;
     if (!ret) {
       if (is_flush_frame(frame)) ictx->flushed = 1;
       return ret;
     }
   }
   if (ictx->ac) {
-    avcodec_send_packet(ictx->ac, NULL); // XXX fix
+    avcodec_send_packet(ictx->ac, NULL);
     ret = avcodec_receive_frame(ictx->ac, frame);
-    pkt->stream_index = ictx->ai; // XXX ugly?
+    pkt->stream_index = ictx->ai;
     if (!ret) return ret;
   }
   return AVERROR_EOF;
@@ -975,10 +975,6 @@ int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVS
       AV_HWDEVICE_TYPE_CUDA == octx->hw_type && !frame) {
     if (!strcmp("nvenc", encoder->codec->wrapper_name)) av_nvenc_flush(encoder);
   }
-  //if (flush && AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type)  {
-    //fprintf(stderr, "Flushing\n");
-    //if (!strcmp("nvenc", encoder->codec->wrapper_name)) av_nvenc_flush(encoder);
-  //}
 
   while (1) {
     av_init_packet(&pkt);
@@ -1051,7 +1047,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     } else if (ret < 0) proc_err("Error consuming the filtergraph\n");
     ret = encode(encoder, frame, octx, ost);
     av_frame_unref(frame);
-    // Ror HW we keep the encoder open so will only get EAGAIN.
+    // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush
     if (frame == NULL && AV_HWDEVICE_TYPE_NONE != octx->hw_type &&
         AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
