@@ -1018,20 +1018,6 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
     `
 	run(cmd)
 
-	// Test failure of audio copy in mpegts-to-(not-mp4). eg, flv
-	// Fixing this requires using the aac_adtstoasc bitstream filter.
-	// (mp4 muxer automatically inserts it if necessary; others don't)
-	in.Fname = "../transcoder/test.ts"
-	out = []TranscodeOptions{TranscodeOptions{
-		Oname:        dir + "/fail.flv",
-		VideoEncoder: ComponentOptions{Name: "drop"},
-		AudioEncoder: ComponentOptions{Name: "copy"},
-	}}
-	_, err = Transcode3(in, out)
-	if err == nil || err.Error() != "Invalid data found when processing input" {
-		t.Error("Expected error converting audio from ts to flv but got ", err)
-	}
-
 	// Encode one stream of a short sample while copying / dropping another
 	in.Fname = dir + "/test-short.ts"
 	out = []TranscodeOptions{TranscodeOptions{
