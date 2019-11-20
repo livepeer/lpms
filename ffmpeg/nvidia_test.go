@@ -445,10 +445,23 @@ func TestNvidia_DrainFilters(t *testing.T) {
     set -eux
     cd "$0"
 
-    # ensure we have a 100fps output
+    # sanity check with ffmpeg itself
+    ffmpeg -loglevel warning -i test.ts -c:a copy -c:v libx264 -vf fps=100 -vsync 0 ffmpeg-out.ts
+    ffprobe -loglevel warning -show_streams -select_streams v -count_frames ffmpeg-out.ts > ffmpeg,out
+    grep nb_read_frames ffmpeg,out > ffmpeg-read-frames.out
+    grep duration= ffmpeg,out > ffmpeg-duration.out
+
+    # ensure output has correct fps and duration
     ffprobe -loglevel warning -show_streams -select_streams v -count_frames out.ts > probe.out
-    grep nb_read_frames=100 probe.out
-    grep duration=1.00 probe.out
+    grep nb_read_frames probe.out > read-frames.out
+    diff -u ffmpeg-read-frames.out read-frames.out
+    grep duration= probe.out > duration.out
+    diff -u ffmpeg-duration.out duration.out
+
+    # actual values - these are not *that* important as long as they're
+    # reasonable and match ffmpeg's
+    grep nb_read_frames=102 probe.out
+    grep duration=1.0200 probe.out
   `
 	run(cmd)
 
