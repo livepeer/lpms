@@ -436,22 +436,12 @@ func TestServerDisconnect(t *testing.T) {
 	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, strm.GetStreamID())
 	opt := SegmenterOptions{SegLength: time.Second * 4}
 	vs := NewFFMpegVideoSegmenter("tmp", strm.GetStreamID(), strmUrl, opt)
-	server := &rtmp.Server{Addr: ":" + port}
-	player := vidplayer.NewVidPlayer(server, "", nil)
-	player.HandleRTMPPlay(
-		func(url *url.URL) (stream.RTMPVideoStream, error) {
-			return strm, nil
-		})
 
-	//Kick off RTMP server
-	go func() {
-		err := player.RtmpServer.ListenAndServe()
-		if err != nil {
-			t.Errorf("Error kicking off RTMP server: %v", err)
-		}
-	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
+	cmd := "dd if=/dev/urandom count=1 ibs=2000 | nc -Nl " + port
+	go exec.CommandContext(ctx, "bash", "-c", cmd).Output()
+
 	err := RunRTMPToHLS(vs, ctx)
 	if err == nil || err.Error() != "Input/output error" {
 		t.Error("Expected 'Input/output error' but instead got ", err)

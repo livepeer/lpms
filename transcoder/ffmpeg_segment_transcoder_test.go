@@ -37,12 +37,12 @@ func TestTrans(t *testing.T) {
 		t.Errorf("Expecting 2 output segments, got %v", len(r))
 	}
 
-	if len(r[0]) < 250000 || len(r[0]) > 280000 {
-		t.Errorf("Expecting output size to be between 250000 and 280000 , got %v", len(r[0]))
+	if len(r[0]) < 250000 || len(r[0]) > 285000 {
+		t.Errorf("Expecting output size to be between 250000 and 285000 , got %v", len(r[0]))
 	}
 
-	if len(r[1]) < 280000 || len(r[1]) > 310000 {
-		t.Errorf("Expecting output size to be between 280000 and 310000 , got %v", len(r[1]))
+	if len(r[1]) < 280000 || len(r[1]) > 314000 {
+		t.Errorf("Expecting output size to be between 280000 and 314000 , got %v", len(r[1]))
 	}
 
 	if len(r[2]) < 600000 || len(r[2]) > 700000 {
