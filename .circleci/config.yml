@@ -3,7 +3,7 @@ jobs:
   build:
     working_directory: /go/src/github.com/livepeer/lpms
     docker:
-      - image: "circleci/golang:1.11.5"
+      - image: "circleci/golang:1.13.4"
         environment:
           GOROOT: /usr/local/go
           PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
@@ -23,7 +23,7 @@ jobs:
           name: "Build FFMpeg"
           command: |
             sudo apt-get update
-            sudo apt-get install -y autoconf build-essential pkg-config autoconf gnutls-dev
+            sudo apt-get install -y autoconf build-essential pkg-config autoconf gnutls-dev zlib1g-dev netcat-openbsd
             bash ./install_ffmpeg.sh
 
       - save_cache:
