@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
@@ -36,7 +37,8 @@ type ComponentOptions struct {
 
 type Transcoder struct {
 	handle  *C.struct_transcode_thread
-	stopped bool // Protect with a mutex if accessing from multiple threads
+	stopped bool
+	mu      *sync.Mutex
 }
 
 type TranscodeOptionsIn struct {
@@ -167,6 +169,8 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 }
 
 func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.stopped || t.handle == nil {
 		return nil, ErrTranscoderStp
 	}
@@ -298,10 +302,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 func NewTranscoder() *Transcoder {
 	return &Transcoder{
 		handle: C.lpms_transcode_new(),
+		mu:     &sync.Mutex{},
 	}
 }
 
 func (t *Transcoder) StopTranscoder() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.stopped {
 		return
 	}

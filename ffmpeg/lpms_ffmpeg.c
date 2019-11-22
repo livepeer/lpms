@@ -79,8 +79,6 @@ struct output_ctx {
 #define MAX_OUTPUT_SIZE 10
 
 struct transcode_thread {
-  pthread_mutex_t mu;
-
   int initialized;
 
   struct input_ctx ictx;
@@ -1267,12 +1265,10 @@ int lpms_transcode(input_params *inp, output_params *params,
   int ret = 0;
   struct transcode_thread *h = inp->handle;
 
-  pthread_mutex_lock(&h->mu);
   if (!h->initialized) {
     int i = 0;
     int decode_a = 0, decode_v = 0;
     if (nb_outputs > MAX_OUTPUT_SIZE) {
-      pthread_mutex_unlock(&h->mu);
       return lpms_ERR_OUTPUTS;
     }
 
@@ -1287,20 +1283,16 @@ int lpms_transcode(input_params *inp, output_params *params,
     // populate input context
     ret = open_input(inp, &h->ictx);
     if (ret < 0) {
-      pthread_mutex_unlock(&h->mu);
       return ret;
     }
   }
 
   if (h->nb_outputs != nb_outputs) {
     return lpms_ERR_OUTPUTS; // Not the most accurate error...
-    pthread_mutex_unlock(&h->mu);
   }
 
   ret = transcode(h, inp, params, results, decoded_results);
   h->initialized = 1;
-
-  pthread_mutex_unlock(&h->mu);
 
   return ret;
 }
@@ -1309,7 +1301,6 @@ struct transcode_thread* lpms_transcode_new() {
   struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
   if (!h) return NULL;
   memset(h, 0, sizeof *h);
-  pthread_mutex_init(&h->mu, NULL);
   return h;
 }
 
@@ -1320,13 +1311,11 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
 
   if (!handle) return;
 
-  pthread_mutex_lock(&handle->mu);
   free_input(&handle->ictx);
   for (i = 0; i < MAX_OUTPUT_SIZE; i++) {
     free_output(&handle->outputs[i]);
     if (handle->outputs[i].vc) avcodec_free_context(&handle->outputs[i].vc);
   }
-  pthread_mutex_unlock(&handle->mu);
 
   free(handle);
 }
