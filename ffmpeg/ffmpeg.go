@@ -191,7 +191,11 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 			}
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
-		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", param.Framerate, 1, scale_filter, w, h)
+		var filters string
+		if param.Framerate > 0 {
+			filters = fmt.Sprintf("fps=%d/1,", param.Framerate)
+		}
+		filters += fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
 		if input.Accel != Software && p.Accel == Software {
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ":format=yuv420p,hwdownload"
@@ -219,7 +223,10 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 		defer C.free(unsafe.Pointer(vidOpts.name))
 		defer C.free(unsafe.Pointer(audioOpts.name))
 		defer C.free(unsafe.Pointer(vfilt))
-		fps := C.AVRational{num: C.int(param.Framerate), den: 1}
+		var fps C.AVRational
+		if param.Framerate > 0 {
+			fps = C.AVRational{num: C.int(param.Framerate), den: 1}
+		}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			muxer: muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}

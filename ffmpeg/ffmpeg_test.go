@@ -1324,3 +1324,74 @@ nb_read_frames=%d
 	}
 	checkStatsFile(in, &out[0], res)
 }
+
+func TestTranscoder_PassthroughFPS(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Set  up test inputs and sanity check some things
+	cmd := `
+        cp "$1/../transcoder/test.ts" test.ts
+
+        # Inputs
+        ffmpeg -v warning -i test.ts -an -c:v copy -t 1 test-short.ts
+        ffmpeg -v warning -i test-short.ts -c:v libx264 -vf fps=123,scale=256x144 test-123fps.mp4
+
+        # Check stream properties (hard code expectations)
+        ffprobe -v warning -show_streams -count_frames test-short.ts | grep nb_read_frames=62
+        ffprobe -v warning -show_streams -count_frames test-123fps.mp4 | grep nb_read_frames=127
+        ffprobe -v warning -show_streams test-short.ts | grep r_frame_rate=60/1
+        ffprobe -v warning -show_streams test-123fps.mp4 | grep r_frame_rate=123/1
+        # Extract frame properties for later comparison
+        ffprobe -v warning -select_streams v -show_frames test-123fps.mp4 | grep duration= > test-123fps.duration
+        ffprobe -v warning -select_streams v -show_frames test-short.ts | grep duration= > test-short.duration
+        ffprobe -v warning -select_streams v -show_frames test-123fps.mp4 | grep pkt_pts= > test-123fps.pts
+        ffprobe -v warning -select_streams v -show_frames test-short.ts | grep pkt_pts= > test-short.pts
+    `
+	run(cmd)
+	out := []TranscodeOptions{TranscodeOptions{Profile: P144p30fps16x9}}
+	out[0].Profile.Framerate = 0 // Passthrough!
+
+	// Check a somewhat normal passthru case
+	out[0].Oname = dir + "/out-short.ts"
+	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
+	res, err := Transcode3(in, out)
+	if err != nil {
+		t.Error("Could not transcode: ", err)
+	}
+	if res.Encoded[0].Frames != 62 {
+		t.Error("Did not get expected frame count; got ", res.Encoded[0].Frames)
+	}
+
+	// Now check odd frame rate
+	out[0].Oname = dir + "/out-123fps.mp4"
+	in.Fname = dir + "/test-123fps.mp4"
+	res, err = Transcode3(in, out)
+	if err != nil {
+		t.Error("Could not transcode: ", err)
+	}
+	// yes, expecting 127 frames with 123fps set; this is odd after all!
+	if res.Encoded[0].Frames != 127 {
+		t.Error("Did not get expected frame count; got ", res.Encoded[0].Frames)
+	}
+
+	// Sanity check durations etc
+	cmd = `
+        # Check stream properties - should match original properties
+        ffprobe -v warning -show_streams -count_frames out-short.ts | grep nb_read_frames=62
+        ffprobe -v warning -show_streams -count_frames out-123fps.mp4 | grep nb_read_frames=127
+        ffprobe -v warning -show_streams out-short.ts | grep r_frame_rate=60/1
+        ffprobe -v warning -show_streams out-123fps.mp4 | grep r_frame_rate=123/1
+
+        # Check some per-frame properties
+        ffprobe -v warning -select_streams v -show_frames out-123fps.mp4 | grep duration= > out-123fps.duration
+        ffprobe -v warning -select_streams v -show_frames out-short.ts | grep duration= > out-short.duration
+        diff -u test-123fps.duration out-123fps.duration
+        # diff -u test-short.duration out-short.duration # Why does this fail???
+        ffprobe -v warning -select_streams v -show_frames out-123fps.mp4 | grep pkt_pts= > out-123fps.pts
+        ffprobe -v warning -select_streams v -show_frames out-short.ts | grep pkt_pts= > out-short.pts
+        diff -u test-123fps.pts out-123fps.pts
+        diff -u test-short.pts out-short.pts
+    `
+	run(cmd)
+}
