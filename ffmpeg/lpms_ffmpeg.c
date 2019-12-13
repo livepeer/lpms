@@ -681,7 +681,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
     if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
     if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
-    if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+    if (octx->bitrate) vc->bit_rate = vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
     if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
       vc->hw_frames_ctx =
         av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
