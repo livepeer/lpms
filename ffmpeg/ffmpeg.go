@@ -28,6 +28,7 @@ const (
 	Software Acceleration = iota
 	Nvidia
 	Amd
+	Intel
 )
 
 type ComponentOptions struct {
@@ -131,6 +132,8 @@ func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, stri
 				upload = upload + "=device=" + outDev
 			}
 			return "h264_nvenc", upload + ",scale_cuda", nil
+		case Intel:
+			return "h264_vaapi", "hwupload,scale_vaapi", nil
 		}
 	case Nvidia:
 		switch outAcc {
@@ -143,6 +146,17 @@ func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, stri
 			}
 			return "h264_nvenc", "scale_cuda", nil
 		}
+	case Intel:
+		switch outAcc {
+		case Software:
+			return "libx264", "scale_vaapi", nil
+		case Intel:
+			// If we encode on a different device from decode then need to transfer
+			if outDev != "" && outDev != inDev {
+				return "", "", ErrTranscoderInp // XXX not allowed
+			}
+			return "h264_vaapi", "scale_vaapi", nil
+		}
 	}
 	return "", "", ErrTranscoderHw
 }
@@ -152,6 +166,8 @@ func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 		return C.AV_HWDEVICE_TYPE_NONE, nil
 	case Nvidia:
 		return C.AV_HWDEVICE_TYPE_CUDA, nil
+	case Intel:
+		return C.AV_HWDEVICE_TYPE_VAAPI, nil
 
 	}
 	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw

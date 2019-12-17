@@ -23,8 +23,11 @@ func main() {
 	str2accel := func(inp string) (ffmpeg.Acceleration, string) {
 		if inp == "nv" {
 			return ffmpeg.Nvidia, "nv"
+		} else if inp == "in" {
+			return ffmpeg.Intel, "in"
+		} else {
+			return ffmpeg.Software, "sw"
 		}
-		return ffmpeg.Software, "sw"
 	}
 	str2profs := func(inp string) []ffmpeg.VideoProfile {
 		profs := []ffmpeg.VideoProfile{}
@@ -57,7 +60,7 @@ func main() {
 	options := profs2opts(profiles)
 
 	var dev string
-	if accel == ffmpeg.Nvidia {
+	if accel == ffmpeg.Nvidia || accel == ffmpeg.Intel {
 		if len(os.Args) <= 4 {
 			panic("Expected device number")
 		}

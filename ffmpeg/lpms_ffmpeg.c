@@ -30,6 +30,7 @@ struct input_ctx {
   // Hardware decoding support
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;
+  enum AVPixelFormat hw_pix_fmt;
   char *device;
 
   int64_t next_pts_a, next_pts_v;
@@ -268,6 +269,36 @@ static enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
   return AV_PIX_FMT_NONE;
 }
 
+static int set_vaapi_hwframe_ctx(AVCodecContext *ctx, AVBufferRef *hw_device_ctx)
+{
+  AVBufferRef *hw_frames_ref;
+  AVHWFramesContext *frames_ctx = NULL;
+  int err = 0;
+
+  if (!(hw_frames_ref = av_hwframe_ctx_alloc(hw_device_ctx))) {
+    fprintf(stderr, "Failed to create VAAPI frame context.\n");
+    return -1;
+  }
+  frames_ctx = (AVHWFramesContext *)(hw_frames_ref->data);
+  frames_ctx->format    = AV_PIX_FMT_VAAPI;
+  frames_ctx->sw_format = AV_PIX_FMT_NV12;
+  frames_ctx->width     = ctx->width;
+  frames_ctx->height    = ctx->height;
+  frames_ctx->initial_pool_size = 20;
+  if ((err = av_hwframe_ctx_init(hw_frames_ref)) < 0) {
+    fprintf(stderr, "Failed to initialize VAAPI frame context."
+            "Error code: %s\n",av_err2str(err));
+    av_buffer_unref(&hw_frames_ref);
+    return err;
+  }
+  ctx->hw_frames_ctx = av_buffer_ref(hw_frames_ref);
+  if (!ctx->hw_frames_ctx)
+    err = AVERROR(ENOMEM);
+
+  av_buffer_unref(&hw_frames_ref);
+  return err;
+}
+
 static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *vc, const enum AVPixelFormat *pix_fmts)
 {
   AVHWFramesContext *frames;
@@ -327,7 +358,7 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     AVFilterInOut *outputs = avfilter_inout_alloc();
     AVFilterInOut *inputs  = avfilter_inout_alloc();
     AVRational time_base = ictx->ic->streams[ictx->vi]->time_base;
-    enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
+    enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_CUDA, AV_PIX_FMT_VAAPI, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
     struct filter_ctx *vf = &octx->vf;
     char *filters_descr = octx->vfilters;
     enum AVPixelFormat in_pix_fmt = ictx->vc->pix_fmt;
@@ -731,9 +762,9 @@ static void free_input(struct input_ctx *inctx)
 
 static int open_video_decoder(input_params *params, struct input_ctx *ctx)
 {
-#define dd_err(msg) { \
+#define dd_err(msg,...) { \
   if (!ret) ret = -1; \
-  fprintf(stderr, msg); \
+  fprintf(stderr, msg, ##__VA_ARGS__); \
   goto open_decoder_err; \
 }
   int ret = 0;
@@ -751,6 +782,37 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
       AVCodec *c = avcodec_find_decoder_by_name("h264_cuvid");
       if (c) codec = c;
       else fprintf(stderr, "Cuvid decoder not found; defaulting to software\n");
+    } else if (AV_CODEC_ID_H264 == codec->id &&
+                   AV_HWDEVICE_TYPE_VAAPI == params->hw_type) {
+      enum AVHWDeviceType type;
+      type = av_hwdevice_find_type_by_name("vaapi");
+      if (type == AV_HWDEVICE_TYPE_NONE) {
+        fprintf(stderr, "Device type vaapi is not supported.\n");
+        fprintf(stderr, "Available device types:");
+        while((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE)
+          fprintf(stderr, " %s", av_hwdevice_get_type_name(type));
+        fprintf(stderr, "\n");
+        ret = -1;
+        goto open_decoder_err;
+      }
+
+      AVCodec *c = NULL;
+      int i;
+      ret = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &c, 0);
+      if (c) {
+        codec = c;
+        for (i = 0;; i++) {
+          const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
+          if (!config) {
+            dd_err("Decoder %s does not support device type %s.\n", codec->name, av_hwdevice_get_type_name(type));
+          }
+          if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+              config->device_type == type) {
+            ctx->hw_pix_fmt = config->pix_fmt;
+            break;
+          }
+        }
+      } else fprintf(stderr, "Vaapi decoder not found; defaulting to software\n");
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) dd_err("Unable to alloc video codec\n");
@@ -765,7 +827,16 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
       if (ret < 0) dd_err("Unable to open hardware context for decoding\n")
       ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
-      vc->get_format = get_hw_pixfmt;
+      if (params->hw_type == AV_HWDEVICE_TYPE_VAAPI) {
+        vc->pix_fmt = AV_PIX_FMT_VAAPI;
+        int err;
+        /* set hw_frames_ctx for encoder's AVCodecContext */
+        if ((err = set_vaapi_hwframe_ctx(vc, vc->hw_device_ctx)) < 0) {
+          dd_err("Failed to set hwframe context.\n");
+        }
+      } else {
+        vc->get_format = get_hw_pixfmt;
+      }
     }
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
     ret = avcodec_open2(vc, codec, NULL);
@@ -888,6 +959,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
       break;
     }
     else if (ret < 0) dec_err("Error receiving frame from decoder\n");
+
     break;
   }
 
