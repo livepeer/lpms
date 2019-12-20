@@ -344,6 +344,19 @@ fprintf(stderr,"possible format: %s\n", av_get_pix_fmt_name(*p));
   return frames->format;
 }
 
+static enum AVPixelFormat get_vaapi_format(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts)
+{
+  const enum AVPixelFormat *p;
+
+  for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
+    if (*p == AV_PIX_FMT_VAAPI)
+      return *p;
+  }
+
+  fprintf(stderr, "Unable to decode this file using VA-API.\n");
+  return AV_PIX_FMT_NONE;
+}
+
 static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
 #define filters_err(msg) { \
@@ -834,6 +847,7 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
         if ((err = set_vaapi_hwframe_ctx(vc, vc->hw_device_ctx)) < 0) {
           dd_err("Failed to set hwframe context.\n");
         }
+        vc->get_format = get_vaapi_format;
       } else {
         vc->get_format = get_hw_pixfmt;
       }
