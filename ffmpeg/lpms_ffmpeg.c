@@ -659,8 +659,10 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 }
   int ret = 0;
 
+  // Read a packet and attempt to decode it.
+  // If decoding was not possible, return the packet anyway for streamcopy
   av_init_packet(pkt);
-  // loop until a new frame has been decoded, or EAGAIN
+  // TODO this while-loop isn't necessary anymore; clean up
   while (1) {
     AVStream *ist = NULL;
     AVCodecContext *decoder = NULL;
