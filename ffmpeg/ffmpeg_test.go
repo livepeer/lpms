@@ -810,13 +810,14 @@ func TestTranscoder_StreamCopy_Validate_B_Frames(t *testing.T) {
 
 	// Set up inputs, truncate test file
 	cmd := `
-        set -eux
-        cd "$0"
-        cp "$1"/../transcoder/test.ts .
-        ffmpeg -i test.ts -c:a copy -c:v copy -t 1 test-short.ts
+
+        ffmpeg -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -t 1 test-short.ts
 
         # sanity check some assumptions here for the following set of tests
         ffprobe -count_frames -show_streams -select_streams v test-short.ts | grep nb_read_frames=60
+
+		# Sanity check that we have B-frames in this sample
+        ffprobe -show_frames test-short.ts | grep pict_type=B
     `
 	run(cmd)
 
@@ -824,48 +825,29 @@ func TestTranscoder_StreamCopy_Validate_B_Frames(t *testing.T) {
 	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
 	out := []TranscodeOptions{
 		TranscodeOptions{
-			Oname:        dir + "/audiocopy.ts",
-			Profile:      P144p30fps16x9,
-			AudioEncoder: ComponentOptions{Name: "copy"},
-		},
-		TranscodeOptions{
 			Oname: dir + "/videocopy.ts",
-			VideoEncoder: ComponentOptions{Name: "copy", Opts: map[string]string{
-				"mpegts_flags": "resend_headers,initial_discontinuity",
-			}},
+			VideoEncoder: ComponentOptions{Name: "copy"},
 		},
 	}
 	res, err := Transcode3(in, out)
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 ||
-		res.Encoded[1].Frames != 0 {
+	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
 		t.Error("Unexpected frame counts from stream copy")
 		t.Error(res)
 	}
 
 	cmd = `
-        set -eux
-        cd "$0"
 
         # extract video track only, compare md5sums
         ffmpeg -i test-short.ts -an -c:v copy -f md5 test-video.md5
         ffmpeg -i videocopy.ts -an -c:v copy -f md5 videocopy.md5
         diff -u test-video.md5 videocopy.md5
 
-        # extract audio track only, compare md5sums
-        ffmpeg -i test-short.ts -vn -c:a copy -f md5 test-audio.md5
-        ffmpeg -i audiocopy.ts -vn -c:a copy -f md5 audiocopy.md5
-        diff -u test-audio.md5 audiocopy.md5
-
 		# ensure output has equal no of B-Frames as input		
-		ffprobe -loglevel warning -show_frames -select_streams v -show_entries frame=pict_type videocopy.ts > probe.out
-		grep pict_type=B probe.out | wc -l > read_pict_type.out
-
-		ffprobe -loglevel warning -show_frames -select_streams v -show_entries frame=pict_type test-short.ts > ffmpeg.out
-		grep pict_type=B ffmpeg.out | wc -l > ffmpeg_read_pict_type.out
-		
+		ffprobe -loglevel warning -show_frames -select_streams v -show_entries frame=pict_type videocopy.ts | grep pict_type=B | wc -l > read_pict_type.out
+		ffprobe -loglevel warning -show_frames -select_streams v -show_entries frame=pict_type test-short.ts | grep pict_type=B | wc -l > ffmpeg_read_pict_type.out
 		diff -u ffmpeg_read_pict_type.out read_pict_type.out
     `
 	run(cmd)
