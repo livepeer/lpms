@@ -804,6 +804,56 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	}
 }
 
+func TestTranscoder_StreamCopy_Validate_B_Frames(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Set up inputs, truncate test file
+	cmd := `
+
+        ffmpeg -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -t 1 test-short.ts
+
+        # sanity check some assumptions here for the following set of tests
+        ffprobe -count_frames -show_streams -select_streams v test-short.ts | grep nb_read_frames=60
+
+		# Sanity check that we have B-frames in this sample
+        ffprobe -show_frames test-short.ts | grep pict_type=B
+    `
+	run(cmd)
+
+	// Test normal stream-copy case
+	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
+	out := []TranscodeOptions{
+		TranscodeOptions{
+			Oname: dir + "/videocopy.ts",
+			VideoEncoder: ComponentOptions{Name: "copy"},
+		},
+	}
+	res, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
+		t.Error("Unexpected frame counts from stream copy")
+		t.Error(res)
+	}
+
+	cmd = `
+
+        # extract video track only, compare md5sums
+        ffmpeg -i test-short.ts -an -c:v copy -f md5 test-video.md5
+        ffmpeg -i videocopy.ts -an -c:v copy -f md5 videocopy.md5
+        diff -u test-video.md5 videocopy.md5
+
+		# ensure output has equal no of B-Frames as input		
+		ffprobe -loglevel warning -show_frames -select_streams v -show_entries frame=pict_type videocopy.ts | grep pict_type=B | wc -l > read_pict_type.out
+		ffprobe -loglevel warning -show_frames -select_streams v -show_entries frame=pict_type test-short.ts | grep pict_type=B | wc -l > ffmpeg_read_pict_type.out
+		diff -u ffmpeg_read_pict_type.out read_pict_type.out
+    `
+	run(cmd)
+
+}
+
 func TestTranscoder_Drop(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
