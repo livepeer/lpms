@@ -152,6 +152,33 @@ To run the tests on a particular GPU, use the GPU_DEVICE environment variable:
 GPU_DEVICE=3 go test -tag nvidia -run Nvidia
 ```
 
+Hardware transcoding on Intel/AMD GPU is supported. 
+
+In order to enable VAAPI support for Intel GPU following packages needs to be installed
+
+```
+sudo apt install libva-dev intel-gpu-tools
+```
+
+In order to enable VAAPI support for AMD GPU following packages needs to be installed
+
+```
+sudo apt install libva-dev mesa-va-drivers radeontop
+```
+
+To execute the vaapi tests within the `ffmpeg` directory, run this command:
+
+```
+go test -tags=vaapi -run Vaapi
+```
+
+To run the tests on a particular GPU, use the GPU_DEVICE environment variable:
+
+```
+# Runs on GPU number /dev/dri/renderD128
+GPU_DEVICE=/dev/dri/renderD128 go test -tag vaapi -run Vaapi
+```
+
 Aside from the tests themselves, there is a
 [sample program](https://github.com/livepeer/lpms/blob/master/cmd/transcoding/transcoding.go)
 that can be used as a reference to the LPMS GPU transcoding API. The sample
@@ -164,6 +191,10 @@ go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30f
 
 # nvidia processing, GPU number 2
 go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30fps16x9 nv 2
+
+# vaapi processing, GPU /dev/dri/renderD128
+go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30fps16x9 va /dev/dri/renderD128
+
 ```
 
 You can follow the development of LPMS and Livepeer @ our [forum](http://forum.livepeer.org)
