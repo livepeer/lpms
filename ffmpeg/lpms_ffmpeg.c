@@ -687,6 +687,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
       vc->hw_frames_ctx =
         av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
+      if (!vc->hw_frames_ctx) em_err("Unable to alloc hardware context\n");
     }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -825,14 +826,16 @@ static int open_input(input_params *params, struct input_ctx *ctx)
   goto open_input_err; \
 }
   AVFormatContext *ic   = NULL;
+  AVIOContext *pb       = NULL;
   char *inp = params->fname;
   int ret = 0;
 
   // open demuxer
   ic = avformat_alloc_context();
   if (!ic) dd_err("demuxer: Unable to alloc context\n");
-  ret = avio_open(&ic->pb, inp, AVIO_FLAG_READ);
+  ret = avio_open(&pb, inp, AVIO_FLAG_READ);
   if (ret < 0) dd_err("demuxer: Unable to open file\n");
+  ic->pb = pb;
   ret = avformat_open_input(&ic, NULL, NULL, NULL);
   if (ret < 0) dd_err("demuxer: Unable to open input\n");
   ctx->ic = ic;
@@ -846,7 +849,9 @@ static int open_input(input_params *params, struct input_ctx *ctx)
   return 0;
 
 open_input_err:
-fprintf(stderr, "Freeing input based on OPEN INPUT error\n");
+  fprintf(stderr, "Freeing input based on OPEN INPUT error\n");
+  avio_close(pb); // need to close manually, avformat_open_input
+                  // not closes it in case of error
   free_input(ctx);
   return ret;
 #undef dd_err
