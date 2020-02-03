@@ -841,6 +841,15 @@ static int open_input(input_params *params, struct input_ctx *ctx)
   ctx->ic = ic;
   ret = avformat_find_stream_info(ic, NULL);
   if (ret < 0) dd_err("Unable to find input info\n");
+  if (AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
+    for( int i = 0; i < ic->nb_streams; i++ ) {
+      if( ic->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+          ic->streams[i]->codec->pix_fmt != AV_PIX_FMT_YUV420P ) {
+        ret = lpms_ERR_INPUT_PIXFMT;
+        dd_err("GPU transcoding only supports yuv420p pixel format, please try again with yuv420p stream\n");
+      }
+    }
+  }
   ret = open_video_decoder(params, ctx);
   if (ret < 0) dd_err("Unable to open video decoder\n")
   ret = open_audio_decoder(params, ctx);
