@@ -800,15 +800,6 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
                        AV_HWDEVICE_TYPE_VAAPI == params->hw_type) {
       enum AVHWDeviceType type;
       type = av_hwdevice_find_type_by_name("vaapi");
-      if (type == AV_HWDEVICE_TYPE_NONE) {
-        fprintf(stderr, "Device type vaapi is not supported.\n");
-        fprintf(stderr, "Available device types:");
-        while((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE)
-          fprintf(stderr, " %s", av_hwdevice_get_type_name(type));
-        fprintf(stderr, "\n");
-        ret = -1;
-        goto open_decoder_err;
-      }
 
       int i;
       for (i = 0;; i++) {
