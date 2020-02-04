@@ -30,7 +30,6 @@ struct input_ctx {
   // Hardware decoding support
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;
-  enum AVPixelFormat hw_pix_fmt;
   char *device;
 
   int64_t next_pts_a, next_pts_v;
@@ -811,23 +810,17 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
         goto open_decoder_err;
       }
 
-      AVCodec *c = NULL;
       int i;
-      ret = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &c, 0);
-      if (c) {
-        codec = c;
-        for (i = 0;; i++) {
-          const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
-          if (!config) {
-            dd_err("Decoder %s does not support device type %s.\n", codec->name, av_hwdevice_get_type_name(type));
-          }
-          if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
-                  config->device_type == type) {
-            ctx->hw_pix_fmt = config->pix_fmt;
-            break;
-          }
+      for (i = 0;; i++) {
+        const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
+        if (!config) {
+          dd_err("Decoder %s does not support device type %s.\n", codec->name, av_hwdevice_get_type_name(type));
         }
-      } else fprintf(stderr, "Vaapi decoder not found; defaulting to software\n");
+        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+                config->device_type == type) {
+          break;
+        }
+      }
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) dd_err("Unable to alloc video codec\n");
@@ -1063,7 +1056,8 @@ int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVS
   }
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
-      AV_HWDEVICE_TYPE_CUDA == octx->hw_type && !frame) {
+      (AV_HWDEVICE_TYPE_CUDA == octx->hw_type || AV_HWDEVICE_TYPE_VAAPI == octx->hw_type)
+       && !frame) {
     avcodec_flush_buffers(encoder);
   }
 

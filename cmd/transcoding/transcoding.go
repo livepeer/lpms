@@ -25,9 +25,8 @@ func main() {
 			return ffmpeg.Nvidia, "nv"
 		} else if inp == "va" {
 			return ffmpeg.VAAPI, "va"
-		} else {
-			return ffmpeg.Software, "sw"
 		}
+		return ffmpeg.Software, "sw"
 	}
 	str2profs := func(inp string) []ffmpeg.VideoProfile {
 		profs := []ffmpeg.VideoProfile{}
@@ -62,7 +61,7 @@ func main() {
 	var dev string
 	if accel == ffmpeg.Nvidia || accel == ffmpeg.VAAPI {
 		if len(os.Args) <= 4 {
-			panic("Expected device number")
+			panic("Expected device id")
 		}
 		dev = os.Args[4]
 	}
