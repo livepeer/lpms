@@ -743,16 +743,6 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
   AVCodec *codec = NULL;
   AVFormatContext *ic = ctx->ic;
 
-  if (AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
-    for( int i = 0; i < ic->nb_streams; i++ ) {
-      if( ic->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO &&
-          ic->streams[i]->codec->pix_fmt != AV_PIX_FMT_YUV420P ) {
-        ret = lpms_ERR_INPUT_PIXFMT;
-        dd_err("GPU transcoding only supports yuv420p pixel format, please try again with yuv420p stream\n");
-      }
-    }
-  }
-
   // open video decoder
   ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
   if (ctx->dv) ; // skip decoding video
@@ -764,6 +754,10 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
       AVCodec *c = avcodec_find_decoder_by_name("h264_cuvid");
       if (c) codec = c;
       else fprintf(stderr, "Cuvid decoder not found; defaulting to software\n");
+      if (AV_PIX_FMT_YUV420P != ic->streams[ctx->vi]->codecpar->format) {
+        ret = lpms_ERR_INPUT_PIXFMT;
+        dd_err("Non 4:2:0 pixel format detected in input\n");
+      }
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) dd_err("Unable to alloc video codec\n");
