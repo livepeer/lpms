@@ -103,31 +103,23 @@ func TestNvidia_Transcoding(t *testing.T) {
 
 func TestNvidia_Pixfmts(t *testing.T) {
 
-	return // This test only seems to work with P100
-
+	// Following test case validates pixel format at the decoding end
+	// Currently only YUV 4:2:0 is supported
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
 	prof := P240p30fps16x9
 
-	// check valid and invalid pixel formats
 	cmd := `
-    set -eux
-    cd "$0"
-    cp "$1/../transcoder/test.ts" test.ts
-
-    # sanity check original input type is 420p
+	cp "$1/../transcoder/test.ts" test.ts
+	# sanity check original input type is 420p
     ffmpeg -loglevel warning -i test.ts -an -c:v copy -t 1 in420p.mp4
     ffprobe -loglevel warning in420p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
 
     # generate unsupported 422p type
     ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuv422p -t 1 in422p.mp4
     ffprobe -loglevel warning in422p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv422p
-
-    # generate semi-supported 444p type (encoding only)
-    ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuv444p -t 1 in444p.mp4
-    ffprobe -loglevel warning in444p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv444p
-  `
+	`
 	run(cmd)
 
 	// sanity check
@@ -159,6 +151,26 @@ func TestNvidia_Pixfmts(t *testing.T) {
 	if err == nil || err.Error() != "Unsupported input pixel format" {
 		t.Error(err)
 	}
+
+	cmd = `
+    # Check that 420p input produces 420p output for hw -> hw
+    ffprobe -loglevel warning out420p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
+  `
+	run(cmd)
+
+	return
+	// Following test vaidates YUV 4:4:4 pixel format encoding which is only supported on limited set of devices for e.g. P100
+	// https://developer.nvidia.com/video-encode-decode-gpu-support-matrix
+
+
+	// check valid and invalid pixel formats
+	cmd = `
+    # generate semi-supported 444p type (encoding only)
+    ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuv444p -t 1 in444p.mp4
+    ffprobe -loglevel warning in444p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv444p
+  `
+	run(cmd)
+
 
 	// 444p is encodeable but not decodeable; produces a different error
 	// that is only caught at decode time. Attempt to detect decode bailout.
@@ -194,12 +206,10 @@ func TestNvidia_Pixfmts(t *testing.T) {
 	}
 
 	cmd = `
-    set -eux
-    cd "$0"
-
-    # Check that 420p input produces 420p output for hw -> hw
-    ffprobe -loglevel warning out420p.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
-
+	# 422p input (with sw decode) produces 444p on P100.
+    # Cards that don't do 444p may do 420p instead (untested)
+	ffprobe -loglevel warning out422_to_default.mp4  -show_streams -select_streams v | grep 'pix_fmt=\(yuv420p\|yuv444p\)'
+	
     # 422p input (with sw decode) produces 444p on P100.
     # Cards that don't do 444p may do 420p instead (untested)
     ffprobe -loglevel warning out422_to_default.mp4  -show_streams -select_streams v | grep 'pix_fmt=\(yuv420p\|yuv444p\)'
