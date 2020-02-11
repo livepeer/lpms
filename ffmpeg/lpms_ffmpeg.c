@@ -754,6 +754,10 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
       AVCodec *c = avcodec_find_decoder_by_name("h264_cuvid");
       if (c) codec = c;
       else fprintf(stderr, "Cuvid decoder not found; defaulting to software\n");
+      if (AV_PIX_FMT_YUV420P != ic->streams[ctx->vi]->codecpar->format) {
+        ret = lpms_ERR_INPUT_PIXFMT;
+        dd_err("Non 4:2:0 pixel format detected in input\n");
+      }
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) dd_err("Unable to alloc video codec\n");
