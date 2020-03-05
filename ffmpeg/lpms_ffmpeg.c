@@ -9,8 +9,6 @@
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 
-#include <pthread.h>
-
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
 const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
@@ -32,11 +30,12 @@ struct input_ctx {
   enum AVHWDeviceType hw_type;
   char *device;
 
-  int64_t next_pts_a, next_pts_v;
-
   // Decoder flush
   AVPacket *first_pkt;
   int flushed;
+
+  // Filter flush
+  AVFrame *last_frame_v, *last_frame_a;
 };
 
 struct filter_ctx {
@@ -47,6 +46,8 @@ struct filter_ctx {
   AVFilterContext *src_ctx;
 
   uint8_t *hwframes; // GPU frame pool data
+  int64_t flush_offset;
+  int flushed, flush_count;
 };
 
 struct output_ctx {
@@ -215,13 +216,14 @@ static void close_output(struct output_ctx *octx)
   }
   if (octx->vc && AV_HWDEVICE_TYPE_NONE == octx->hw_type) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
-  free_filter(&octx->vf);
-  free_filter(&octx->af);
+  octx->af.flushed = octx->vf.flushed = 0;
 }
 
 static void free_output(struct output_ctx *octx) {
   close_output(octx);
   if (octx->vc) avcodec_free_context(&octx->vc);
+  free_filter(&octx->vf);
+  free_filter(&octx->af);
 }
 
 
@@ -748,6 +750,8 @@ static void free_input(struct input_ctx *inctx)
   }
   if (inctx->ac) avcodec_free_context(&inctx->ac);
   if (inctx->hw_device_ctx) av_buffer_unref(&inctx->hw_device_ctx);
+  if (inctx->last_frame_v) av_frame_free(&inctx->last_frame_v);
+  if (inctx->last_frame_a) av_frame_free(&inctx->last_frame_a);
 }
 
 static int open_video_decoder(input_params *params, struct input_ctx *ctx)
@@ -867,6 +871,10 @@ static int open_input(input_params *params, struct input_ctx *ctx)
   if (ret < 0) dd_err("Unable to open video decoder\n")
   ret = open_audio_decoder(params, ctx);
   if (ret < 0) dd_err("Unable to open audio decoder\n")
+  ctx->last_frame_v = av_frame_alloc();
+  if (!ctx->last_frame_v) dd_err("Unable to alloc last_frame_v");
+  ctx->last_frame_a = av_frame_alloc();
+  if (!ctx->last_frame_a) dd_err("Unable to alloc last_frame_a");
 
   return 0;
 
@@ -1037,6 +1045,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   goto proc_cleanup; \
 }
   int ret = 0;
+  int is_flushing = 0;
 
   if (!encoder) proc_err("Trying to transmux; not supported")
 
@@ -1055,15 +1064,24 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     ret = init_video_filters(ictx, octx);
     if (ret < 0) return lpms_ERR_FILTERS;
   }
+  // Start filter flushing process if necessary
+  if (!inf && !filter->flushed) {
+    // Set input frame to the last frame
+    // And increment pts offset by pkt_duration
+    // TODO It may make sense to use the expected output packet duration instead
+    int is_video = AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type;
+    AVFrame *frame = is_video ? ictx->last_frame_v : ictx->last_frame_a;
+    filter->flush_offset += frame->pkt_duration;
+    inf = frame;
+    inf->opaque = (void*)inf->pts; // value doesn't matter; just needs to be set
+    is_flushing = 1;
+  }
   if (inf) {
+    // Apply the offset from filter flushing, then reset for the next output
+    inf->pts += filter->flush_offset;
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
+    inf->pts -= filter->flush_offset;
     if (ret < 0) proc_err("Error feeding the filtergraph");
-  } else {
-    // We need to set the pts at EOF to the *end* of the last packet
-    // in order to avoid discarding any queued packets
-    int64_t next_pts = AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type ?
-      ictx->next_pts_v : ictx->next_pts_a;
-    av_buffersrc_close(filter->src_ctx, next_pts, AV_BUFFERSRC_FLAG_PUSH);
   }
 
   while (1) {
@@ -1078,6 +1096,15 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       if (inf) return ret;
       frame = NULL;
     } else if (ret < 0) proc_err("Error consuming the filtergraph\n");
+    if (frame && frame->opaque) {
+      // opaque being set means it's a flush packet
+      filter->flush_count++;
+      // don't set flushed flag in case this is a flush from a previous segment
+      if (is_flushing) filter->flushed = 1;
+      frame->opaque = NULL; // reset just to be sure
+      continue;
+    }
+    if (frame) frame->pts -= filter->flush_count;
     ret = encode(encoder, frame, octx, ost);
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
@@ -1179,8 +1206,6 @@ int transcode(struct transcode_thread *h,
       if (octx->vc) {
         ret = add_video_stream(octx, ictx);
         if (ret < 0) main_err("Unable to re-add video stream\n");
-        ret = init_video_filters(ictx, octx);
-        if (ret < 0) main_err("Unable to re-open video filter\n")
       } else fprintf(stderr, "no video stream\n");
 
       // re-attach audio encoder
@@ -1202,6 +1227,7 @@ int transcode(struct transcode_thread *h,
   while (1) {
     int has_frame = 0;
     AVStream *ist = NULL;
+    AVFrame *last_frame = NULL;
     av_frame_unref(dframe);
     ret = process_in(ictx, dframe, &ipkt);
     if (ret == AVERROR_EOF) break;
@@ -1216,20 +1242,25 @@ int transcode(struct transcode_thread *h,
       // width / height will be zero for pure streamcopy (no decoding)
       decoded_results->frames += dframe->width && dframe->height;
       decoded_results->pixels += dframe->width * dframe->height;
+      has_frame = has_frame && dframe->width && dframe->height;
+      if (has_frame) last_frame = ictx->last_frame_v;
+    } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
+      has_frame = has_frame && dframe->nb_samples;
+      if (has_frame) last_frame = ictx->last_frame_a;
+    }
       if (has_frame) {
         int64_t dur = 0;
         if (dframe->pkt_duration) dur = dframe->pkt_duration;
-        else if (ist->avg_frame_rate.den) {
-          dur = av_rescale_q(1, av_inv_q(ist->avg_frame_rate), ist->time_base);
+        else if (ist->r_frame_rate.den) {
+          dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
         } else {
           // TODO use better heuristics for this; look at how ffmpeg does it
-          //fprintf(stderr, "Could not determine next pts; filter might drop\n");
+          fprintf(stderr, "Could not determine next pts; filter might drop\n");
         }
-        ictx->next_pts_v = dframe->pts + dur;
+        dframe->pkt_duration = dur;
+        av_frame_unref(last_frame);
+        av_frame_ref(last_frame, dframe);
       }
-    } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
-      if (has_frame) ictx->next_pts_a = dframe->pts + dframe->pkt_duration;
-    }
 
     for (i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];
