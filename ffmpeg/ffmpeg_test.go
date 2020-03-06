@@ -403,7 +403,7 @@ func TestTranscoderStatistics_Decoded(t *testing.T) {
 	// Ensure decoded re-transcode stats match original transcoded statistics
 	for i, p := range profiles {
 		oname := fmt.Sprintf("%s/out_%d.ts", dir, i)
-		out := []TranscodeOptions{TranscodeOptions{Profile: p, Oname: oname}}
+		out := []TranscodeOptions{{Profile: p, Oname: oname}}
 		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test_%d.ts", dir, i)}
 		res, err := Transcode3(in, out)
 		if err != nil {
@@ -576,7 +576,7 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
 
 	// This will be adjusted to 124x70 by the rescaler (since source is 16:9)
 	pAdj := VideoProfile{Resolution: "124x456", Framerate: 16, Bitrate: "100k"}
-	out := []TranscodeOptions{TranscodeOptions{Profile: pAdj, Oname: dir + "/adj.mp4"}}
+	out := []TranscodeOptions{{Profile: pAdj, Oname: dir + "/adj.mp4"}}
 	res, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/test.ts"}, out)
 	if err != nil || len(res.Encoded) <= 0 {
 		t.Error(err)
@@ -606,7 +606,7 @@ func TestTranscoder_MuxerOpts(t *testing.T) {
 	// Set the muxer itself given a different extension
 	_, err := Transcode3(&TranscodeOptionsIn{
 		Fname: dir + "/inp-short.ts",
-	}, []TranscodeOptions{TranscodeOptions{
+	}, []TranscodeOptions{{
 		Oname:   dir + "/out-mkv.mp4",
 		Profile: prof,
 		Muxer:   ComponentOptions{Name: "matroska"},
@@ -619,7 +619,7 @@ func TestTranscoder_MuxerOpts(t *testing.T) {
 	// Pass in some options to muxer
 	_, err = Transcode3(&TranscodeOptionsIn{
 		Fname: dir + "/inp.ts",
-	}, []TranscodeOptions{TranscodeOptions{
+	}, []TranscodeOptions{{
 		Oname:   dir + "/out.mpd",
 		Profile: prof,
 		Muxer: ComponentOptions{
@@ -675,7 +675,7 @@ func TestTranscoder_EncoderOpts(t *testing.T) {
 
 	prof := P720p60fps16x9
 	in := &TranscodeOptionsIn{Fname: dir + "/test.ts"}
-	out := []TranscodeOptions{TranscodeOptions{
+	out := []TranscodeOptions{{
 		Oname:        dir + "/out.nut",
 		Profile:      prof,
 		VideoEncoder: ComponentOptions{Name: "snow"},
@@ -725,12 +725,12 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	// Test normal stream-copy case
 	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
 	out := []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:        dir + "/audiocopy.ts",
 			Profile:      P144p30fps16x9,
 			AudioEncoder: ComponentOptions{Name: "copy"},
 		},
-		TranscodeOptions{
+		{
 			Oname: dir + "/videocopy.ts",
 			VideoEncoder: ComponentOptions{Name: "copy", Opts: map[string]string{
 				"mpegts_flags": "resend_headers,initial_discontinuity",
@@ -775,7 +775,7 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	run(cmd)
 	in = &TranscodeOptionsIn{Fname: dir + "/videoonly.ts"}
 	out = []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:        dir + "/novideo.ts",
 			VideoEncoder: ComponentOptions{Name: "copy"},
 		},
@@ -789,7 +789,7 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	}
 	in = &TranscodeOptionsIn{Fname: dir + "/audioonly.ts"}
 	out = []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:        dir + "/noaudio.ts",
 			Profile:      P144p30fps16x9,
 			AudioEncoder: ComponentOptions{Name: "copy"},
@@ -824,8 +824,8 @@ func TestTranscoder_StreamCopy_Validate_B_Frames(t *testing.T) {
 	// Test normal stream-copy case
 	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
 	out := []TranscodeOptions{
-		TranscodeOptions{
-			Oname: dir + "/videocopy.ts",
+		{
+			Oname:        dir + "/videocopy.ts",
 			VideoEncoder: ComponentOptions{Name: "copy"},
 		},
 	}
@@ -872,7 +872,7 @@ func TestTranscoder_Drop(t *testing.T) {
 	// Normal case : drop only video
 	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
 	out := []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:        dir + "/novideo.ts",
 			VideoEncoder: ComponentOptions{Name: "drop"},
 		},
@@ -887,7 +887,7 @@ func TestTranscoder_Drop(t *testing.T) {
 
 	// Normal case: drop only audio
 	out = []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:        dir + "/noaudio.ts",
 			AudioEncoder: ComponentOptions{Name: "drop"},
 			Profile:      P144p30fps16x9,
@@ -902,7 +902,7 @@ func TestTranscoder_Drop(t *testing.T) {
 	}
 
 	// Test error when trying to mux no streams
-	out = []TranscodeOptions{TranscodeOptions{
+	out = []TranscodeOptions{{
 		Oname:        dir + "/none.mp4",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 		AudioEncoder: ComponentOptions{Name: "drop"},
@@ -913,7 +913,7 @@ func TestTranscoder_Drop(t *testing.T) {
 	}
 
 	// Test error when missing profile in default video configuration
-	out = []TranscodeOptions{TranscodeOptions{
+	out = []TranscodeOptions{{
 		Oname:        dir + "/profile.mp4",
 		AudioEncoder: ComponentOptions{Name: "drop"},
 	}}
@@ -924,7 +924,7 @@ func TestTranscoder_Drop(t *testing.T) {
 
 	// Sanity check default transcode options with single-stream input
 	in.Fname = dir + "/noaudio.ts"
-	out = []TranscodeOptions{TranscodeOptions{Oname: dir + "/encoded-video.mp4", Profile: P144p30fps16x9}}
+	out = []TranscodeOptions{{Oname: dir + "/encoded-video.mp4", Profile: P144p30fps16x9}}
 	res, err = Transcode3(in, out)
 	if err != nil {
 		t.Error(err)
@@ -933,7 +933,7 @@ func TestTranscoder_Drop(t *testing.T) {
 		t.Error("Unexpected encoded/decoded frame counts ", res.Decoded.Frames, res.Encoded[0].Frames)
 	}
 	in.Fname = dir + "/novideo.ts"
-	out = []TranscodeOptions{TranscodeOptions{Oname: dir + "/encoded-audio.mp4", Profile: P144p30fps16x9}}
+	out = []TranscodeOptions{{Oname: dir + "/encoded-audio.mp4", Profile: P144p30fps16x9}}
 	res, err = Transcode3(in, out)
 	if err != nil {
 		t.Error(err)
@@ -948,31 +948,31 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	in := &TranscodeOptionsIn{Fname: "../transcoder/test.ts"}
-	out := []TranscodeOptions{TranscodeOptions{
+	out := []TranscodeOptions{{
 		Oname:        dir + "/videoonly.mp4",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "drop"},
-	}, TranscodeOptions{
+	}, {
 		Oname:        dir + "/audioonly.mp4",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
-	}, TranscodeOptions{
+	}, {
 		// Avoids ADTS to ASC conversion
 		// which changes the bitstream
 		Oname:        dir + "/audioonly.ts",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
-	}, TranscodeOptions{
+	}, {
 		Oname:        dir + "/audio.md5",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
 		Muxer:        ComponentOptions{Name: "md5"},
-	}, TranscodeOptions{
+	}, {
 		Oname:        dir + "/video.md5",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "drop"},
 		Muxer:        ComponentOptions{Name: "md5"},
-	}, TranscodeOptions{
+	}, {
 		Oname:        dir + "/copy.mp4",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
@@ -1021,11 +1021,11 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 
 	// Test specifying a copy or a drop for a stream that does not exist
 	in.Fname = dir + "/videoonly.mp4"
-	out = []TranscodeOptions{TranscodeOptions{
+	out = []TranscodeOptions{{
 		Oname:        dir + "/videoonly-copy.mp4",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
-	}, TranscodeOptions{
+	}, {
 		Oname:        dir + "/videoonly-copy-2.mp4",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "drop"},
@@ -1037,7 +1037,7 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 
 	// Test mp4-to-mpegts; involves an implicit bitstream conversion to annex B
 	in.Fname = dir + "/videoonly.mp4"
-	out = []TranscodeOptions{TranscodeOptions{
+	out = []TranscodeOptions{{
 		Oname:        dir + "/videoonly-copy.ts",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 	}}
@@ -1047,7 +1047,7 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 	}
 	// sanity check the md5sum of the mp4-to-mpegts result
 	in.Fname = dir + "/videoonly-copy.ts"
-	out = []TranscodeOptions{TranscodeOptions{
+	out = []TranscodeOptions{{
 		Oname:        dir + "/videoonly-copy.md5",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		Muxer:        ComponentOptions{Name: "md5"},
@@ -1070,11 +1070,11 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 
 	// Encode one stream of a short sample while copying / dropping another
 	in.Fname = dir + "/test-short.ts"
-	out = []TranscodeOptions{TranscodeOptions{
+	out = []TranscodeOptions{{
 		Oname:        dir + "/encoded-video.mp4",
 		Profile:      P144p30fps16x9,
 		AudioEncoder: ComponentOptions{Name: "drop"},
-	}, TranscodeOptions{
+	}, {
 		Oname:        dir + "/encoded-audio.mp4",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 	}}
@@ -1108,7 +1108,7 @@ func TestTranscoder_RepeatedTranscodes(t *testing.T) {
 
 	// Initial set up; convert 60fps input to 30fps (1 second's worth)
 	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
-	out := []TranscodeOptions{TranscodeOptions{Oname: dir + "/0.ts", Profile: P144p30fps16x9}}
+	out := []TranscodeOptions{{Oname: dir + "/0.ts", Profile: P144p30fps16x9}}
 	res, err := Transcode3(in, out)
 	if err != nil || res.Decoded.Frames != 62 || res.Encoded[0].Frames != 31 {
 		t.Error("Unexpected preconditions ", err, res)
@@ -1131,7 +1131,7 @@ func TestTranscoder_RepeatedTranscodes(t *testing.T) {
 
 	// Do the same but with audio. This yields a 30fps file.
 	in = &TranscodeOptionsIn{Fname: dir + "/test-short-with-audio.ts"}
-	out = []TranscodeOptions{TranscodeOptions{Oname: dir + "/audio-0.ts", Profile: P144p30fps16x9}}
+	out = []TranscodeOptions{{Oname: dir + "/audio-0.ts", Profile: P144p30fps16x9}}
 	res, err = Transcode3(in, out)
 	if err != nil || res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 {
 		t.Error("Unexpected preconditions ", err, res)
@@ -1172,7 +1172,7 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	run(cmd)
 
 	in := &TranscodeOptionsIn{Fname: dir + "/test.ts"}
-	out := []TranscodeOptions{TranscodeOptions{Oname: dir + "/out.mp4", Profile: p144p60fps}}
+	out := []TranscodeOptions{{Oname: dir + "/out.mp4", Profile: p144p60fps}}
 	res, err := Transcode3(in, out)
 	if err != nil {
 		t.Error(err)
@@ -1219,8 +1219,8 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	// Sanity check we still get the same results with multiple outputs?
 	in.Fname = dir + "/test.ts"
 	out = []TranscodeOptions{
-		TranscodeOptions{Oname: dir + "/out2.ts", Profile: p144p60fps},
-		TranscodeOptions{Oname: dir + "/out2.mp4", Profile: p144p60fps},
+		{Oname: dir + "/out2.ts", Profile: p144p60fps},
+		{Oname: dir + "/out2.mp4", Profile: p144p60fps},
 	}
 	res, err = Transcode3(in, out)
 	if err != nil {
@@ -1323,7 +1323,7 @@ nb_read_frames=%d
 
 	// no audio + 60fps input
 	in := &TranscodeOptionsIn{Fname: dir + "/test-noaudio.ts"}
-	out := []TranscodeOptions{TranscodeOptions{
+	out := []TranscodeOptions{{
 		Oname:   dir + "/out-noaudio.ts",
 		Profile: P144p30fps16x9,
 	}}
@@ -1399,7 +1399,7 @@ func TestTranscoder_PassthroughFPS(t *testing.T) {
         ffprobe -v warning -select_streams v -show_frames test-short.ts | grep pkt_pts= > test-short.pts
     `
 	run(cmd)
-	out := []TranscodeOptions{TranscodeOptions{Profile: P144p30fps16x9}}
+	out := []TranscodeOptions{{Profile: P144p30fps16x9}}
 	out[0].Profile.Framerate = 0 // Passthrough!
 
 	// Check a somewhat normal passthru case

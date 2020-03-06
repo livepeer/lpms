@@ -34,7 +34,7 @@ func TestNvidia_Transcoding(t *testing.T) {
 		Fname: fname,
 		Accel: Nvidia,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Software,
@@ -49,7 +49,7 @@ func TestNvidia_Transcoding(t *testing.T) {
 		Fname: fname,
 		Accel: Software,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Nvidia,
@@ -64,7 +64,7 @@ func TestNvidia_Transcoding(t *testing.T) {
 		Fname: fname,
 		Accel: Nvidia,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Nvidia,
@@ -79,7 +79,7 @@ func TestNvidia_Transcoding(t *testing.T) {
 		Fname: fname,
 		Accel: Software,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   dir + "/sw.ts",
 			Profile: prof,
 			Accel:   Software,
@@ -127,7 +127,7 @@ func TestNvidia_Pixfmts(t *testing.T) {
 		Fname: dir + "/in420p.mp4",
 		Accel: Nvidia,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   dir + "/out420p.mp4",
 			Profile: prof,
 			Accel:   Nvidia,
@@ -142,7 +142,7 @@ func TestNvidia_Pixfmts(t *testing.T) {
 		Fname: dir + "/in422p.mp4",
 		Accel: Nvidia,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   dir + "/out422p.mp4",
 			Profile: prof,
 			Accel:   Software,
@@ -162,7 +162,6 @@ func TestNvidia_Pixfmts(t *testing.T) {
 	// Following test vaidates YUV 4:4:4 pixel format encoding which is only supported on limited set of devices for e.g. P100
 	// https://developer.nvidia.com/video-encode-decode-gpu-support-matrix
 
-
 	// check valid and invalid pixel formats
 	cmd = `
     # generate semi-supported 444p type (encoding only)
@@ -171,14 +170,13 @@ func TestNvidia_Pixfmts(t *testing.T) {
   `
 	run(cmd)
 
-
 	// 444p is encodeable but not decodeable; produces a different error
 	// that is only caught at decode time. Attempt to detect decode bailout.
 	err = Transcode2(&TranscodeOptionsIn{
 		Fname: dir + "/in444p.mp4",
 		Accel: Nvidia,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   dir + "/out444p.mp4",
 			Profile: prof,
 			Accel:   Nvidia,
@@ -195,7 +193,7 @@ func TestNvidia_Pixfmts(t *testing.T) {
 		Fname: dir + "/in422p.mp4",
 		Accel: Software,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   dir + "/out422_to_default.mp4",
 			Profile: prof,
 			Accel:   Nvidia,
@@ -248,30 +246,30 @@ func TestNvidia_Transcoding_Multiple(t *testing.T) {
 
 	mkoname := func(i int) string { return fmt.Sprintf("%s/%d.ts", dir, i) }
 	out := []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname: mkoname(0),
 			// pass through resolution has different behavior;
 			// basically bypasses the scale filter
 			Profile: orig,
 			Accel:   Nvidia,
 		},
-		TranscodeOptions{
+		{
 			Oname:   mkoname(1),
 			Profile: prof,
 			Accel:   Nvidia,
 		},
-		TranscodeOptions{
+		{
 			Oname:   mkoname(2),
 			Profile: orig,
 			Accel:   Software,
 		},
-		TranscodeOptions{
+		{
 			Oname:   mkoname(3),
 			Profile: prof,
 			Accel:   Software,
 		},
 		// another gpu rendition for good measure?
-		TranscodeOptions{
+		{
 			Oname:   mkoname(4),
 			Profile: prof,
 			Accel:   Nvidia,
@@ -317,7 +315,7 @@ func TestNvidia_Devices(t *testing.T) {
 		Accel:  Nvidia,
 		Device: device,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Software,
@@ -332,7 +330,7 @@ func TestNvidia_Devices(t *testing.T) {
 		Fname: fname,
 		Accel: Software,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Nvidia,
@@ -349,7 +347,7 @@ func TestNvidia_Devices(t *testing.T) {
 		Accel:  Nvidia,
 		Device: device,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Nvidia,
@@ -365,7 +363,7 @@ func TestNvidia_Devices(t *testing.T) {
 		Accel:  Nvidia,
 		Device: "0",
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Nvidia,
@@ -382,7 +380,7 @@ func TestNvidia_Devices(t *testing.T) {
 		Accel:  Nvidia,
 		Device: "9999",
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Software,
@@ -397,7 +395,7 @@ func TestNvidia_Devices(t *testing.T) {
 		Fname: fname,
 		Accel: Software,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Nvidia,
@@ -441,7 +439,7 @@ func TestNvidia_DrainFilters(t *testing.T) {
 		Fname: fname,
 		Accel: Nvidia,
 	}, []TranscodeOptions{
-		TranscodeOptions{
+		{
 			Oname:   oname,
 			Profile: prof,
 			Accel:   Nvidia,
@@ -541,15 +539,15 @@ func TestNvidia_CountEncodedFrames(t *testing.T) {
 		p60fps.Framerate = 60
 		p120fps := P144p30fps16x9
 		p120fps.Framerate = 120
-		out := []TranscodeOptions{TranscodeOptions{
+		out := []TranscodeOptions{{
 			Oname:   fmt.Sprintf("%s/out_30fps_%d.ts", dir, i),
 			Profile: P144p30fps16x9,
 			Accel:   Nvidia,
-		}, TranscodeOptions{
+		}, {
 			Oname:   fmt.Sprintf("%s/out_60fps_%d.ts", dir, i),
 			Profile: p60fps,
 			Accel:   Nvidia,
-		}, TranscodeOptions{
+		}, {
 			Oname:   fmt.Sprintf("%s/out_120fps_%d.ts", dir, i),
 			Profile: p120fps,
 			Accel:   Nvidia,
@@ -584,7 +582,7 @@ func TestNvidia_RepeatedSpecialOpts(t *testing.T) {
 	// At some point we forgot to set the muxer type in reopened outputs
 	// This used to cause an error, so just check that it's resolved
 	in := &TranscodeOptionsIn{Accel: Nvidia}
-	out := []TranscodeOptions{TranscodeOptions{
+	out := []TranscodeOptions{{
 		Oname:        "-",
 		Profile:      P144p30fps16x9,
 		VideoEncoder: ComponentOptions{Opts: map[string]string{"zerolatency": "1"}},
@@ -615,21 +613,21 @@ func TestNvidia_API_MixedOutput(t *testing.T) {
 	tc := NewTranscoder()
 	for i := 0; i < 4; i++ {
 		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
-		out := []TranscodeOptions{TranscodeOptions{
+		out := []TranscodeOptions{{
 			Oname:        fmt.Sprintf("%s/%d.md5", dir, i),
 			AudioEncoder: ComponentOptions{Name: "drop"},
 			VideoEncoder: ComponentOptions{Name: "copy"},
 			Muxer:        ComponentOptions{Name: "md5"},
-		}, TranscodeOptions{
+		}, {
 			Oname:        fmt.Sprintf("%s/nv_%d.ts", dir, i),
 			Profile:      profile,
 			AudioEncoder: ComponentOptions{Name: "copy"},
 			Accel:        Nvidia,
-		}, TranscodeOptions{
+		}, {
 			Oname:   fmt.Sprintf("%s/nv_audio_encode_%d.ts", dir, i),
 			Profile: profile,
 			Accel:   Nvidia,
-		}, TranscodeOptions{
+		}, {
 			Oname:   fmt.Sprintf("%s/sw_%d.ts", dir, i),
 			Profile: profile,
 		}}
@@ -702,21 +700,21 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 	idx := []int{1, 0, 3, 2}
 	for _, i := range idx {
 		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
-		out := []TranscodeOptions{TranscodeOptions{
+		out := []TranscodeOptions{{
 			Oname:        fmt.Sprintf("%s/%d.md5", dir, i),
 			AudioEncoder: ComponentOptions{Name: "drop"},
 			VideoEncoder: ComponentOptions{Name: "copy"},
 			Muxer:        ComponentOptions{Name: "md5"},
-		}, TranscodeOptions{
+		}, {
 			Oname:        fmt.Sprintf("%s/nv_%d.ts", dir, i),
 			Profile:      profile,
 			AudioEncoder: ComponentOptions{Name: "copy"},
 			Accel:        Nvidia,
-		}, TranscodeOptions{
+		}, {
 			Oname:   fmt.Sprintf("%s/nv_audio_encode_%d.ts", dir, i),
 			Profile: profile,
 			Accel:   Nvidia,
-		}, TranscodeOptions{
+		}, {
 			Oname:   fmt.Sprintf("%s/sw_%d.ts", dir, i),
 			Profile: profile,
 		}}
