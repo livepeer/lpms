@@ -41,8 +41,6 @@ func TestSegmenter_DeleteSegments(t *testing.T) {
 
 	// sanity check that segmented outputs > playlist length
 	cmd := `
-		set -eux
-		cd "$0"
 		# default test.ts is a bit short so make it a bit longer
 		cp "$1/../transcoder/test.ts" test.ts
 		ffmpeg -loglevel warning -i "concat:test.ts|test.ts|test.ts" -c copy long.ts
@@ -60,8 +58,6 @@ func TestSegmenter_DeleteSegments(t *testing.T) {
 
 	// check that segments have been deleted by counting output ts files
 	cmd = `
-		set -eux
-		cd "$0"
 		[ $(ls out_*.ts | wc -l) -eq 6 ]
 	`
 	run(cmd)
@@ -76,9 +72,6 @@ func TestSegmenter_StreamOrdering(t *testing.T) {
 
 	// Craft an input that has a subtitle, audio and video stream, in that order
 	cmd := `
-	    set -eux
-	    cd "$0"
-
 		# generate subtitle file
 		cat <<- EOF > inp.srt
 			1
@@ -106,8 +99,6 @@ func TestSegmenter_StreamOrdering(t *testing.T) {
 
 	// check stream ordering in output file. Should be video, then audio
 	cmd = `
-		set -eux
-		cd $0
 		[ $(ffprobe -loglevel warning -i out_0.ts -show_streams | grep index | wc -l) -eq 2 ]
 		ffprobe -loglevel warning -i out_0.ts -show_streams -select_streams v | grep index=0
 		ffprobe -loglevel warning -i out_0.ts -show_streams -select_streams a | grep index=1
@@ -125,8 +116,6 @@ func TestSegmenter_DropLatePackets(t *testing.T) {
 
 	// Craft an input with an out-of-order timestamp
 	cmd := `
-		set -eux
-		cd "$0"
 		# borrow segmenter test file, rewrite a timestamp
 		cp "$1/../segmenter/test.flv" test.flv
 
@@ -150,9 +139,6 @@ func TestSegmenter_DropLatePackets(t *testing.T) {
 
 	// Now ensure things are as expected
 	cmd = `
-		set -eux
-		cd "$0"
-
 		# check monotonic timestamps (rescaled for the 90khz mpegts timebase)
 		ffprobe -loglevel quiet -show_packets -select_streams v out_0.ts | grep dts= | tail -3 | tr '\n' ',' | grep dts=1694970,dts=1698030,dts=1703970,
 
@@ -171,9 +157,6 @@ func TestTranscoder_UnevenRes(t *testing.T) {
 
 	// Craft an input with an uneven res
 	cmd := `
-	    set -eux
-	    cd "$0"
-
 		# borrow the test.ts from the transcoder dir, output with 123x456 res
 		ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:a copy -c:v mpeg4 -s 123x456 test.mp4
 
@@ -201,8 +184,6 @@ func TestTranscoder_UnevenRes(t *testing.T) {
 
 	// Check output resolutions
 	cmd = `
-		set -eux
-		cd "$0"
 		ffprobe -loglevel warning -show_streams -select_streams v out0test.mp4 | grep width=64
 		ffprobe -loglevel warning -show_streams -select_streams v out0test.mp4 | grep height=240
 		ffprobe -loglevel warning -show_streams -select_streams v out0test_larger.mp4 | grep width=64
@@ -212,8 +193,6 @@ func TestTranscoder_UnevenRes(t *testing.T) {
 
 	// Transpose input and do the same checks as above.
 	cmd = `
-		set -eux
-		cd "$0"
 		ffmpeg -loglevel warning -i test.mp4 -c:a copy -c:v mpeg4 -vf transpose transposed.mp4
 
 		# sanity check resolutions
@@ -229,8 +208,6 @@ func TestTranscoder_UnevenRes(t *testing.T) {
 
 	// Check output resolutions for transposed input
 	cmd = `
-		set -eux
-		cd "$0"
 		ffprobe -loglevel warning -show_streams -select_streams v out0transposed.mp4 | grep width=426
 		ffprobe -loglevel warning -show_streams -select_streams v out0transposed.mp4 | grep height=114
 	`
@@ -238,8 +215,6 @@ func TestTranscoder_UnevenRes(t *testing.T) {
 
 	// check special case of square resolutions
 	cmd = `
-		set -eux
-		cd "$0"
 		ffmpeg -loglevel warning -i test.mp4 -c:a copy -c:v mpeg4 -s 123x123 square.mp4
 
 		# sanity check resolutions
@@ -255,9 +230,6 @@ func TestTranscoder_UnevenRes(t *testing.T) {
 
 	// Check output resolutions are still square
 	cmd = `
-		set -eux
-		cd "$0"
-		ls
 		ffprobe -loglevel warning -i out0square.mp4 -show_streams -select_streams v | grep width=426
 		ffprobe -loglevel warning -i out0square.mp4 -show_streams -select_streams v | grep height=426
 	`
@@ -273,9 +245,6 @@ func TestTranscoder_SampleRate(t *testing.T) {
 
 	// Craft an input with 48khz audio
 	cmd := `
-		set -eux
-		cd $0
-
 		# borrow the test.ts from the transcoder dir, output with 48khz audio
 		ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:v copy -af 'aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=48000' -c:a aac -t 1.1 test.ts
 
@@ -310,8 +279,6 @@ func TestTranscoder_SampleRate(t *testing.T) {
 
 	// Ensure transcoded sample rate is 44k.1hz and check timestamps
 	cmd = `
-		set -eux
-		cd "$0"
 		ffprobe -loglevel warning -show_streams -select_streams a out0test.ts | grep sample_rate=44100
 
 		# Sample rate = 44.1khz, samples per frame = 1024
@@ -336,9 +303,6 @@ func TestTranscoder_Timestamp(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-		set -eux
-		cd $0
-
 		# prepare the input and sanity check 60fps
 		cp "$1/../transcoder/test.ts" inp.ts
 		ffprobe -loglevel warning -select_streams v -show_streams -count_frames inp.ts > inp.out
@@ -364,9 +328,6 @@ func TestTranscoder_Timestamp(t *testing.T) {
 	}
 
 	cmd = `
-		set -eux
-		cd $0
-
 		# hardcode some checks for now. TODO make relative to source.
 		ffprobe -loglevel warning -select_streams v -show_streams -count_frames out0test.ts > test.out
 		grep avg_frame_rate=30 test.out
@@ -446,8 +407,6 @@ func TestTranscoderStatistics_Decoded(t *testing.T) {
 	// Run them through the transcoder, and check the sum of pixels / frames match
 	// Ensures we can properly accommodate mid-stream resolution changes.
 	cmd := `
-        set -eux
-        cd "$0"
         cat out_0.ts out_1.ts out_2.ts out_3.ts > combined.ts
     `
 	run(cmd)
@@ -471,9 +430,6 @@ func TestTranscoder_Statistics_Encoded(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-        set -eux
-        cd $0
-
         # prepare 1-second input
         cp "$1/../transcoder/test.ts" inp.ts
         ffmpeg -loglevel warning -i inp.ts -c:a copy -c:v copy -t 1 test.ts
@@ -542,9 +498,6 @@ nb_read_frames=%d
 		f.Close()
 
 		cmd = fmt.Sprintf(`
-            set -eux
-            cd $0
-
             fname=out%d
 
             ffprobe -loglevel warning -hide_banner -count_frames -count_packets  -select_streams v -show_streams 2>&1 $fname.ts | grep '^width=\|^height=\|nb_read_frames=' > $fname.stats
@@ -565,9 +518,6 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-        set -eux
-        cd $0
-
         # prepare 1-second input
         cp "$1/../transcoder/test.ts" inp.ts
         ffmpeg -loglevel warning -i inp.ts -c:a copy -c:v copy -t 1 test.ts
@@ -593,9 +543,6 @@ func TestTranscoder_MuxerOpts(t *testing.T) {
 
 	// Prepare test environment : truncate input file
 	cmd := `
-        set -eux
-        cd $0
-
         cp "$1/../transcoder/test.ts" inp.ts
         ffmpeg -i inp.ts -c:a copy -c:v copy -t 1 inp-short.ts
     `
@@ -635,9 +582,6 @@ func TestTranscoder_MuxerOpts(t *testing.T) {
 	}
 
 	cmd = `
-        set -eux
-        cd $0
-
         # check formats and that options were used
         ffprobe -loglevel warning -show_format out-mkv.mp4 | grep format_name=matroska
         # ffprobe -loglevel warning -show_format out.mpd | grep format_name=dash # this fails so skip for now
@@ -659,9 +603,6 @@ func TestTranscoder_EncoderOpts(t *testing.T) {
 
 	// Prepare test environment : truncate input file
 	cmd := `
-        set -eux
-        cd $0
-
         # truncate input
         ffmpeg -i "$1/../transcoder/test.ts" -c:a copy -c:v copy -t 1 test.ts
 
@@ -691,9 +632,6 @@ func TestTranscoder_EncoderOpts(t *testing.T) {
 	}
 
 	cmd = `
-        set -eux
-        cd $0
-
         # Check codecs are what we expect them to be
         ffprobe -show_streams -select_streams v out.nut | grep codec_name=snow
         ffprobe -show_streams -select_streams a out.nut | grep codec_name=vorbis
@@ -712,8 +650,6 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 
 	// Set up inputs, truncate test file
 	cmd := `
-        set -eux
-        cd "$0"
         cp "$1"/../transcoder/test.ts .
         ffmpeg -i test.ts -c:a copy -c:v copy -t 1 test-short.ts
 
@@ -748,9 +684,6 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	}
 
 	cmd = `
-        set -eux
-        cd "$0"
-
         # extract video track only, compare md5sums
         ffmpeg -i test-short.ts -an -c:v copy -f md5 test-video.md5
         ffmpeg -i videocopy.ts -an -c:v copy -f md5 videocopy.md5
@@ -765,9 +698,6 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 
 	// Test stream copy when no stream exists in file
 	cmd = `
-        set -eux
-        cd "$0"
-
         ffmpeg -i test-short.ts -an -c:v copy videoonly.ts
         ffmpeg -i test-short.ts -vn -c:a copy audioonly.ts
 
@@ -859,8 +789,6 @@ func TestTranscoder_Drop(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-        set -eux
-        cd "$0"
         cp "$1"/../transcoder/test.ts .
         ffmpeg -i test.ts -c:a copy -c:v copy -t 1 test-short.ts
 
@@ -985,9 +913,6 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 		t.Error("Unexpected count for decoded frames ", res.Decoded.Frames)
 	}
 	cmd := `
-        set -eux
-        cd $0
-
         cp "$1"/../transcoder/test.ts .
 
         # truncate input for later use
@@ -1057,9 +982,6 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 		t.Error(err)
 	}
 	cmd = `
-        set -eux
-        cd "$0"
-
         # use ffmpeg to convert the existing mp4 to ts and check match
         # for some reason this does NOT match the original mpegts
         ffmpeg -i videoonly.mp4 -c:v copy -f mpegts ffmpeg-mp4to.ts
@@ -1162,9 +1084,6 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	p144p60fps.Framerate = 60
 
 	cmd := `
-        set -eux
-        cd $0
-
         # prepare 1-second input
         cp "$1/../transcoder/test.ts" inp.ts
         ffmpeg -loglevel warning -i inp.ts -c:a copy -c:v copy -t 1 test.ts

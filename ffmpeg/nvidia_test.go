@@ -16,9 +16,6 @@ func TestNvidia_Transcoding(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-    set -eux
-    cd "$0"
-
     # set up initial input; truncate test.ts file
     ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -t 1 test.ts
   `
@@ -90,8 +87,6 @@ func TestNvidia_Transcoding(t *testing.T) {
 	}
 
 	cmd = `
-    set -eux
-    cd "$0"
     # compare using ssim and generate stats file
     ffmpeg -loglevel warning -i out.ts -i sw.ts -lavfi '[0:v][1:v]ssim=stats.log' -f null -
     # check image quality; ensure that no more than 5 frames have ssim < 0.95
@@ -228,9 +223,6 @@ func TestNvidia_Transcoding_Multiple(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-    set -eux
-    cd "$0"
-
     # set up initial input; truncate test.ts file
     ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -t 1 test.ts
 
@@ -420,9 +412,6 @@ func TestNvidia_DrainFilters(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-    set -eux
-    cd "$0"
-
     # set up initial input; truncate test.ts file
     ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -t 1 test.ts
   `
@@ -450,9 +439,6 @@ func TestNvidia_DrainFilters(t *testing.T) {
 	}
 
 	cmd = `
-    set -eux
-    cd "$0"
-
     # sanity check with ffmpeg itself
     ffmpeg -loglevel warning -i test.ts -c:a copy -c:v libx264 -vf fps=100 -vsync 0 ffmpeg-out.ts
     ffprobe -loglevel warning -show_streams -select_streams v -count_frames ffmpeg-out.ts > ffmpeg,out
@@ -480,9 +466,6 @@ func TestNvidia_CountFrames(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cmd := `
-    set -eux
-    cd "$0"
-
     # run segmenter and sanity check frame counts . Hardcode for now.
     ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -f hls test.m3u8
     ffprobe -loglevel warning -select_streams v -count_frames -show_streams test0.ts | grep nb_read_frames=120
