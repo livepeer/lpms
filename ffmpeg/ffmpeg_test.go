@@ -1160,7 +1160,7 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 		t.Error("Sanity check of mpegts failed ", res2.Decoded.Frames, res.Encoded[0].Frames)
 	}
 	if res3.Decoded.Frames != 60 || res.Encoded[1].Frames != 61 {
-		t.Error("Sanity check of mp4 failed ", res2.Decoded.Frames, res.Encoded[1].Frames)
+		t.Error("Sanity check of mp4 failed ", res3.Decoded.Frames, res.Encoded[1].Frames)
 	}
 }
 
