@@ -10,7 +10,7 @@ func TestTranscoderAPI_InvalidFile(t *testing.T) {
 	tc := NewTranscoder()
 	defer tc.StopTranscoder()
 	in := &TranscodeOptionsIn{}
-	out := []TranscodeOptions{TranscodeOptions{
+	out := []TranscodeOptions{{
 		Oname:        "-",
 		AudioEncoder: ComponentOptions{Name: "copy"},
 		VideoEncoder: ComponentOptions{Name: "drop"},
@@ -78,7 +78,7 @@ func TestTranscoderAPI_Stopped(t *testing.T) {
 func TestTranscoderAPI_TooManyOutputs(t *testing.T) {
 
 	out := make([]TranscodeOptions, 11)
-	for i, _ := range out {
+	for i := range out {
 		out[i].VideoEncoder = ComponentOptions{Name: "drop"}
 	}
 	in := &TranscodeOptionsIn{}
