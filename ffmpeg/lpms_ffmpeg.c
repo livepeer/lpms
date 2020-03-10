@@ -203,7 +203,7 @@ static void free_filter(struct filter_ctx *filter)
   if (filter->graph) avfilter_graph_free(&filter->graph);
 }
 
-static void free_output(struct output_ctx *octx)
+static void close_output(struct output_ctx *octx)
 {
   if (octx->oc) {
     if (!(octx->oc->oformat->flags & AVFMT_NOFILE) && octx->oc->pb) {
@@ -217,6 +217,12 @@ static void free_output(struct output_ctx *octx)
   free_filter(&octx->vf);
   free_filter(&octx->af);
 }
+
+static void free_output(struct output_ctx *octx) {
+  close_output(octx);
+  if (octx->vc) avcodec_free_context(&octx->vc);
+}
+
 
 static int is_copy(char *encoder) {
   return encoder && !strcmp("copy", encoder);
@@ -1271,7 +1277,7 @@ transcode_cleanup:
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
   if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
-  for (i = 0; i < nb_outputs; i++) free_output(&outputs[i]);
+  for (i = 0; i < nb_outputs; i++) close_output(&outputs[i]);
   return ret == AVERROR_EOF ? 0 : ret;
 #undef main_err
 }
@@ -1331,7 +1337,6 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
   free_input(&handle->ictx);
   for (i = 0; i < MAX_OUTPUT_SIZE; i++) {
     free_output(&handle->outputs[i]);
-    if (handle->outputs[i].vc) avcodec_free_context(&handle->outputs[i].vc);
   }
 
   free(handle);
