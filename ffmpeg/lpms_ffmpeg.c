@@ -201,6 +201,7 @@ static void free_filter(struct filter_ctx *filter)
 {
   if (filter->frame) av_frame_free(&filter->frame);
   if (filter->graph) avfilter_graph_free(&filter->graph);
+  memset(filter, 0, sizeof(struct filter_ctx));
 }
 
 static void free_output(struct output_ctx *octx)
@@ -323,16 +324,20 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     int ret = 0;
     const AVFilter *buffersrc  = avfilter_get_by_name("buffer");
     const AVFilter *buffersink = avfilter_get_by_name("buffersink");
-    AVFilterInOut *outputs = avfilter_inout_alloc();
-    AVFilterInOut *inputs  = avfilter_inout_alloc();
+    AVFilterInOut *outputs = NULL;
+    AVFilterInOut *inputs  = NULL;
     AVRational time_base = ictx->ic->streams[ictx->vi]->time_base;
     enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
     struct filter_ctx *vf = &octx->vf;
     char *filters_descr = octx->vfilters;
     enum AVPixelFormat in_pix_fmt = ictx->vc->pix_fmt;
 
-    if (!needs_decoder(octx->video->name)) return 0; // no need for filters
+    // no need for filters with the following conditions
+    if (vf->active) goto init_video_filters_cleanup; // already initialized
+    if (!needs_decoder(octx->video->name)) goto init_video_filters_cleanup;
 
+    outputs = avfilter_inout_alloc();
+    inputs = avfilter_inout_alloc();
     vf->graph = avfilter_graph_alloc();
     if (!outputs || !inputs || !vf->graph) {
       ret = AVERROR(ENOMEM);
@@ -405,11 +410,12 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     vf->frame = av_frame_alloc();
     if (!vf->frame) filters_err("Unable to allocate video frame\n");
 
+    vf->active = 1;
+
 init_video_filters_cleanup:
     avfilter_inout_free(&inputs);
     avfilter_inout_free(&outputs);
 
-    vf->active = !ret;
     return ret;
 #undef filters_err
 }
@@ -427,12 +433,17 @@ static int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
   char filters_descr[256];
   const AVFilter *buffersrc  = avfilter_get_by_name("abuffer");
   const AVFilter *buffersink = avfilter_get_by_name("abuffersink");
-  AVFilterInOut *outputs = avfilter_inout_alloc();
-  AVFilterInOut *inputs  = avfilter_inout_alloc();
+  AVFilterInOut *outputs = NULL;
+  AVFilterInOut *inputs  = NULL;
   struct filter_ctx *af = &octx->af;
   AVRational time_base = ictx->ic->streams[ictx->ai]->time_base;
 
+  // no need for filters with the following conditions
+  if (af->active) goto init_audio_filters_cleanup; // already initialized
+  if (!needs_decoder(octx->audio->name)) goto init_audio_filters_cleanup;
 
+  outputs = avfilter_inout_alloc();
+  inputs = avfilter_inout_alloc();
   af->graph = avfilter_graph_alloc();
 
   if (!outputs || !inputs || !af->graph) {
@@ -498,11 +509,12 @@ static int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
   af->frame = av_frame_alloc();
   if (!af->frame) af_err("Unable to allocate audio frame\n");
 
+  af->active = 1;
+
 init_audio_filters_cleanup:
   avfilter_inout_free(&inputs);
   avfilter_inout_free(&outputs);
 
-  af->active = !ret;
   return ret;
 #undef af_err
 }
