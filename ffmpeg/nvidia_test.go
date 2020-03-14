@@ -510,6 +510,7 @@ func TestNvidia_CountEncodedFrames(t *testing.T) {
 	run(cmd)
 
 	tc := NewTranscoder()
+	defer tc.StopTranscoder()
 
 	// Test decoding
 	for i := 0; i < 4; i++ {
@@ -550,7 +551,134 @@ func TestNvidia_CountEncodedFrames(t *testing.T) {
 			t.Error(in.Fname, " Mismatched frame count: expected 240 got ", res.Encoded[2].Frames)
 		}
 	}
-	tc.StopTranscoder()
+
+	// Check timestamps of the results we just got.
+	// A bit brute force but another layer of checking
+	// First output the expected PTS - first and last 3 frames, per segment
+	//  (hardcoded below)
+	// Second calculate the same set of PTS for transcoded results
+	// Then take the diff of the two. Should match.
+
+	// Write expected PTS to a file for diff'ing
+	//  (Calculated by running the same routine below)
+	cmd = `
+  cat << EOF > expected_pts.out
+==> out_120fps_0.ts.pts <==
+pkt_pts=129000
+pkt_pts=129750
+pkt_pts=130500
+pkt_pts=306750
+pkt_pts=307500
+pkt_pts=308250
+
+==> out_120fps_1.ts.pts <==
+pkt_pts=309000
+pkt_pts=309750
+pkt_pts=310500
+pkt_pts=486750
+pkt_pts=487500
+pkt_pts=488250
+
+==> out_120fps_2.ts.pts <==
+pkt_pts=489000
+pkt_pts=489750
+pkt_pts=490500
+pkt_pts=666750
+pkt_pts=667500
+pkt_pts=668250
+
+==> out_120fps_3.ts.pts <==
+pkt_pts=669000
+pkt_pts=669750
+pkt_pts=670500
+pkt_pts=846750
+pkt_pts=847500
+pkt_pts=848250
+
+==> out_30fps_0.ts.pts <==
+pkt_pts=129000
+pkt_pts=132000
+pkt_pts=135000
+pkt_pts=300000
+pkt_pts=303000
+pkt_pts=306000
+
+==> out_30fps_1.ts.pts <==
+pkt_pts=309000
+pkt_pts=312000
+pkt_pts=315000
+pkt_pts=480000
+pkt_pts=483000
+pkt_pts=486000
+
+==> out_30fps_2.ts.pts <==
+pkt_pts=489000
+pkt_pts=492000
+pkt_pts=495000
+pkt_pts=660000
+pkt_pts=663000
+pkt_pts=666000
+
+==> out_30fps_3.ts.pts <==
+pkt_pts=669000
+pkt_pts=672000
+pkt_pts=675000
+pkt_pts=840000
+pkt_pts=843000
+pkt_pts=846000
+
+==> out_60fps_0.ts.pts <==
+pkt_pts=129000
+pkt_pts=130500
+pkt_pts=132000
+pkt_pts=304500
+pkt_pts=306000
+pkt_pts=307500
+
+==> out_60fps_1.ts.pts <==
+pkt_pts=309000
+pkt_pts=310500
+pkt_pts=312000
+pkt_pts=484500
+pkt_pts=486000
+pkt_pts=487500
+
+==> out_60fps_2.ts.pts <==
+pkt_pts=489000
+pkt_pts=490500
+pkt_pts=492000
+pkt_pts=664500
+pkt_pts=666000
+pkt_pts=667500
+
+==> out_60fps_3.ts.pts <==
+pkt_pts=669000
+pkt_pts=670500
+pkt_pts=672000
+pkt_pts=844500
+pkt_pts=846000
+pkt_pts=847500
+EOF
+  `
+	run(cmd)
+
+	// Calculate first and last 3 frame PTS for each output, and compare
+	cmd = `
+    # First and last 3 frame PTS for each output
+    FILES=out_*.ts
+
+    for f in  $FILES
+    do
+      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pkt_pts= | head -3 > $f.pts
+      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pkt_pts= | tail -3 >> $f.pts
+    done
+    tail -n +1 out_*.ts.pts > transcoded_pts.out
+
+    # Do the comparison!
+    diff -u expected_pts.out transcoded_pts.out
+  `
+	run(cmd)
+
 }
 
 func TestNvidia_RepeatedSpecialOpts(t *testing.T) {
