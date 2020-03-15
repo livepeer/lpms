@@ -495,7 +495,12 @@ func TestNvidia_CountFrames(t *testing.T) {
 	tc.StopTranscoder()
 }
 
-func TestNvidia_CountEncodedFrames(t *testing.T) {
+func TestNvidia_API_CountEncodedFrames(t *testing.T) {
+	countEncodedFrames(t, Software)
+	countEncodedFrames(t, Nvidia)
+}
+
+func countEncodedFrames(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
@@ -512,12 +517,12 @@ func TestNvidia_CountEncodedFrames(t *testing.T) {
 	tc := NewTranscoder()
 	defer tc.StopTranscoder()
 
-	// Test decoding
+	// Test encoding
 	for i := 0; i < 4; i++ {
 		in := &TranscodeOptionsIn{
 			Fname:  fmt.Sprintf("%s/test%d.ts", dir, i),
-			Accel:  Nvidia,
-			Device: "3",
+			Accel:  accel,
+			Device: "0",
 		}
 		p60fps := P144p30fps16x9
 		p60fps.Framerate = 60
@@ -526,15 +531,15 @@ func TestNvidia_CountEncodedFrames(t *testing.T) {
 		out := []TranscodeOptions{{
 			Oname:   fmt.Sprintf("%s/out_30fps_%d.ts", dir, i),
 			Profile: P144p30fps16x9,
-			Accel:   Nvidia,
+			Accel:   accel,
 		}, {
 			Oname:   fmt.Sprintf("%s/out_60fps_%d.ts", dir, i),
 			Profile: p60fps,
-			Accel:   Nvidia,
+			Accel:   accel,
 		}, {
 			Oname:   fmt.Sprintf("%s/out_120fps_%d.ts", dir, i),
 			Profile: p120fps,
-			Accel:   Nvidia,
+			Accel:   accel,
 		}}
 
 		res, err := tc.Transcode(in, out)
