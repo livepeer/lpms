@@ -1364,3 +1364,151 @@ func TestTranscoder_PassthroughFPS(t *testing.T) {
     `
 	run(cmd)
 }
+
+func TestTranscoder_FormatOptions(t *testing.T) {
+	// Test combinations of VideoProfile.Format and TranscodeOptions.Muxer
+	// The former takes precedence over the latter if set
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+        cp "$1/../transcoder/test.ts" test.ts
+    `
+	run(cmd)
+
+	// First, sanity check VideoProfile defaults
+	for _, p := range VideoProfileLookup {
+		if p.Format != FormatNone {
+			t.Error("Default VideoProfile format not set to FormatNone")
+		}
+	}
+
+	// If no format and no mux opts specified, should be based on file extension
+	in := &TranscodeOptionsIn{Fname: dir + "/test.ts"}
+	out := []TranscodeOptions{{
+		Oname:        dir + "/test.flv",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+	}}
+	if out[0].Profile.Format != FormatNone {
+		t.Error("Expected empty profile for output option")
+	}
+	_, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	cmd = `
+        ffprobe -loglevel warning -show_format test.flv | grep format_name=flv
+    `
+	run(cmd)
+
+	// If no format specified, should be based on given mux opts
+	out[0].Oname = dir + "/actually_hls.flv" // sanity check extension ignored
+	out[0].Muxer = ComponentOptions{Name: "hls", Opts: map[string]string{
+		"hls_segment_filename": dir + "/test_segment_%d.ts",
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	cmd = `
+        # Check playlist
+        ffprobe -loglevel warning -show_format actually_hls.flv | grep format_name=hls
+        # Check that (copied) mpegts stream matches source
+        ls -lha test_segment_*.ts | wc -l | grep 4 # sanity check four segments
+        cat test_segment_*.ts > segment.ts
+        ffprobe -loglevel warning -show_entries format=format_name,duration segment.ts > segment.out
+        ffprobe -loglevel warning -show_entries format=format_name,duration test.ts > test.out
+        diff -u segment.out test.out
+        wc -l test.out | grep 4 # sanity check output file length
+    `
+	run(cmd)
+
+	// If format *and* mux opts specified, should prefer format opts
+	tsFmt := out[0]
+	mp4Fmt := out[0]
+	if "hls" != tsFmt.Muxer.Name || "hls" != mp4Fmt.Muxer.Name {
+		t.Error("Sanity check failed; expected non-empty muxer format names")
+	}
+	tsFmt.Oname = dir + "/actually_mpegts.flv"
+	tsFmt.Profile.Format = FormatMPEGTS
+	mp4Fmt.Oname = dir + "/actually_mp4.flv"
+	mp4Fmt.Profile.Format = FormatMP4
+	out = []TranscodeOptions{tsFmt, mp4Fmt}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	cmd = `
+        # mpegts should match original exactly.
+        ffprobe -loglevel warning -show_entries format=format_name,duration actually_mpegts.flv > actually_mpegts.out
+
+        # mp4 will be a bit different so construct manually
+        ffprobe -loglevel warning -show_entries format=format_name,duration actually_mp4.flv > actually_mp4.out
+		cat <<- EOF > expected_mp4.out
+			[FORMAT]
+			format_name=mov,mp4,m4a,3gp,3g2,mj2
+			duration=8.011000
+			[/FORMAT]
+		EOF
+
+        diff -u actually_mpegts.out test.out
+        diff -u actually_mp4.out expected_mp4.out
+    `
+	run(cmd)
+
+	// If format alone specified, use format regardless of file extension
+	tsFmt.Muxer.Name = ""
+	tsFmt.Oname = dir + "/actually_mpegts_2.flv"
+	mp4Fmt.Muxer.Name = ""
+	mp4Fmt.Oname = dir + "/actually_mp4_2.flv"
+	out = []TranscodeOptions{tsFmt, mp4Fmt}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	cmd = `
+        # mpegts should match original exactly.
+        ffprobe -loglevel warning -show_entries format=format_name,duration actually_mpegts_2.flv > actually_mpegts_2.out
+
+        # mp4 will be a bit different so construct manually
+        ffprobe -loglevel warning -show_entries format=format_name,duration actually_mp4_2.flv > actually_mp4_2.out
+
+        diff -u actually_mpegts_2.out test.out
+        diff -u actually_mp4_2.out expected_mp4.out
+    `
+	run(cmd)
+
+	// Check that the MP4 preset specifically has the moov atom at the beginning
+	// Do this by checking for 'moov' within the first few bytes.
+
+	// Also sanity check that a mp4 muxer by default does *not* contain moov
+	// within the first few bytes
+	out = []TranscodeOptions{{
+		Oname:        dir + "/no_moov.mp4",
+		VideoEncoder: ComponentOptions{Name: "copy"},
+		AudioEncoder: ComponentOptions{Name: "copy"},
+		Muxer:        ComponentOptions{Name: "mp4"},
+	}}
+	_, err = Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+
+	cmd = `
+        # '6d 6f 6f 76' being ascii for 'moov' ; search for that
+        xxd -p -g 0 -c 256 -l 128 actually_mp4.flv | grep 6d6f6f76
+
+        # sanity check no moov at beginning by default
+        ffprobe -loglevel warning -show_format no_moov.mp4 | grep format_name=mov,mp4
+        ( xxd -p -g 0 -c 256 -l 128 no_moov.mp4 | grep 6d6f6f76 || echo "no moov found" )  | grep "no moov found"
+    `
+	run(cmd)
+
+	// If invalid format specified, should error out
+	out[0].Profile.Format = -1
+	_, err = Transcode3(in, out)
+	if err != ErrTranscoderFmt {
+		t.Error("Did not get expected error with invalid format ", err)
+	}
+}

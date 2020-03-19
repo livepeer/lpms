@@ -8,6 +8,14 @@ import (
 	"github.com/livepeer/m3u8"
 )
 
+type Format int
+
+const (
+	FormatNone Format = iota
+	FormatMPEGTS
+	FormatMP4
+)
+
 //Standard Profiles:
 //1080p60fps: 9000kbps
 //1080p30fps: 6000kbps
@@ -23,6 +31,7 @@ type VideoProfile struct {
 	Framerate   uint
 	Resolution  string
 	AspectRatio string
+	Format      Format
 }
 
 //Some sample video profiles

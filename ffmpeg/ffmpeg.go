@@ -21,6 +21,7 @@ var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
 var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
 var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
+var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 
 type Acceleration int
 
@@ -228,11 +229,27 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if param.Framerate > 0 {
 			filters += fmt.Sprintf(",fps=%d/1", param.Framerate)
 		}
-		muxOpts := C.component_opts{
-			opts: newAVOpts(p.Muxer.Opts), // don't free this bc of avformat_write_header API
+		var muxOpts C.component_opts
+		var muxName string
+		switch p.Profile.Format {
+		case FormatNone:
+			muxOpts = C.component_opts{
+				// don't free this bc of avformat_write_header API
+				opts: newAVOpts(p.Muxer.Opts),
+			}
+			muxName = p.Muxer.Name
+		case FormatMPEGTS:
+			muxName = "mpegts"
+		case FormatMP4:
+			muxName = "mp4"
+			muxOpts = C.component_opts{
+				opts: newAVOpts(map[string]string{"movflags": "faststart"}),
+			}
+		default:
+			return nil, ErrTranscoderFmt
 		}
-		if p.Muxer.Name != "" {
-			muxOpts.name = C.CString(p.Muxer.Name)
+		if muxName != "" {
+			muxOpts.name = C.CString(muxName)
 			defer C.free(unsafe.Pointer(muxOpts.name))
 		}
 		// Set some default encoding options
