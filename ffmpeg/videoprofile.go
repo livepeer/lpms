@@ -68,6 +68,16 @@ var VideoProfileLookup = map[string]VideoProfile{
 	"P144p30fps16x9": P144p30fps16x9,
 }
 
+var FormatExtensions = map[Format]string{
+	FormatNone:   ".ts", // default
+	FormatMPEGTS: ".ts",
+	FormatMP4:    ".mp4",
+}
+var ExtensionFormats = map[string]Format{
+	".ts":  FormatMPEGTS,
+	".mp4": FormatMP4,
+}
+
 func VideoProfileResolution(p VideoProfile) (int, int, error) {
 	res := strings.Split(p.Resolution, "x")
 	if len(res) < 2 {

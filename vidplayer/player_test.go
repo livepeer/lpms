@@ -79,8 +79,12 @@ func stubGetSegNotFound(url *url.URL) ([]byte, error) {
 func TestHLS(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handleLive(rec, httptest.NewRequest("GET", "/badpath", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
-	if rec.Result().StatusCode != 500 {
-		t.Errorf("Expecting 500 because of bad path, but got: %v", rec.Result().StatusCode)
+	if rec.Result().StatusCode != 400 {
+		t.Errorf("Expecting 400 because of bad path, but got: %v", rec.Result().StatusCode)
+	}
+	handleLive(rec, httptest.NewRequest("GET", "/seg.webm", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
+	if rec.Result().StatusCode != 400 {
+		t.Errorf("Expecting 400 because of bad path, but got: %v", rec.Result().StatusCode)
 	}
 
 	//Test getting master playlist
@@ -125,6 +129,26 @@ func TestHLS(t *testing.T) {
 	}
 	if string(res) != "testseg" {
 		t.Errorf("Expecting testseg, got %v", string(res))
+	}
+	ctyp := rec.Header().Get("Content-Type")
+	if "video/mp2t" != strings.ToLower(ctyp) {
+		t.Errorf("Got '%s' instead of expected content type", ctyp)
+	}
+	rec = httptest.NewRecorder()
+	handleLive(rec, httptest.NewRequest("GET", "/seg.mp4", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
+	if rec.Result().StatusCode != 200 {
+		t.Error("Expecting 200, but got ", rec.Result().StatusCode)
+	}
+	res, err = ioutil.ReadAll(rec.Result().Body)
+	if err != nil {
+		t.Error("Error reading result: ", err)
+	}
+	if string(res) != "testseg" {
+		t.Error("Expecting testseg, got ", string(res))
+	}
+	ctyp = rec.Header().Get("Content-Type")
+	if "video/mp4" != strings.ToLower(ctyp) {
+		t.Errorf("Got '%s' instead of expected content type", ctyp)
 	}
 
 	//Test not found segment
