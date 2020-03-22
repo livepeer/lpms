@@ -901,7 +901,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 {
 #define dec_err(msg) { \
   if (!ret) ret = -1; \
-  fprintf(stderr, msg); \
+  fprintf(stderr, "dec_cleanup: "msg); \
   goto dec_cleanup; \
 }
   int ret = 0;
@@ -927,8 +927,8 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
       // Probably okay for now, since DTS really shouldn't go backwards anyway.
       AVFrame *last_frame = NULL;
       if (decoder == ictx->vc) {
-      ictx->first_pkt = av_packet_clone(pkt);
-      ictx->first_pkt->pts = -1;
+        ictx->first_pkt = av_packet_clone(pkt);
+        ictx->first_pkt->pts = -1;
         last_frame = ictx->last_frame_v;
       } else {
         last_frame = ictx->last_frame_a;
@@ -1284,19 +1284,19 @@ int transcode(struct transcode_thread *h,
       has_frame = has_frame && dframe->nb_samples;
       if (has_frame) last_frame = ictx->last_frame_a;
     }
-      if (has_frame) {
-        int64_t dur = 0;
-        if (dframe->pkt_duration) dur = dframe->pkt_duration;
-        else if (ist->r_frame_rate.den) {
-          dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
-        } else {
-          // TODO use better heuristics for this; look at how ffmpeg does it
-          fprintf(stderr, "Could not determine next pts; filter might drop\n");
-        }
-        dframe->pkt_duration = dur;
-        av_frame_unref(last_frame);
-        av_frame_ref(last_frame, dframe);
+    if (has_frame) {
+      int64_t dur = 0;
+      if (dframe->pkt_duration) dur = dframe->pkt_duration;
+      else if (ist->r_frame_rate.den) {
+        dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
+      } else {
+        // TODO use better heuristics for this; look at how ffmpeg does it
+        fprintf(stderr, "Could not determine next pts; filter might drop\n");
       }
+      dframe->pkt_duration = dur;
+      av_frame_unref(last_frame);
+      av_frame_ref(last_frame, dframe);
+    }
 
     for (i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];
