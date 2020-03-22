@@ -901,7 +901,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 {
 #define dec_err(msg) { \
   if (!ret) ret = -1; \
-  fprintf(stderr, msg); \
+  fprintf(stderr, "dec_cleanup: "msg); \
   goto dec_cleanup; \
 }
   int ret = 0;
@@ -927,8 +927,8 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
       // Probably okay for now, since DTS really shouldn't go backwards anyway.
       AVFrame *last_frame = NULL;
       if (decoder == ictx->vc) {
-      ictx->first_pkt = av_packet_clone(pkt);
-      ictx->first_pkt->pts = -1;
+        ictx->first_pkt = av_packet_clone(pkt);
+        ictx->first_pkt->pts = -1;
         last_frame = ictx->last_frame_v;
       } else {
         last_frame = ictx->last_frame_a;
