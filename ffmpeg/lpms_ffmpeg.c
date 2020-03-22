@@ -17,6 +17,46 @@ const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
 const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 
 //
+//  Notes on transcoder internals:
+//
+//  Transcoding follows the typical process of the FFmpeg API:
+//    read/demux/decode/filter/encode/mux/write
+//
+//  This is done over discrete segments. However, decode/filter/encoder are
+//  expensive to re-initialize for every segment. We work around this by
+//  persisting these components across segments.
+//
+//  The challenge with persistence is there is often internal data that is
+//  buffered, and there isn't an explicit API to flush or drain that data
+//  short of re-initializing the component. This is addressed for each component
+//  as follows:
+//
+//  Decoder: For audio, we pay the price of closing and re-opening the decoder.
+//           For video, we cache the first packet we read (input_ctx.first_pkt).
+//           The pts is set to a sentinel value and fed to the decoder. Once we
+//           receive a frame from the decoder with the pts set to the sentinel
+//           value, then we know the decoder has been fully flushed. Ignore any
+//           subsequent frames we receive with the sentiel pts.
+//
+//  Filter:  The challenge here is around fps filter adding and dropping frames.
+//           The fps filter expects a strictly monotonic input pts: frames with
+//           earlier timestamps get dropped, and frames with too-late timestamps
+//           will see a bunch of duplicated frames be generated to catch up with
+//           the timestamp that was just inserted. So we cache the last seen
+//           frame, rewrite the PTS based on the expected duration, and set a
+//           sentinel field (AVFrame.opaque). Then do a lot of rewriting to
+//           accommodate changes. See the notes in the filter_ctx struct and the
+//           process_out function. This is done for both audio and video.
+//
+//           One consequence of this behavior is that we currently cannot
+//           process segments out of order, due to the monotonicity requirement.
+//
+// Encoder:  For software encoding, we close the encoder and re-open.
+//           For Nvidia encoding, there is luckily an API available via
+//           avcodec_flush_buffers to flush the encoder.
+//
+
+//
 // Internal transcoder data structures
 //
 struct input_ctx {
@@ -47,6 +87,18 @@ struct filter_ctx {
   AVFilterContext *src_ctx;
 
   uint8_t *hwframes; // GPU frame pool data
+
+  // When draining the filtergraph, we inject fake frames.
+  // These frames need monotonically increasing timestamps at
+  // approximately the same interval as a normal stream of frames.
+  // In order to continue using the filter after flushing, we need
+  // to do two things:
+  // Adjust input timestamps forward to match the expected cumulative offset
+  //      ( otherwise filter will drop frames <= current pts )
+  // Re-adjust output timestamps backwards to compensate for the offset
+  //      ( pts received from filter will be wrong by however many flushed
+  //      frames received )
+  // the cumulative offset effect of flushing
   int64_t flush_offset;
   int flushed, flush_count;
 };
@@ -1127,6 +1179,9 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       frame->opaque = NULL; // reset just to be sure
       continue;
     }
+    // For now, the time base of the filter output is 1/framerate, so each
+    // frame gets its pts incremented by one. This may not always hold later on!
+    // TODO rescale flush_count towards filter output timebase as appropriate.
     if (frame) frame->pts -= filter->flush_count;
     ret = encode(encoder, frame, octx, ost);
     av_frame_unref(frame);
