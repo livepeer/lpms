@@ -8,6 +8,7 @@
 extern const int lpms_ERR_INPUT_PIXFMT;
 extern const int lpms_ERR_FILTERS;
 extern const int lpms_ERR_OUTPUTS;
+extern const int lpms_ERR_DTS;
 
 struct transcode_thread;
 

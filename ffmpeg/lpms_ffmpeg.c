@@ -14,6 +14,7 @@ const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
 const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
 const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
+const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 
 //
 // Internal transcoder data structures
@@ -226,6 +227,15 @@ static void free_output(struct output_ctx *octx) {
   free_filter(&octx->af);
 }
 
+static void flush_input(struct input_ctx *ictx) {
+  AVPacket pkt = {0};
+  av_init_packet(&pkt);
+  while (ictx->ic->pb) {
+    int ret = av_read_frame(ictx->ic, &pkt);
+    av_packet_unref(&pkt);
+    if (ret) break;
+  }
+}
 
 static int is_copy(char *encoder) {
   return encoder && !strcmp("copy", encoder);
@@ -912,9 +922,22 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai) break;
     else dec_err("Could not find decoder or stream\n");
 
-    if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
+    if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY) {
+      // This would compare dts for every packet in an audio-only stream.
+      // Probably okay for now, since DTS really shouldn't go backwards anyway.
+      AVFrame *last_frame = NULL;
+      if (decoder == ictx->vc) {
       ictx->first_pkt = av_packet_clone(pkt);
       ictx->first_pkt->pts = -1;
+        last_frame = ictx->last_frame_v;
+      } else {
+        last_frame = ictx->last_frame_a;
+      }
+      if (AV_NOPTS_VALUE != last_frame->pkt_dts &&
+          pkt->dts <= last_frame->pkt_dts) {
+        ret = lpms_ERR_DTS;
+        dec_err("decoder: Segment out of order\n");
+      }
     }
 
     ret = avcodec_send_packet(decoder, pkt);
@@ -1168,7 +1191,7 @@ int transcode(struct transcode_thread *h,
   struct input_ctx *ictx = &h->ictx;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
-  AVPacket ipkt;
+  AVPacket ipkt = {0};
   AVFrame *dframe = NULL;
 
   if (!inp) main_err("transcoder: Missing input params\n")
@@ -1327,9 +1350,15 @@ whileloop_end:
   }
 
 transcode_cleanup:
+  // Flush input then close input. Reads entire input, pretty inefficient.
+  // Necessary because the input context has data buffered that would get
+  // read out on the next segment if we have to exit early, eg seg out of order.
+  // TODO Is short-circuiting possible? Currently, closing + flushing segfaults
+  if (!ictx->flushed) flush_input(ictx);
   avio_closep(&ictx->ic->pb);
   if (dframe) av_frame_free(&dframe);
   ictx->flushed = 0;
+  av_packet_unref(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
   if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);

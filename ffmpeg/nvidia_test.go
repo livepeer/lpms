@@ -648,8 +648,15 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 			Profile: profile,
 		}}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
+		if (i == 1 || i == 3) && err != nil {
 			t.Error(err)
+		}
+		if i == 0 || i == 2 {
+			if err == nil || err.Error() != "Segment out of order" {
+				t.Error(err)
+			}
+			// Maybe one day we'll be able to run the rest of this test
+			continue
 		}
 		if res.Decoded.Frames != 120 {
 			t.Error("Did not get decoded frames", res.Decoded.Frames)
@@ -690,9 +697,10 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
     }
 
 
-    check 0
+    # re-enable for seg 0 and 1 when alternating timestamps can be handled
+    # check 0
     check 1
-    check 2
+    # check 2
     check 3
   `
 	run(cmd)
