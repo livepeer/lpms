@@ -167,35 +167,32 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Should be one of the accepted formats at this point
-	{
-		seg, err := getSegment(r.URL)
-		if err != nil {
-			glog.Errorf("Error getting segment %v: %v", r.URL, err)
-			if err == ErrNotFound {
-				http.Error(w, "ErrNotFound", 404)
-			} else {
-				http.Error(w, "Error getting segment", 500)
-			}
-			return
+	seg, err := getSegment(r.URL)
+	if err != nil {
+		glog.Errorf("Error getting segment %v: %v", r.URL, err)
+		if err == ErrNotFound {
+			http.Error(w, "ErrNotFound", 404)
+		} else {
+			http.Error(w, "Error getting segment", 500)
 		}
-		w.Header().Set("Content-Type", mime.TypeByExtension(ext))
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Content-Length", strconv.Itoa(len(seg)))
-		_, err = w.Write(seg)
-		if err != nil {
-			glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
-			if err == ErrNotFound {
-				http.Error(w, "ErrNotFound", 404)
-			} else if err == ErrTimeout {
-				http.Error(w, "ErrTimeout", 408)
-			} else if err == ErrBadRequest {
-				http.Error(w, "ErrBadRequest", 400)
-			} else {
-				http.Error(w, "Error writting segment", 500)
-			}
-			return
+		return
+	}
+	w.Header().Set("Content-Type", mime.TypeByExtension(ext))
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Content-Length", strconv.Itoa(len(seg)))
+	_, err = w.Write(seg)
+	if err != nil {
+		glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
+		if err == ErrNotFound {
+			http.Error(w, "ErrNotFound", 404)
+		} else if err == ErrTimeout {
+			http.Error(w, "ErrTimeout", 408)
+		} else if err == ErrBadRequest {
+			http.Error(w, "ErrBadRequest", 400)
+		} else {
+			http.Error(w, "Error writting segment", 500)
 		}
 		return
 	}
