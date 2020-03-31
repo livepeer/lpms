@@ -211,13 +211,22 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
 		var filters string
-		if param.Framerate > 0 {
-			filters = fmt.Sprintf("fps=%d/1,", param.Framerate)
-		}
-		filters += fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
+		filters = fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
 		if input.Accel != Software && p.Accel == Software {
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ",hwdownload,format=nv12"
+		}
+		// Add fps filter *after* scale filter because otherwise we could
+		// be scaling duplicate frames unnecessarily. This becomes a DoS vector
+		// when a user submits two frames that are "far apart" in pts and
+		// the fps filter duplicates frames to fill out the difference to maintain
+		// a consistent frame rate.
+		// Once we allow for alternating segments, this issue should be mitigated
+		// and the fps filter can come *before* the scale filter to minimize work
+		// when going from high fps to low fps (much more common when transcoding
+		// than going from low fps to high fps)
+		if param.Framerate > 0 {
+			filters += fmt.Sprintf(",fps=%d/1", param.Framerate)
 		}
 		muxOpts := C.component_opts{
 			opts: newAVOpts(p.Muxer.Opts), // don't free this bc of avformat_write_header API

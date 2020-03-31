@@ -6,6 +6,81 @@ import (
 	"testing"
 )
 
+func TestAPI_SkippedSegment(t *testing.T) {
+	// Ensure that things are still OK even if there are gaps in between segments
+	// We should see a perf slowdown if the filters are in the wrong order
+	// (fps before scale).
+	// Would be nice to measure this somehow, eg counting number of flushed frames.
+
+	// Really should refactor this test to increase commonality with other
+	// tests that also check things like SSIM, MD5 hashes, etc...
+	// See TestNvidia_API_MixedOutput / TestTranscoder_EncoderOpts / TestTranscoder_StreamCopy
+	run, dir := setupTest(t)
+	err := RTMPToHLS("../transcoder/test.ts", dir+"/out.m3u8", dir+"/out_%d.ts", "2", 0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	profile := P144p30fps16x9
+	profile.Framerate = 123
+	idx := []int{0, 3}
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	for _, i := range idx {
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
+		out := []TranscodeOptions{{
+			Oname:        fmt.Sprintf("%s/%d.md5", dir, i),
+			AudioEncoder: ComponentOptions{Name: "drop"},
+			VideoEncoder: ComponentOptions{Name: "copy"},
+			Muxer:        ComponentOptions{Name: "md5"},
+		}, {
+			Oname:        fmt.Sprintf("%s/sw_%d.ts", dir, i),
+			Profile:      profile,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+		}}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if res.Decoded.Frames != 120 {
+			t.Error("Did not get decoded frames", res.Decoded.Frames)
+		}
+		if res.Encoded[1].Frames != 246 {
+			t.Error("Did not get encoded frames ", res.Encoded[1].Frames)
+		}
+	}
+	cmd := `
+    function check {
+
+      # Check md5sum for stream copy / drop
+      ffmpeg -loglevel warning -i out_$1.ts -an -c:v copy -f md5 ffmpeg_$1.md5
+      diff -u $1.md5 ffmpeg_$1.md5
+
+      # muxdelay removes the 1.4 sec mpegts offset, copyts passes ts through
+      ffmpeg -loglevel warning -i out_$1.ts -c:a aac -ar 44100 -ac 2 \
+        -vf fps=123,scale=w=256:h=144 -c:v libx264 -muxdelay 0 -copyts ffmpeg_sw_$1.ts
+
+      # sanity check ffmpeg frame count against ours
+      ffprobe -count_frames -show_streams -select_streams v ffmpeg_sw_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
+
+   # check image quality
+    ffmpeg -loglevel warning -i sw_$1.ts -i ffmpeg_sw_$1.ts \
+      -lavfi "[0:v][1:v]ssim=sw_stats_$1.log" -f null -
+    grep -Po 'All:\K\d+.\d+' sw_stats_$1.log | \
+      awk '{ if ($1 < 0.95) count=count+1 } END{ exit count > 5 }'
+
+    # Really should check relevant audio as well...
+    }
+
+
+    check 0
+    check 3
+  `
+	run(cmd)
+
+}
+
 func TestTranscoderAPI_InvalidFile(t *testing.T) {
 	// Test the following file open results on input: fail, success, fail, success
 
