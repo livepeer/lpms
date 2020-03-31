@@ -6,6 +6,56 @@ import (
 	"testing"
 )
 
+func TestAPI_SkippedSegment(t *testing.T) {
+	// Really should refactor this test to increase commonality with other
+	// tests that also check things like SSIM, MD5 hashes, etc...
+	// See TestNvidia_API_MixedOutput / TestTranscoder_EncoderOpts / TestTranscoder_StreamCopy
+	_, dir := setupTest(t)
+	err := RTMPToHLS("../transcoder/test.ts", dir+"/out.m3u8", dir+"/out_%d.ts", "2", 0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	profile := P144p30fps16x9
+	idx := []int{0, 3}
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	for _, i := range idx {
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
+		out := []TranscodeOptions{{
+			Oname:        fmt.Sprintf("%s/%d.md5", dir, i),
+			AudioEncoder: ComponentOptions{Name: "drop"},
+			VideoEncoder: ComponentOptions{Name: "copy"},
+			Muxer:        ComponentOptions{Name: "md5"},
+		}, {
+			Oname:        fmt.Sprintf("%s/nv_%d.ts", dir, i),
+			Profile:      profile,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+			Accel:        Nvidia,
+		}, {
+			Oname:   fmt.Sprintf("%s/nv_audio_encode_%d.ts", dir, i),
+			Profile: profile,
+			Accel:   Nvidia,
+		}, {
+			Oname:   fmt.Sprintf("%s/sw_%d.ts", dir, i),
+			Profile: profile,
+		}}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if res.Decoded.Frames != 120 {
+			t.Error("Did not get decoded frames", res.Decoded.Frames)
+		}
+		if res.Encoded[1].Frames != res.Encoded[2].Frames {
+			t.Error("Mismatched frame count for sw/nv")
+		}
+		if res.Encoded[1].Frames != 60 || res.Encoded[3].Frames != 60 {
+			t.Error("Bad things happened! ", res.Encoded)
+		}
+	}
+}
+
 func TestTranscoderAPI_InvalidFile(t *testing.T) {
 	// Test the following file open results on input: fail, success, fail, success
 
