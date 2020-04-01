@@ -100,6 +100,7 @@ struct filter_ctx {
   //      frames received )
   // the cumulative offset effect of flushing
   int64_t flush_offset;
+  int64_t frame_count, last_frame_pts;
   int flushed, flush_count;
 };
 
@@ -270,6 +271,8 @@ static void close_output(struct output_ctx *octx)
   if (octx->vc && AV_HWDEVICE_TYPE_NONE == octx->hw_type) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
+  octx->af.frame_count = octx->vf.frame_count = 0;
+  octx->af.last_frame_pts = octx->vf.last_frame_pts = AV_NOPTS_VALUE;
 }
 
 static void free_output(struct output_ctx *octx) {
@@ -987,8 +990,8 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
       }
       if (AV_NOPTS_VALUE != last_frame->pkt_dts &&
           pkt->dts <= last_frame->pkt_dts) {
-        ret = lpms_ERR_DTS;
-        dec_err("decoder: Segment out of order\n");
+        //ret = lpms_ERR_DTS;
+        //dec_err("decoder: Segment out of order\n");
       }
     }
 
@@ -1139,6 +1142,10 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     ret = init_video_filters(ictx, octx);
     if (ret < 0) return lpms_ERR_FILTERS;
   }
+  if (inf) {
+    inf->opaque = (void*)inf->pts;
+    filter->flush_offset += inf->pkt_duration;
+  }
   // Start filter flushing process if necessary
   if (!inf && !filter->flushed) {
     // Set input frame to the last frame
@@ -1148,14 +1155,15 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     AVFrame *frame = is_video ? ictx->last_frame_v : ictx->last_frame_a;
     filter->flush_offset += frame->pkt_duration;
     inf = frame;
-    inf->opaque = (void*)inf->pts; // value doesn't matter; just needs to be set
+    inf->opaque = NULL;
     is_flushing = 1;
   }
   if (inf) {
     // Apply the offset from filter flushing, then reset for the next output
-    inf->pts += filter->flush_offset;
+    int64_t old_pts = inf->pts;
+    inf->pts = filter->flush_offset;
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
-    inf->pts -= filter->flush_offset;
+    inf->pts = old_pts;
     if (ret < 0) proc_err("Error feeding the filtergraph");
   }
 
@@ -1171,18 +1179,31 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       if (inf) return ret;
       frame = NULL;
     } else if (ret < 0) proc_err("Error consuming the filtergraph\n");
-    if (frame && frame->opaque) {
+    if (frame && !frame->opaque) {
       // opaque being set means it's a flush packet
       filter->flush_count++;
       // don't set flushed flag in case this is a flush from a previous segment
       if (is_flushing) filter->flushed = 1;
       frame->opaque = NULL; // reset just to be sure
       continue;
+    } else if (frame && frame->opaque) {
+      // TODO check with things like framerate pass through!
+      int64_t pts = (int64_t)frame->opaque;
+      pts = av_rescale_q_rnd(pts, ost->time_base, av_buffersink_get_time_base(filter->sink_ctx), AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+      if (pts != filter->last_frame_pts) {
+        // Sometimes we have overlap between the calculated pts and what's
+        // received from the filter. Adjust so there's always a difference.
+        if (filter->last_frame_pts != AV_NOPTS_VALUE &&
+            filter->last_frame_pts + filter->frame_count >= pts) {
+          filter->frame_count = filter->last_frame_pts + filter->frame_count - pts;
+        } else filter->frame_count = 0;
+        filter->last_frame_pts = pts;
+      }
+
+      frame->pts = pts + filter->frame_count;
+//if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type) fprintf(stderr,"Parsed_fps adding base %ld pts %ld count %ld opaque %ld\n", pts,frame->pts,filter->frame_count, (int64_t)frame->opaque);
+      filter->frame_count++;
     }
-    // For now, the time base of the filter output is 1/framerate, so each
-    // frame gets its pts incremented by one. This may not always hold later on!
-    // TODO rescale flush_count towards filter output timebase as appropriate.
-    if (frame) frame->pts -= filter->flush_count;
     ret = encode(encoder, frame, octx, ost);
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.

@@ -362,15 +362,8 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 			Profile: profile,
 		}}
 		res, err := tc.Transcode(in, out)
-		if (i == 1 || i == 3) && err != nil {
+		if err != nil {
 			t.Error(err)
-		}
-		if i == 0 || i == 2 {
-			if err == nil || err.Error() != "Segment out of order" {
-				t.Error(err)
-			}
-			// Maybe one day we'll be able to run the rest of this test
-			continue
 		}
 		if res.Decoded.Frames != 120 {
 			t.Error("Did not get decoded frames", res.Decoded.Frames)
@@ -386,13 +379,18 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
       ffmpeg -loglevel warning -i out_$1.ts -an -c:v copy -f md5 ffmpeg_$1.md5
       diff -u $1.md5 ffmpeg_$1.md5
 
+      # muxdelay removes the 1.4 sec mpegts offset, copyts passes ts through
       ffmpeg -loglevel warning -i out_$1.ts -c:a aac -ar 44100 -ac 2 \
-        -vf fps=123,scale=w=256:h=144 -c:v libx264 ffmpeg_sw_$1.ts
+        -vf fps=123,scale=w=256:h=144 -c:v libx264 -muxdelay 0 -copyts ffmpeg_sw_$1.ts
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_sw_$1.ts | grep nb_read_frames=246
       ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
       ffprobe -count_frames -show_streams -select_streams v sw_audio_encode_$1.ts | grep nb_read_frames=246
+
+      ffprobe -select_streams v -show_packets ffmpeg_sw_$1.ts | grep ts= > ffmpeg_sw_$1.out
+      ffprobe -select_streams v -show_packets sw_$1.ts | grep ts= > sw_$1.out
+      diff -u ffmpeg_sw_$1.out sw_$1.out
 
     # check image quality
     ffmpeg -loglevel warning -i sw_$1.ts -i ffmpeg_sw_$1.ts \
@@ -405,9 +403,9 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 
 
     # re-enable for seg 0 and 1 when alternating timestamps can be handled
-    # check 0
+    check 0
     check 1
-    # check 2
+    check 2
     check 3
   `
 	run(cmd)
