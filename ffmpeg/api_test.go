@@ -119,6 +119,8 @@ func countEncodedFrames(t *testing.T, accel Acceleration) {
 		p60fps.Framerate = 60
 		p120fps := P144p30fps16x9
 		p120fps.Framerate = 120
+		passthru := P144p30fps16x9
+		passthru.Framerate = 0
 		out := []TranscodeOptions{{
 			Oname:   fmt.Sprintf("%s/out_30fps_%d.ts", dir, i),
 			Profile: P144p30fps16x9,
@@ -130,6 +132,10 @@ func countEncodedFrames(t *testing.T, accel Acceleration) {
 		}, {
 			Oname:   fmt.Sprintf("%s/out_120fps_%d.ts", dir, i),
 			Profile: p120fps,
+			Accel:   accel,
+		}, {
+			Oname:   fmt.Sprintf("%s/out_passthru_%d.ts", dir, i),
+			Profile: passthru,
 			Accel:   accel,
 		}}
 
@@ -145,6 +151,9 @@ func countEncodedFrames(t *testing.T, accel Acceleration) {
 		}
 		if res.Encoded[2].Frames != 240 {
 			t.Error(in.Fname, " Mismatched frame count: expected 240 got ", res.Encoded[2].Frames)
+		}
+		if res.Encoded[3].Frames != 120 {
+			t.Error(in.Fname, " Mismatched frame count: expected 120 got ", res.Encoded[3].Frames)
 		}
 	}
 
@@ -254,6 +263,38 @@ pkt_pts=672000
 pkt_pts=844500
 pkt_pts=846000
 pkt_pts=847500
+
+==> out_passthru_0.ts.pts <==
+pkt_pts=128970
+pkt_pts=130500
+pkt_pts=131940
+pkt_pts=304470
+pkt_pts=305910
+pkt_pts=307440
+
+==> out_passthru_1.ts.pts <==
+pkt_pts=308970
+pkt_pts=310500
+pkt_pts=311940
+pkt_pts=484470
+pkt_pts=485910
+pkt_pts=487440
+
+==> out_passthru_2.ts.pts <==
+pkt_pts=488970
+pkt_pts=490410
+pkt_pts=491940
+pkt_pts=664470
+pkt_pts=665910
+pkt_pts=667440
+
+==> out_passthru_3.ts.pts <==
+pkt_pts=668970
+pkt_pts=670500
+pkt_pts=671940
+pkt_pts=844470
+pkt_pts=845910
+pkt_pts=847440
 EOF
   `
 	run(cmd)
