@@ -78,14 +78,6 @@ func stubGetSegNotFound(url *url.URL) ([]byte, error) {
 
 func TestHLS(t *testing.T) {
 	rec := httptest.NewRecorder()
-	handleLive(rec, httptest.NewRequest("GET", "/badpath", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
-	if rec.Result().StatusCode != 400 {
-		t.Errorf("Expecting 400 because of bad path, but got: %v", rec.Result().StatusCode)
-	}
-	handleLive(rec, httptest.NewRequest("GET", "/seg.webm", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
-	if rec.Result().StatusCode != 400 {
-		t.Errorf("Expecting 400 because of bad path, but got: %v", rec.Result().StatusCode)
-	}
 
 	//Test getting master playlist
 	rec = httptest.NewRecorder()

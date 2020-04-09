@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
 	joy4rtmp "github.com/livepeer/joy4/format/rtmp"
@@ -105,19 +104,11 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 
 	glog.V(4).Infof("LPMS got HTTP request @ %v", r.URL.Path)
 
-	// TODO Should we just accept any media format here?
-	//      Is it really necessary to explicitly enumerate formats?
-	ext := path.Ext(r.URL.Path)
-	_, ok := ffmpeg.ExtensionFormats[ext]
-	if ".m3u8" != ext && !ok {
-		http.Error(w, "Unrecognized file suffix.", 400)
-		glog.Error("Unrecognized file suffix: ", ext)
-		return
-	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 	w.Header().Set("Cache-Control", "max-age=5")
 
+	ext := path.Ext(r.URL.Path)
 	if ".m3u8" == ext {
 		w.Header().Set("Content-Type", "application/x-mpegURL")
 
@@ -166,7 +157,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	// Should be one of the accepted formats at this point
+	// Some other non-m3u8 format at this point
 	seg, err := getSegment(r.URL)
 	if err != nil {
 		glog.Errorf("Error getting segment %v: %v", r.URL, err)
@@ -184,7 +175,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 	w.Header().Set("Content-Length", strconv.Itoa(len(seg)))
 	_, err = w.Write(seg)
 	if err != nil {
-		glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
+		glog.Errorf("Error writting response %v: %v", r.URL, err)
 		if err == ErrNotFound {
 			http.Error(w, "ErrNotFound", 404)
 		} else if err == ErrTimeout {
