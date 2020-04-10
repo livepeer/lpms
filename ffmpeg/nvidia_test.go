@@ -153,6 +153,26 @@ func TestNvidia_Pixfmts(t *testing.T) {
   `
 	run(cmd)
 
+	// Check that yuvj420p is allowed (jpeg color range)
+	// TODO check for color range truncation?
+	cmd = `
+    ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuvj420p -t 1 inj420p.mp4
+    ffprobe -loglevel warning inj420p.mp4  -show_streams -select_streams v | grep pix_fmt=yuvj420p
+  `
+	run(cmd)
+	err = Transcode2(&TranscodeOptionsIn{
+		Fname: dir + "/inj420p.mp4",
+		Accel: Nvidia,
+	}, []TranscodeOptions{{
+		Oname:   dir + "/outj420p.mp4",
+		Profile: prof,
+		Accel:   Nvidia,
+	},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
 	return
 	// Following test vaidates YUV 4:4:4 pixel format encoding which is only supported on limited set of devices for e.g. P100
 	// https://developer.nvidia.com/video-encode-decode-gpu-support-matrix
