@@ -96,6 +96,43 @@ func TestNvidia_Transcoding(t *testing.T) {
 
 }
 
+func TestNvidia_BadCodecs(t *testing.T) {
+	// Following test case validates that the transcoder throws correct errors for unsupported codecs
+	// Currently only H264 is supported
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	fname := dir + "/mpeg2.ts"
+	oname := dir + "/out.ts"
+	prof := P240p30fps16x9
+
+	cmd := `
+	cp "$1/../transcoder/test.ts" test.ts
+		# Generate an input file that is not H264 (mpeg2) and sanity check
+		ffmpeg -loglevel warning -i test.ts -an -c:v mpeg2video -t 1 mpeg2.ts
+		ffprobe -loglevel warning mpeg2.ts -show_streams | grep codec_name=mpeg2video
+	`
+	run(cmd)
+
+	// sanity check
+	err := Transcode2(&TranscodeOptionsIn{
+		Fname: fname,
+		Accel: Nvidia,
+	}, []TranscodeOptions{
+		{
+			Oname:   oname,
+			Profile: prof,
+			Accel:   Nvidia,
+		},
+	})
+
+	if err == nil || err.Error() != "Unsupported input codec" {
+		t.Error(err)
+	}
+
+}
+
 func TestNvidia_Pixfmts(t *testing.T) {
 
 	// Following test case validates pixel format at the decoding end

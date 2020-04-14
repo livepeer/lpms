@@ -6,6 +6,7 @@
 
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
+extern const int lpms_ERR_INPUT_CODEC;
 extern const int lpms_ERR_FILTERS;
 extern const int lpms_ERR_OUTPUTS;
 extern const int lpms_ERR_DTS;

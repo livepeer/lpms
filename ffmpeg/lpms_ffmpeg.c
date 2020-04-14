@@ -11,6 +11,7 @@
 
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
+const int lpms_ERR_INPUT_CODEC = FFERRTAG('I','N','P','C');
 const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
 const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
@@ -833,8 +834,11 @@ static int open_video_decoder(input_params *params, struct input_ctx *ctx)
   else if (ctx->vi < 0) {
     fprintf(stderr, "No video stream found in input\n");
   } else {
-    if (AV_CODEC_ID_H264 == codec->id &&
-        AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
+    if (AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
+      if (AV_CODEC_ID_H264 != codec->id) {
+        ret = lpms_ERR_INPUT_CODEC;
+        dd_err("Non H264 codec detected in input\n");
+      }
       AVCodec *c = avcodec_find_decoder_by_name("h264_cuvid");
       if (c) codec = c;
       else fprintf(stderr, "Cuvid decoder not found; defaulting to software\n");
