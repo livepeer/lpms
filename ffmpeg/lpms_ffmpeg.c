@@ -35,9 +35,9 @@ const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 //  Decoder: For audio, we pay the price of closing and re-opening the decoder.
 //           For video, we cache the first packet we read (input_ctx.first_pkt).
 //           The pts is set to a sentinel value and fed to the decoder. Once we
-//           receive a frame from the decoder with the pts set to the sentinel
-//           value, then we know the decoder has been fully flushed. Ignore any
-//           subsequent frames we receive with the sentiel pts.
+//           receive all frames from the decoder OR have sent too many sentinel
+//           pkts without receiving anything, then we know the decoder has been
+//           fully flushed.
 //
 //  Filter:  The challenge here is around fps filter adding and dropping frames.
 //           The fps filter expects a strictly monotonic input pts: frames with
@@ -75,6 +75,16 @@ struct input_ctx {
   // Decoder flush
   AVPacket *first_pkt;
   int flushed;
+  int flushing;
+  // The diff of `packets sent - frames recv` serves as an estimate of
+  // internally buffered packets by the decoder.  We're done flushing when this
+  // becomes 0.
+  uint16_t pkt_diff;
+  // We maintain a count of sentinel packets sent without receiving any
+  // valid frames back, and stop flushing if it crosses SENTINEL_MAX.
+  // FIXME This is needed due to issue #155 - input/output frame mismatch.
+#define SENTINEL_MAX 5
+  uint16_t sentinel_count;
 
   // Filter flush
   AVFrame *last_frame_v, *last_frame_a;
@@ -318,7 +328,7 @@ static void send_first_pkt(struct input_ctx *ictx)
     char errstr[AV_ERROR_MAX_STRING_SIZE];
     av_strerror(ret, errstr, sizeof errstr);
     fprintf(stderr, "Error sending flush packet : %s\n", errstr);
-  }
+  } else ictx->sentinel_count++;
 }
 
 static enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
@@ -955,6 +965,24 @@ open_input_err:
 #undef dd_err
 }
 
+static int lpms_send_packet(struct input_ctx *ictx, AVCodecContext *dec, AVPacket *pkt)
+{
+    int ret = avcodec_send_packet(dec, pkt);
+    if (ret == 0 && dec == ictx->vc) ictx->pkt_diff++; // increase buffer count for video packets
+    return ret;
+}
+
+static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFrame *frame)
+{
+    int ret = avcodec_receive_frame(dec, frame);
+    if (dec != ictx->vc) return ret;
+    if (!ret && frame && frame->pts != -1) {
+      ictx->pkt_diff--; // decrease buffer count for non-sentinel video frames
+      if (ictx->flushing) ictx->sentinel_count = 0;
+    }
+    return ret;
+}
+
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 {
 #define dec_err(msg) { \
@@ -998,9 +1026,9 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
       }
     }
 
-    ret = avcodec_send_packet(decoder, pkt);
+    ret = lpms_send_packet(ictx, decoder, pkt);
     if (ret < 0) dec_err("Error sending packet to decoder\n");
-    ret = avcodec_receive_frame(decoder, frame);
+    ret = lpms_receive_frame(ictx, decoder, frame);
     if (ret == AVERROR(EAGAIN)) {
       // Distinguish from EAGAIN that may occur with
       // av_read_frame or avcodec_send_packet
@@ -1021,18 +1049,19 @@ dec_flush:
   // video frames, so continue on to audio.
 
   // Flush video decoder.
-  // To accommodate CUDA, we feed the decoder a a sentinel (flush) frame.
-  // Once the flush frame has been decoded, the decoder is fully flushed.
+  // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
+  // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
+  // buffered frames with no success.
   // TODO this is unnecessary for SW decoding! SW process should match audio
   if (ictx->vc) {
+    ictx->flushing = 1;
     send_first_pkt(ictx);
-
-    ret = avcodec_receive_frame(ictx->vc, frame);
+    ret = lpms_receive_frame(ictx, ictx->vc, frame);
     pkt->stream_index = ictx->vi;
-    if (!ret) {
-      if (is_flush_frame(frame)) ictx->flushed = 1;
-      return ret;
-    }
+    // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
+    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX) return 0;
+    ictx->flushed = 1;
+    if (!ret) return ret;
   }
   // Flush audio decoder.
   if (ictx->ac) {
@@ -1419,6 +1448,9 @@ transcode_cleanup:
   avio_closep(&ictx->ic->pb);
   if (dframe) av_frame_free(&dframe);
   ictx->flushed = 0;
+  ictx->flushing = 0;
+  ictx->pkt_diff = 0;
+  ictx->sentinel_count = 0;
   av_packet_unref(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
