@@ -60,6 +60,13 @@ const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 //
 // Internal transcoder data structures
 //
+
+enum LPMSFlushMode {
+  LPMS_FLUSH_UNDEFINED = 0,
+  LPMS_FLUSH_SENTINEL,
+  LPMS_FLUSH_DEFAULT
+};
+
 struct input_ctx {
   AVFormatContext *ic; // demuxer required
   AVCodecContext  *vc; // video decoder optional
@@ -75,6 +82,7 @@ struct input_ctx {
   // Decoder flush
   AVPacket *first_pkt;
   int flushed;
+  enum LPMSFlushMode flush_mode;
 
   // Filter flush
   AVFrame *last_frame_v, *last_frame_a;
@@ -955,7 +963,7 @@ open_input_err:
 #undef dd_err
 }
 
-int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
+int process_in(struct input_ctx *ictx, int framecount, AVFrame *frame, AVPacket *pkt)
 {
 #define dec_err(msg) { \
   if (!ret) ret = -1; \
@@ -1021,18 +1029,25 @@ dec_flush:
   // video frames, so continue on to audio.
 
   // Flush video decoder.
-  // To accommodate CUDA, we feed the decoder a a sentinel (flush) frame.
-  // Once the flush frame has been decoded, the decoder is fully flushed.
-  // TODO this is unnecessary for SW decoding! SW process should match audio
   if (ictx->vc) {
-    send_first_pkt(ictx);
-
-    ret = avcodec_receive_frame(ictx->vc, frame);
-    pkt->stream_index = ictx->vi;
-    if (!ret) {
-      if (is_flush_frame(frame)) ictx->flushed = 1;
-      return ret;
+    // Only use sentinel flushing for CUDA, and if we've started getting frames back
+    if (ictx->flush_mode == LPMS_FLUSH_UNDEFINED) {
+      ictx->flush_mode = (framecount > 0 && ictx->hw_type == AV_HWDEVICE_TYPE_CUDA) ? LPMS_FLUSH_SENTINEL : LPMS_FLUSH_DEFAULT;
     }
+    if (ictx->flush_mode == LPMS_FLUSH_SENTINEL) {
+      // To accommodate CUDA, we feed the decoder a a sentinel (flush) frame.
+      // Once the flush frame has been decoded, the decoder is fully flushed.
+      send_first_pkt(ictx);
+
+      ret = avcodec_receive_frame(ictx->vc, frame);
+      if (!ret && is_flush_frame(frame))  ictx->flushed = 1;
+    } else {
+      // Classic flushing by sending NULL packets to decoder
+      ret = avcodec_send_packet(ictx->vc, NULL);
+      ret = avcodec_receive_frame(ictx->vc, frame);
+    }
+    pkt->stream_index = ictx->vi;
+    if (!ret) return ret;
   }
   // Flush audio decoder.
   if (ictx->ac) {
@@ -1326,7 +1341,7 @@ int transcode(struct transcode_thread *h,
     AVStream *ist = NULL;
     AVFrame *last_frame = NULL;
     av_frame_unref(dframe);
-    ret = process_in(ictx, dframe, &ipkt);
+    ret = process_in(ictx, decoded_results->frames, dframe, &ipkt);
     if (ret == AVERROR_EOF) break;
                             // Bail out on streams that appear to be broken
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
