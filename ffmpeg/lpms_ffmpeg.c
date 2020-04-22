@@ -82,6 +82,7 @@ struct input_ctx {
   // Decoder flush
   AVPacket *first_pkt;
   int flushed;
+  int flushing;
   enum LPMSFlushMode flush_mode;
 
   // Filter flush
@@ -1043,8 +1044,14 @@ dec_flush:
       if (!ret && is_flush_frame(frame))  ictx->flushed = 1;
     } else {
       // Classic flushing by sending NULL packets to decoder
+      ictx->flushing = 1;
       ret = avcodec_send_packet(ictx->vc, NULL);
       ret = avcodec_receive_frame(ictx->vc, frame);
+      if (ret == AVERROR_EOF) {
+        avcodec_flush_buffers(ictx->vc);
+        ictx->flushed = 1;
+        ictx->flushing = 0;
+      }
     }
     pkt->stream_index = ictx->vi;
     if (!ret) return ret;
@@ -1350,6 +1357,7 @@ int transcode(struct transcode_thread *h,
     has_frame = lpms_ERR_PACKET_ONLY != ret;
 
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+      if (ictx->flushing) dframe->pkt_dts = ictx->first_pkt->dts;
       if (is_flush_frame(dframe)) goto whileloop_end;
       // width / height will be zero for pure streamcopy (no decoding)
       decoded_results->frames += dframe->width && dframe->height;
@@ -1434,6 +1442,7 @@ transcode_cleanup:
   avio_closep(&ictx->ic->pb);
   if (dframe) av_frame_free(&dframe);
   ictx->flushed = 0;
+  ictx->flush_mode = LPMS_FLUSH_UNDEFINED;
   av_packet_unref(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
