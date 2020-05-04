@@ -34,10 +34,8 @@ const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 //
 //  Decoder: For audio, we pay the price of closing and re-opening the decoder.
 //           For video, we cache the first packet we read (input_ctx.first_pkt).
-//           The pts is set to a sentinel value and fed to the decoder. Once we
-//           receive a frame from the decoder with the pts set to the sentinel
-//           value, then we know the decoder has been fully flushed. Ignore any
-//           subsequent frames we receive with the sentiel pts.
+//           This packet's dts is used to check segment ordering. We flush using
+//           NULL packet & avcodec_flush_buffers which is not costly.
 //
 //  Filter:  The challenge here is around fps filter adding and dropping frames.
 //           The fps filter expects a strictly monotonic input pts: frames with
@@ -60,13 +58,6 @@ const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 //
 // Internal transcoder data structures
 //
-
-enum LPMSFlushMode {
-  LPMS_FLUSH_UNDEFINED = 0,
-  LPMS_FLUSH_SENTINEL,
-  LPMS_FLUSH_DEFAULT
-};
-
 struct input_ctx {
   AVFormatContext *ic; // demuxer required
   AVCodecContext  *vc; // video decoder optional
@@ -83,7 +74,6 @@ struct input_ctx {
   AVPacket *first_pkt;
   int flushed;
   int flushing;
-  enum LPMSFlushMode flush_mode;
 
   // Filter flush
   AVFrame *last_frame_v, *last_frame_a;
@@ -311,23 +301,6 @@ static int needs_decoder(char *encoder) {
   // Checks whether the given "encoder" depends on having a decoder.
   // Do this by enumerating special cases that do *not* need encoding
   return !(is_copy(encoder) || is_drop(encoder));
-}
-
-static int is_flush_frame(AVFrame *frame)
-{
-  return -1 == frame->pts;
-}
-
-static void send_first_pkt(struct input_ctx *ictx)
-{
-  if (ictx->flushed || !ictx->first_pkt) return;
-
-  int ret = avcodec_send_packet(ictx->vc, ictx->first_pkt);
-  if (ret < 0) {
-    char errstr[AV_ERROR_MAX_STRING_SIZE];
-    av_strerror(ret, errstr, sizeof errstr);
-    fprintf(stderr, "Error sending flush packet : %s\n", errstr);
-  }
 }
 
 static enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
@@ -964,7 +937,7 @@ open_input_err:
 #undef dd_err
 }
 
-int process_in(struct input_ctx *ictx, int framecount, AVFrame *frame, AVPacket *pkt)
+int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 {
 #define dec_err(msg) { \
   if (!ret) ret = -1; \
@@ -973,7 +946,6 @@ int process_in(struct input_ctx *ictx, int framecount, AVFrame *frame, AVPacket 
 }
   int ret = 0;
 
-  //printf("TRACE: %s --- read frame count %d\n",__func__, framecount);
   // Read a packet and attempt to decode it.
   // If decoding was not possible, return the packet anyway for streamcopy
   av_init_packet(pkt);
@@ -1008,11 +980,9 @@ int process_in(struct input_ctx *ictx, int framecount, AVFrame *frame, AVPacket 
       }
     }
 
-    //printf("\tvid: %d, Sent packet pts %ld, ret %d\n", ist->index == ictx->vi, pkt->pts, ret);
     ret = avcodec_send_packet(decoder, pkt);
     if (ret < 0) dec_err("Error sending packet to decoder\n");
     ret = avcodec_receive_frame(decoder, frame);
-    //printf("\tRecv frame pts %ld, ret %d\n", frame->pts, ret);
     if (ret == AVERROR(EAGAIN)) {
       // Distinguish from EAGAIN that may occur with
       // av_read_frame or avcodec_send_packet
@@ -1032,31 +1002,15 @@ dec_flush:
   // with video. If there's a nonzero response type, we know there are no more
   // video frames, so continue on to audio.
 
-  // Flush video decoder.
+  // Flush video decoder by sending NULL packets.
   if (ictx->vc) {
-    // Only use sentinel flushing for CUDA, and if we've started getting frames back
-    if (ictx->flush_mode == LPMS_FLUSH_UNDEFINED) {
-      ictx->flush_mode = (framecount > 0 && ictx->hw_type == AV_HWDEVICE_TYPE_CUDA) ? LPMS_FLUSH_SENTINEL : LPMS_FLUSH_DEFAULT;
-    }
-    if (ictx->flush_mode == LPMS_FLUSH_SENTINEL) {
-      // To accommodate CUDA, we feed the decoder a a sentinel (flush) frame.
-      // Once the flush frame has been decoded, the decoder is fully flushed.
-      send_first_pkt(ictx);
-
-      ret = avcodec_receive_frame(ictx->vc, frame);
-      if (!ret && is_flush_frame(frame))  ictx->flushed = 1;
-    } else {
-      // Classic flushing by sending NULL packets to decoder
-      ictx->flushing = 1;
-      ret = avcodec_send_packet(ictx->vc, NULL);
-      //printf("\tvid: 1, Sent flush packet ret %d\n", ret);
-      ret = avcodec_receive_frame(ictx->vc, frame);
-      //printf("\tRecv frame pts %ld, ret %d\n", frame->pts, ret);
-      if (ret == AVERROR_EOF) {
-        avcodec_flush_buffers(ictx->vc);
-        ictx->flushed = 1;
-        ictx->flushing = 0;
-      }
+    ictx->flushing = 1;
+    avcodec_send_packet(ictx->vc, NULL);
+    ret = avcodec_receive_frame(ictx->vc, frame);
+    if (ret == AVERROR_EOF) {
+      avcodec_flush_buffers(ictx->vc);
+      ictx->flushed = 1;
+      ictx->flushing = 0;
     }
     pkt->stream_index = ictx->vi;
     if (!ret) return ret;
@@ -1103,7 +1057,6 @@ int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVS
   int ret = 0;
   AVPacket pkt = {0};
 
-  //printf("TRACE: %s --- frame: %d, pts : %d\n",__func__, frame, (frame)?frame->pts:-1);
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && frame) {
     if (!octx->res->frames) {
       frame->pict_type = AV_PICTURE_TYPE_I;
@@ -1156,7 +1109,6 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   int ret = 0;
   int is_flushing = 0;
 
-  //printf("TRACE: %s --- infpts: %d\n",__func__, (inf) ? inf->pts: -1);
   if (!encoder) proc_err("Trying to transmux; not supported")
 
   if (!filter || !filter->active) {
@@ -1177,13 +1129,13 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   // Start filter flushing process if necessary
   if (!inf && !filter->flushed) {
     // Set input frame to the last frame
-    // And increment pts offset by expected output packet duration
-    // expected output pts = (input_pts / pkt_duration) * (output_fps / input_fps)
     int is_video = AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type;
     AVFrame *frame = is_video ? ictx->last_frame_v : ictx->last_frame_a;
+    // Increment pts offset by:
+    // - input packet's duration usually
     int64_t dur = frame->pkt_duration;
+    // - output packet's duration if using fps filter & haven't encoded anything yet
     if (is_video && octx->fps.den && !octx->res->frames) {
-      // adjust if: is video, using fps filter, and haven't encoded anything yet
       AVStream *ist = ictx->ic->streams[ictx->vi];
       dur = av_rescale_q(frame->pkt_duration, ist->r_frame_rate, octx->fps);
     }
@@ -1361,7 +1313,7 @@ int transcode(struct transcode_thread *h,
     AVStream *ist = NULL;
     AVFrame *last_frame = NULL;
     av_frame_unref(dframe);
-    ret = process_in(ictx, decoded_results->frames, dframe, &ipkt);
+    ret = process_in(ictx, dframe, &ipkt);
     if (ret == AVERROR_EOF) break;
                             // Bail out on streams that appear to be broken
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
@@ -1370,8 +1322,10 @@ int transcode(struct transcode_thread *h,
     has_frame = lpms_ERR_PACKET_ONLY != ret;
 
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+      // when sentinel flush was used, the frame had pkt_dts of the first packet
+      // now we don't use sentinel flush but still have to replicate the pkt_dts
+      // otherwise it breaks segment ordering check. FIXME
       if (ictx->flushing) dframe->pkt_dts = ictx->first_pkt->dts;
-      if (is_flush_frame(dframe)) goto whileloop_end;
       // width / height will be zero for pure streamcopy (no decoding)
       decoded_results->frames += dframe->width && dframe->height;
       decoded_results->pixels += dframe->width * dframe->height;
@@ -1455,7 +1409,7 @@ transcode_cleanup:
   avio_closep(&ictx->ic->pb);
   if (dframe) av_frame_free(&dframe);
   ictx->flushed = 0;
-  ictx->flush_mode = LPMS_FLUSH_UNDEFINED;
+  ictx->flushing = 0;
   av_packet_unref(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);

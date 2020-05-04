@@ -765,54 +765,10 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 }
 
 func TestNvidia_ShortSegments(t *testing.T) {
-	run, dir := setupTest(t)
-	defer os.RemoveAll(dir)
-
-	cmd := `
-    # generate 1-frame segments
-    cp "$1/../transcoder/test.ts" .
-
-    ffmpeg -loglevel warning -ss 0 -i test.ts -c copy -frames:v 1 -copyts short0.ts
-    ffmpeg -loglevel warning -ss 2 -i test.ts -c copy -frames:v 1 -copyts short1.ts
-    ffmpeg -loglevel warning -ss 4 -i test.ts -c copy -frames:v 1 -copyts short2.ts
-    ffmpeg -loglevel warning -ss 6 -i test.ts -c copy -frames:v 1 -copyts short3.ts
-
-    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short0.ts | grep nb_read_frames=1
-    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short1.ts | grep nb_read_frames=1
-    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short2.ts | grep nb_read_frames=1
-    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3.ts | grep nb_read_frames=1
-  `
-	run(cmd)
-
-	tc := NewTranscoder()
-	defer tc.StopTranscoder()
-	for i := 0; i < 4; i++ {
-		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
-		t.Log("fname ", fname)
-		in := &TranscodeOptionsIn{Fname: fname, Accel: Nvidia}
-		out := []TranscodeOptions{{Oname: dir + "/out.ts", Profile: P144p30fps16x9, Accel: Nvidia}}
-		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
-		if 1 != res.Decoded.Frames {
-			t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
-		}
-		if 0 == res.Encoded[0].Frames {
-			// not sure what should be a reasonable number here
-			t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
-		}
-	}
-
-	// Also test:
-	//  stream copy (both in conjunction with transcoding and standalone)
-	//  stream dropping (both in conjunction with transcoding and standalone)
-	//  framerate pass through
-	//  transcode low frame rate to low frame rate
-	//  other sanity checks for slightly higher frame numbers -
-	//   try 2, 3, 5 frames in addition to the 1 frame test case above.
-	// also test non-cuda, eg via api_test.go
-	// parameterize test sequence for all the above?
+	shortSegments(t, Nvidia, 1)
+	shortSegments(t, Nvidia, 2)
+	shortSegments(t, Nvidia, 3)
+	shortSegments(t, Nvidia, 5)
 }
 
 // XXX test bframes or delayed frames

@@ -1512,3 +1512,60 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		t.Error("Did not get expected error with invalid format ", err)
 	}
 }
+
+// test short segments
+func shortSegments(t *testing.T, accel Acceleration, fc int) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+    # generate segments with fc-frames
+    cp "$1/../transcoder/test.ts" .
+	frame_count=%d
+
+    ffmpeg -loglevel warning -ss 0 -i test.ts -c copy -frames:v $frame_count -copyts short0.ts
+    ffmpeg -loglevel warning -ss 2 -i test.ts -c copy -frames:v $frame_count -copyts short1.ts
+    ffmpeg -loglevel warning -ss 4 -i test.ts -c copy -frames:v $frame_count -copyts short2.ts
+    ffmpeg -loglevel warning -ss 6 -i test.ts -c copy -frames:v $frame_count -copyts short3.ts
+
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short0.ts | grep nb_read_frames=$frame_count
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short1.ts | grep nb_read_frames=$frame_count
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short2.ts | grep nb_read_frames=$frame_count
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3.ts | grep nb_read_frames=$frame_count
+  `
+	run(fmt.Sprintf(cmd, fc))
+
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
+		t.Log("fname ", fname)
+		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+		out := []TranscodeOptions{{Oname: dir + "/out.ts", Profile: P144p30fps16x9, Accel: accel}}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if fc != res.Decoded.Frames {
+			t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
+		}
+		if 0 == res.Encoded[0].Frames {
+			// not sure what should be a reasonable number here
+			t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
+		}
+	}
+
+	// Also test:
+	//  stream copy (both in conjunction with transcoding and standalone)
+	//  stream dropping (both in conjunction with transcoding and standalone)
+	//  framerate pass through
+	//  transcode low frame rate to low frame rate
+	// parameterize test sequence for all the above?
+}
+
+func TestTranscoder_ShortSegments(t *testing.T) {
+	shortSegments(t, Software, 1)
+	shortSegments(t, Software, 2)
+	shortSegments(t, Software, 3)
+	shortSegments(t, Software, 5)
+}
