@@ -976,7 +976,7 @@ static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFra
 {
     int ret = avcodec_receive_frame(dec, frame);
     if (dec != ictx->vc) return ret;
-    if (!ret && frame && frame->pts != -1) {
+    if (!ret && frame && !is_flush_frame(frame)) {
       ictx->pkt_diff--; // decrease buffer count for non-sentinel video frames
       if (ictx->flushing) ictx->sentinel_count = 0;
     }
@@ -1059,9 +1059,12 @@ dec_flush:
     ret = lpms_receive_frame(ictx, ictx->vc, frame);
     pkt->stream_index = ictx->vi;
     // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX) return 0;
-    ictx->flushed = 1;
-    if (!ret) return ret;
+    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
+        return 0; // ignore actual return value and keep flushing
+    } else {
+        ictx->flushed = 1;
+        if (!ret) return ret;
+    }
   }
   // Flush audio decoder.
   if (ictx->ac) {
@@ -1177,11 +1180,17 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   // Start filter flushing process if necessary
   if (!inf && !filter->flushed) {
     // Set input frame to the last frame
-    // And increment pts offset by pkt_duration
-    // TODO It may make sense to use the expected output packet duration instead
     int is_video = AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type;
     AVFrame *frame = is_video ? ictx->last_frame_v : ictx->last_frame_a;
-    filter->flush_offset += frame->pkt_duration;
+    // Increment pts offset by:
+    // - input packet's duration usually
+    int64_t dur = frame->pkt_duration;
+    // - output packet's duration if using fps filter & haven't encoded anything yet
+    if (is_video && octx->fps.den && !octx->res->frames) {
+      AVStream *ist = ictx->ic->streams[ictx->vi];
+      dur = av_rescale_q(frame->pkt_duration, ist->r_frame_rate, octx->fps);
+    }
+    filter->flush_offset += dur;
     inf = frame;
     inf->opaque = (void*)inf->pts; // value doesn't matter; just needs to be set
     is_flushing = 1;

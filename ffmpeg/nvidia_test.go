@@ -764,4 +764,13 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 	tc.StopTranscoder()
 }
 
+func TestNvidia_ShortSegments(t *testing.T) {
+	shortSegments(t, Nvidia, 1)
+	shortSegments(t, Nvidia, 2)
+	shortSegments(t, Nvidia, 3)
+	shortSegments(t, Nvidia, 5)
+	shortSegments(t, Nvidia, 6)
+	shortSegments(t, Nvidia, 10)
+}
+
 // XXX test bframes or delayed frames
