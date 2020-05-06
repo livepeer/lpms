@@ -478,3 +478,206 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
   `
 	run(cmd)
 }
+
+// test short segments
+func shortSegments(t *testing.T, accel Acceleration, fc int) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+    # generate segments with #fc frames
+    cp "$1/../transcoder/test.ts" .
+	frame_count=%d
+
+    ffmpeg -loglevel warning -ss 0 -i test.ts -c copy -frames:v $frame_count -copyts short0.ts
+    ffmpeg -loglevel warning -ss 2 -i test.ts -c copy -frames:v $frame_count -copyts short1.ts
+    ffmpeg -loglevel warning -ss 4 -i test.ts -c copy -frames:v $frame_count -copyts short2.ts
+    ffmpeg -loglevel warning -ss 6 -i test.ts -c copy -frames:v $frame_count -copyts short3.ts
+
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short0.ts | grep nb_read_frames=$frame_count
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short1.ts | grep nb_read_frames=$frame_count
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short2.ts | grep nb_read_frames=$frame_count
+    ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3.ts | grep nb_read_frames=$frame_count
+  `
+	run(fmt.Sprintf(cmd, fc))
+
+	// Test if decoding/encoding expected number of frames
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
+		t.Log("fname ", fname)
+		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+		out := []TranscodeOptions{{Oname: dir + "/out.ts", Profile: P144p30fps16x9, Accel: accel}}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if fc != res.Decoded.Frames {
+			t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
+		}
+		if 0 == res.Encoded[0].Frames {
+			// TODO not sure what should be a reasonable number here
+			t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
+		}
+	}
+
+	// test standalone stream copy
+	tc.StopTranscoder()
+	tc = NewTranscoder()
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
+		oname := fmt.Sprintf("%s/vcopy%d.ts", dir, i)
+		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+		out := []TranscodeOptions{
+			{
+				Oname: oname,
+				VideoEncoder: ComponentOptions{Name: "copy", Opts: map[string]string{
+					"mpegts_flags": "resend_headers,initial_discontinuity",
+				}},
+				Accel: accel,
+			},
+		}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if res.Encoded[0].Frames != 0 {
+			t.Error("Unexpected frame counts from stream copy")
+			t.Error(res)
+		}
+		cmd = `
+        # extract video track, compare md5sums
+		i=%d
+        ffmpeg -i short$i.ts -an -c:v copy -f md5 short$i.md5
+        ffmpeg -i vcopy$i.ts -an -c:v copy -f md5 vcopy$i.md5
+        diff -u short$i.md5 vcopy$i.md5
+        `
+		run(fmt.Sprintf(cmd, i))
+	}
+
+	// test standalone stream drop
+	tc.StopTranscoder()
+	tc = NewTranscoder()
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
+		oname := fmt.Sprintf("%s/vdrop%d.ts", dir, i)
+		// Normal case : drop only video
+		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+		out := []TranscodeOptions{
+			{
+				Oname:        oname,
+				VideoEncoder: ComponentOptions{Name: "drop"},
+				Accel:        accel,
+			},
+		}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
+			t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
+		}
+
+	}
+
+	// test framerate passthrough
+	tc.StopTranscoder()
+	tc = NewTranscoder()
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
+		oname := fmt.Sprintf("%s/vpassthru%d.ts", dir, i)
+		out := []TranscodeOptions{{Profile: P144p30fps16x9, Accel: accel}}
+		out[0].Profile.Framerate = 0 // Passthrough!
+
+		out[0].Oname = oname
+		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error("Could not transcode: ", err)
+		}
+		// verify that output frame count is same as input frame count
+		if res.Decoded.Frames != fc || res.Encoded[0].Frames != fc {
+			t.Error("Did not get expected frame count; got ", res.Encoded[0].Frames)
+		}
+	}
+
+	// test low fps (3) to low fps (1)
+	tc.StopTranscoder()
+	tc = NewTranscoder()
+
+	cmd = `
+	frame_count=%d
+	# convert segment to 3fps and trim it to #fc frames
+	ffmpeg -loglevel warning -i test.ts -vf fps=3/1 -c:v libx264 -c:a copy -frames:v $frame_count short3fps.ts
+
+	# sanity check
+	ffprobe -loglevel warning -show_streams short3fps.ts | grep r_frame_rate=3/1
+	ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3fps.ts | grep nb_read_frames=$frame_count
+  `
+	run(fmt.Sprintf(cmd, fc))
+
+	fname := fmt.Sprintf("%s/short3fps.ts", dir)
+	in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+	out := []TranscodeOptions{{Oname: dir + "/out1fps.ts", Profile: P144p30fps16x9, Accel: accel}}
+	out[0].Profile.Framerate = 1 // Force 1fps
+	res, err := tc.Transcode(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	if fc != res.Decoded.Frames {
+		t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
+	}
+	if 0 == res.Encoded[0].Frames {
+		t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
+	}
+
+	// test a bunch of weird cases together
+	tc.StopTranscoder()
+	tc = NewTranscoder()
+	profile_low_fps := P144p30fps16x9
+	profile_low_fps.Framerate = uint(fc) // use the input frame count as the output fps, why not
+	profile_passthrough_fps := P144p30fps16x9
+	profile_passthrough_fps.Framerate = 0
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
+		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+		out := []TranscodeOptions{
+			{
+				Oname:        fmt.Sprintf("%s/lowfps%d.ts", dir, i),
+				Profile:      profile_low_fps,
+				AudioEncoder: ComponentOptions{Name: "copy"},
+				Accel:        accel,
+			},
+			{
+				Oname:        fmt.Sprintf("%s/copyall%d.ts", dir, i),
+				VideoEncoder: ComponentOptions{Name: "copy"},
+				AudioEncoder: ComponentOptions{Name: "drop"},
+				Accel:        accel,
+			},
+			{
+				Oname:   fmt.Sprintf("%s/passthru%d.ts", dir, i),
+				Profile: profile_passthrough_fps,
+				Accel:   accel,
+			},
+		}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if res.Encoded[0].Frames == 0 || res.Encoded[1].Frames != 0 || res.Encoded[2].Frames != fc {
+			t.Error("Unexpected frame counts from short segment copy-drop-passthrough case")
+			t.Error(res)
+		}
+	}
+
+}
+
+func TestTranscoder_ShortSegments(t *testing.T) {
+	shortSegments(t, Software, 1)
+	shortSegments(t, Software, 2)
+	shortSegments(t, Software, 3)
+	shortSegments(t, Software, 5)
+	shortSegments(t, Software, 6)
+	shortSegments(t, Software, 10)
+}
