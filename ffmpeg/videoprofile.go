@@ -26,12 +26,13 @@ const (
 //240p30fps: 700kbps
 //144p30fps: 400kbps
 type VideoProfile struct {
-	Name        string
-	Bitrate     string
-	Framerate   uint
-	Resolution  string
-	AspectRatio string
-	Format      Format
+	Name         string
+	Bitrate      string
+	Framerate    uint
+	FramerateDen uint
+	Resolution   string
+	AspectRatio  string
+	Format       Format
 }
 
 //Some sample video profiles

@@ -217,6 +217,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ",hwdownload,format=nv12"
 		}
+		// set FPS denominator to 1 if unset by user
+		if param.FramerateDen == 0 {
+			param.FramerateDen = 1
+		}
 		// Add fps filter *after* scale filter because otherwise we could
 		// be scaling duplicate frames unnecessarily. This becomes a DoS vector
 		// when a user submits two frames that are "far apart" in pts and
@@ -226,8 +230,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		// and the fps filter can come *before* the scale filter to minimize work
 		// when going from high fps to low fps (much more common when transcoding
 		// than going from low fps to high fps)
+		var fps C.AVRational
 		if param.Framerate > 0 {
-			filters += fmt.Sprintf(",fps=%d/1", param.Framerate)
+			filters += fmt.Sprintf(",fps=%d/%d", param.Framerate, param.FramerateDen)
+			fps = C.AVRational{num: C.int(param.Framerate), den: C.int(param.FramerateDen)}
 		}
 		var muxOpts C.component_opts
 		var muxName string
@@ -274,10 +280,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		defer C.free(unsafe.Pointer(vidOpts.name))
 		defer C.free(unsafe.Pointer(audioOpts.name))
 		defer C.free(unsafe.Pointer(vfilt))
-		var fps C.AVRational
-		if param.Framerate > 0 {
-			fps = C.AVRational{num: C.int(param.Framerate), den: 1}
-		}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			muxer: muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
