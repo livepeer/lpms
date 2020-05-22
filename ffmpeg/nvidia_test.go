@@ -773,4 +773,8 @@ func TestNvidia_ShortSegments(t *testing.T) {
 	shortSegments(t, Nvidia, 10)
 }
 
+func TestNvidia_FractionalFPS(t *testing.T) {
+	fractionalFPS(t, Nvidia)
+}
+
 // XXX test bframes or delayed frames

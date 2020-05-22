@@ -681,3 +681,83 @@ func TestTranscoder_ShortSegments(t *testing.T) {
 	shortSegments(t, Software, 6)
 	shortSegments(t, Software, 10)
 }
+
+func fractionalFPS(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+    # run segmenter and sanity check frame counts . Hardcode for now.
+    ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -f hls test.m3u8
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test0.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test1.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test2.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test3.ts | grep nb_read_frames=120
+  `
+	run(cmd)
+
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+
+	// Test encoding
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{
+			Fname:  fmt.Sprintf("%s/test%d.ts", dir, i),
+			Accel:  accel,
+			Device: "0",
+		}
+		// 23.98 fps
+		p24fps := P144p30fps16x9
+		p24fps.Framerate = 24 * 1000
+		p24fps.FramerateDen = 1001
+		// 29.97 fps
+		p30fps := P144p30fps16x9
+		p30fps.Framerate = 30 * 1000
+		p30fps.FramerateDen = 1001
+		// 59.94 fps
+		p60fps := P144p30fps16x9
+		p60fps.Framerate = 60 * 1000
+		p60fps.FramerateDen = 1001
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out_23.98fps_%d.ts", dir, i),
+			Profile: p24fps,
+			Accel:   accel,
+		}, {
+			Oname:   fmt.Sprintf("%s/out_29.97fps_%d.ts", dir, i),
+			Profile: p30fps,
+			Accel:   accel,
+		}, {
+			Oname:   fmt.Sprintf("%s/out_59.94fps_%d.ts", dir, i),
+			Profile: p60fps,
+			Accel:   accel,
+		}}
+
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if res.Encoded[0].Frames != 47 && res.Encoded[0].Frames != 48 {
+			t.Error(in.Fname, " Mismatched frame count: expected 47 or 48 got ", res.Encoded[0].Frames)
+		}
+		if res.Encoded[1].Frames != 59 && res.Encoded[1].Frames != 60 {
+			t.Error(in.Fname, " Mismatched frame count: expected 59 or 60 got ", res.Encoded[1].Frames)
+		}
+		if res.Encoded[2].Frames != 119 && res.Encoded[2].Frames != 120 {
+			t.Error(in.Fname, " Mismatched frame count: expected 119 or 120 got ", res.Encoded[2].Frames)
+		}
+
+		cmd = `
+		# check output FPS match the expected values
+		i=%d
+		ffprobe -loglevel warning -select_streams v -count_frames -show_streams out_23.98fps_$i.ts | grep r_frame_rate=24000/1001
+		ffprobe -loglevel warning -select_streams v -count_frames -show_streams out_29.97fps_$i.ts | grep r_frame_rate=30000/1001
+		ffprobe -loglevel warning -select_streams v -count_frames -show_streams out_59.94fps_$i.ts | grep r_frame_rate=60000/1001
+	    `
+		run(fmt.Sprintf(cmd, i))
+	}
+
+}
+
+func TestTranscoder_FractionalFPS(t *testing.T) {
+	fractionalFPS(t, Software)
+}
