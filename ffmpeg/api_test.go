@@ -809,3 +809,71 @@ func consecutiveMP4s(t *testing.T, accel Acceleration) {
 func TestAPI_ConsecutiveMP4s(t *testing.T) {
 	consecutiveMP4s(t, Software)
 }
+
+func TestAPI_ConsecutiveMuxerOpts(t *testing.T) {
+	consecutiveMuxerOpts(t, Software)
+}
+
+func consecutiveMuxerOpts(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+    cp "$1"/../transcoder/test.ts .
+    ffmpeg -i test.ts -c copy -f segment seg%d.ts
+    ls seg*.ts | wc -l | grep 4 # sanity check number of segments
+  `
+	run(cmd)
+
+	// check with accel enabled
+	tc := NewTranscoder()
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/seg%d.ts", dir, i), Accel: accel}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out%d.mp4", dir, i),
+			Accel:   accel,
+			Profile: P144p30fps16x9,
+			Muxer: ComponentOptions{Opts: map[string]string{
+				"brand": fmt.Sprintf("hi-%d", i)}},
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error("Unexpected error ", err)
+		}
+	}
+	tc.StopTranscoder()
+
+	cmd = `
+    ffprobe -show_format out0.mp4 | grep brand=hi-0
+    ffprobe -show_format out1.mp4 | grep brand=hi-1
+    ffprobe -show_format out2.mp4 | grep brand=hi-2
+    ffprobe -show_format out3.mp4 | grep brand=hi-3
+  `
+	run(cmd)
+
+	// sanity check with non-encoding copy
+	tc = NewTranscoder()
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/seg%d.ts", dir, i), Accel: Nvidia}
+		out := []TranscodeOptions{{
+			Oname:        fmt.Sprintf("%s/copy%d.mp4", dir, i),
+			VideoEncoder: ComponentOptions{Name: "copy"},
+			Muxer: ComponentOptions{Opts: map[string]string{
+				"brand": fmt.Sprintf("lo-%d", i)}},
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error("Unexpected error ", err)
+		}
+	}
+	tc.StopTranscoder()
+
+	cmd = `
+    ffprobe -show_format copy0.mp4 | grep brand=lo-0
+    ffprobe -show_format copy1.mp4 | grep brand=lo-1
+    ffprobe -show_format copy2.mp4 | grep brand=lo-2
+    ffprobe -show_format copy3.mp4 | grep brand=lo-3
+  `
+	run(cmd)
+
+}

@@ -1350,7 +1350,7 @@ int transcode(struct transcode_thread *h,
         ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
         if (ret < 0) main_err("Error re-opening output file\n");
       }
-      ret = avformat_write_header(octx->oc, NULL);
+      ret = avformat_write_header(octx->oc, &octx->muxer->opts);
       if (ret < 0) main_err("Error re-writing header\n");
   }
 
