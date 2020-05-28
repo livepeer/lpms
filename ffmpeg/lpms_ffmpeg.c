@@ -32,6 +32,11 @@ const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 //  short of re-initializing the component. This is addressed for each component
 //  as follows:
 //
+//  Demuxer: For resumable / header-less formats such as mpegts, the demuxer
+//           is reused across segments. This gives a small speed boost. For
+//           all other formats, the demuxer is closed and reopened at the next
+//           segment.
+//
 //  Decoder: For audio, we pay the price of closing and re-opening the decoder.
 //           For video, we cache the first packet we read (input_ctx.first_pkt).
 //           The pts is set to a sentinel value and fed to the decoder. Once we
@@ -298,6 +303,10 @@ static void flush_input(struct input_ctx *ictx) {
     av_packet_unref(&pkt);
     if (ret) break;
   }
+}
+
+static int is_mpegts(AVFormatContext *ic) {
+  return !strcmp("mpegts", ic->iformat->name);
 }
 
 static int is_copy(char *encoder) {
@@ -1279,6 +1288,7 @@ int transcode(struct transcode_thread *h,
   goto transcode_cleanup; \
 }
   int ret = 0, i = 0;
+  int reopen_decoders = 1;
   struct input_ctx *ictx = &h->ictx;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
@@ -1287,9 +1297,16 @@ int transcode(struct transcode_thread *h,
 
   if (!inp) main_err("transcoder: Missing input params\n")
 
-  if (!ictx->ic->pb) {
+  if (!ictx->ic) {
+    ret = avformat_open_input(&ictx->ic, inp->fname, NULL, NULL);
+    if (ret < 0) main_err("Unable to reopen demuxer");
+    ret = avformat_find_stream_info(ictx->ic, NULL);
+    if (ret < 0) main_err("Unable to find info for reopened stream")
+  } else if (!ictx->ic->pb) {
     ret = avio_open(&ictx->ic->pb, inp->fname, AVIO_FLAG_READ);
     if (ret < 0) main_err("Unable to reopen file");
+  } else reopen_decoders = 0;
+  if (reopen_decoders) {
     // XXX check to see if we can also reuse decoder for sw decoding
     if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
       ret = open_video_decoder(inp, ictx);
@@ -1445,8 +1462,13 @@ transcode_cleanup:
   // Necessary because the input context has data buffered that would get
   // read out on the next segment if we have to exit early, eg seg out of order.
   // TODO Is short-circuiting possible? Currently, closing + flushing segfaults
-  if (!ictx->flushed) flush_input(ictx);
-  avio_closep(&ictx->ic->pb);
+  if (ictx->ic) {
+    if (!is_mpegts(ictx->ic)) avformat_close_input(&ictx->ic);
+    else {
+      if (!ictx->flushed) flush_input(ictx);
+      avio_closep(&ictx->ic->pb);
+    }
+  }
   if (dframe) av_frame_free(&dframe);
   ictx->flushed = 0;
   ictx->flushing = 0;

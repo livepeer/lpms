@@ -761,3 +761,51 @@ func fractionalFPS(t *testing.T, accel Acceleration) {
 func TestTranscoder_FractionalFPS(t *testing.T) {
 	fractionalFPS(t, Software)
 }
+
+func consecutiveMP4s(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+  cp "$1"/../transcoder/test.ts .
+  ffmpeg -i test.ts -c copy -f segment test%d.mp4
+  ffmpeg -i test.ts -c copy -f segment test%d.ts
+
+  # manually convert ts to mp4 just to sanity check
+  ffmpeg -i test0.ts -c copy -copyts -f mp4 test0.tsmp4
+  ffmpeg -i test1.ts -c copy -copyts -f mp4 test1.tsmp4
+  ffmpeg -i test2.ts -c copy -copyts -f mp4 test2.tsmp4
+  ffmpeg -i test3.ts -c copy -copyts -f mp4 test3.tsmp4
+`
+	run(cmd)
+
+	runTranscode := func(inExt, outExt string) {
+		tc := NewTranscoder()
+		defer tc.StopTranscoder()
+		for i := 0; i < 4; i++ {
+			fname := fmt.Sprintf("%s/test%d.%s", dir, i, inExt)
+			oname := fmt.Sprintf("%s/%s_out_%d.%s", dir, inExt, i, outExt)
+			in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+			out := []TranscodeOptions{{Oname: oname, Profile: P240p30fps16x9, Accel: accel}}
+			res, err := tc.Transcode(in, out)
+			if err != nil {
+				t.Error("Unexpected error ", err)
+				continue
+			}
+			if res.Decoded.Frames != 120 || res.Encoded[0].Frames != 60 {
+				t.Error("Unexpected results ", res)
+			}
+		}
+	}
+
+	inExts := []string{"ts", "mp4", "tsmp4"}
+	outExts := []string{"ts", "mp4"}
+	for _, inExt := range inExts {
+		for _, outExt := range outExts {
+			runTranscode(inExt, outExt)
+		}
+	}
+}
+
+func TestAPI_ConsecutiveMP4s(t *testing.T) {
+	consecutiveMP4s(t, Software)
+}
