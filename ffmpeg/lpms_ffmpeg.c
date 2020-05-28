@@ -295,16 +295,6 @@ static void free_output(struct output_ctx *octx) {
   free_filter(&octx->af);
 }
 
-static void flush_input(struct input_ctx *ictx) {
-  AVPacket pkt = {0};
-  av_init_packet(&pkt);
-  while (ictx->ic->pb) {
-    int ret = av_read_frame(ictx->ic, &pkt);
-    av_packet_unref(&pkt);
-    if (ret) break;
-  }
-}
-
 static int is_mpegts(AVFormatContext *ic) {
   return !strcmp("mpegts", ic->iformat->name);
 }
@@ -1458,14 +1448,15 @@ whileloop_end:
   }
 
 transcode_cleanup:
-  // Flush input then close input. Reads entire input, pretty inefficient.
-  // Necessary because the input context has data buffered that would get
-  // read out on the next segment if we have to exit early, eg seg out of order.
-  // TODO Is short-circuiting possible? Currently, closing + flushing segfaults
   if (ictx->ic) {
+    // Only mpegts reuse the demuxer for subsequent segments.
+    // Close the demuxer for everything else.
+    // TODO might be reusable with fmp4 ; check!
     if (!is_mpegts(ictx->ic)) avformat_close_input(&ictx->ic);
-    else {
-      if (!ictx->flushed) flush_input(ictx);
+    else if (ictx->ic->pb) {
+      // Reset leftovers from demuxer internals to prepare for next segment
+      avio_flush(ictx->ic->pb);
+      avformat_flush(ictx->ic);
       avio_closep(&ictx->ic->pb);
     }
   }
