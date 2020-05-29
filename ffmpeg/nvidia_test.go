@@ -777,4 +777,12 @@ func TestNvidia_FractionalFPS(t *testing.T) {
 	fractionalFPS(t, Nvidia)
 }
 
+func TestNvidia_ConsecutiveMP4s(t *testing.T) {
+	consecutiveMP4s(t, Nvidia)
+}
+
+func TestNvidia_ConsecutiveMuxerOpts(t *testing.T) {
+	consecutiveMuxerOpts(t, Nvidia)
+}
+
 // XXX test bframes or delayed frames
