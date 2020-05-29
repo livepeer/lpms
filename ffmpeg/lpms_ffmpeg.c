@@ -930,17 +930,11 @@ static int open_input(input_params *params, struct input_ctx *ctx)
   goto open_input_err; \
 }
   AVFormatContext *ic   = NULL;
-  AVIOContext *pb       = NULL;
   char *inp = params->fname;
   int ret = 0;
 
   // open demuxer
-  ic = avformat_alloc_context();
-  if (!ic) dd_err("demuxer: Unable to alloc context\n");
-  ret = avio_open(&pb, inp, AVIO_FLAG_READ);
-  if (ret < 0) dd_err("demuxer: Unable to open file\n");
-  ic->pb = pb;
-  ret = avformat_open_input(&ic, NULL, NULL, NULL);
+  ret = avformat_open_input(&ic, inp, NULL, NULL);
   if (ret < 0) dd_err("demuxer: Unable to open input\n");
   ctx->ic = ic;
   ret = avformat_find_stream_info(ic, NULL);
@@ -958,8 +952,6 @@ static int open_input(input_params *params, struct input_ctx *ctx)
 
 open_input_err:
   fprintf(stderr, "Freeing input based on OPEN INPUT error\n");
-  avio_close(pb); // need to close manually, avformat_open_input
-                  // not closes it in case of error
   free_input(ctx);
   return ret;
 #undef dd_err
