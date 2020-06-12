@@ -22,6 +22,7 @@ var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
 var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
 var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
+var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
 
 type Acceleration int
 
@@ -258,10 +259,21 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			muxOpts.name = C.CString(muxName)
 			defer C.free(unsafe.Pointer(muxOpts.name))
 		}
-		// Set some default encoding options
+		// Set video encoder options
 		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
 			p.VideoEncoder.Opts = map[string]string{
 				"forced-idr": "1",
+			}
+			switch p.Profile.Profile {
+			case ProfileH264Baseline, ProfileH264Main, ProfileH264High:
+				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+			case ProfileH264ConstrainedHigh:
+				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+				p.VideoEncoder.Opts["bf"] = "0"
+			case ProfileNone:
+				// Do nothing, the encoder will use default profile
+			default:
+				return nil, ErrTranscoderPrf
 			}
 		}
 		vidOpts := C.component_opts{

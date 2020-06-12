@@ -16,6 +16,16 @@ const (
 	FormatMP4
 )
 
+type Profile int
+
+const (
+	ProfileNone Profile = iota
+	ProfileH264Baseline
+	ProfileH264Main
+	ProfileH264High
+	ProfileH264ConstrainedHigh
+)
+
 //Standard Profiles:
 //1080p60fps: 9000kbps
 //1080p30fps: 6000kbps
@@ -33,6 +43,7 @@ type VideoProfile struct {
 	Resolution   string
 	AspectRatio  string
 	Format       Format
+	Profile      Profile
 }
 
 //Some sample video profiles
@@ -77,6 +88,14 @@ var FormatExtensions = map[Format]string{
 var ExtensionFormats = map[string]Format{
 	".ts":  FormatMPEGTS,
 	".mp4": FormatMP4,
+}
+
+var ProfileParameters = map[Profile]string{
+	ProfileNone:                "",
+	ProfileH264Baseline:        "baseline",
+	ProfileH264Main:            "main",
+	ProfileH264High:            "high",
+	ProfileH264ConstrainedHigh: "high",
 }
 
 func VideoProfileResolution(p VideoProfile) (int, int, error) {

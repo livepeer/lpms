@@ -877,3 +877,134 @@ func consecutiveMuxerOpts(t *testing.T, accel Acceleration) {
 	run(cmd)
 
 }
+
+func TestTranscoder_EncodingProfiles(t *testing.T) {
+	encodingProfiles(t, Software)
+}
+
+func encodingProfiles(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+        cp "$1/../transcoder/test.ts" test.ts
+    `
+	run(cmd)
+
+	// First, sanity check defaults
+	for _, p := range VideoProfileLookup {
+		if p.Profile != ProfileNone {
+			t.Error("Default VideoProfile profile not set to ProfileNone")
+		}
+	}
+
+	// Encode to all H264 profiles
+	profilesMap := make(map[Profile]string)
+	for v := range ProfileParameters {
+		switch v {
+		case ProfileNone:
+		case ProfileH264Baseline:
+			profilesMap[v] = "baseline"
+		case ProfileH264Main:
+			profilesMap[v] = "main"
+		case ProfileH264High:
+			profilesMap[v] = "high"
+		case ProfileH264ConstrainedHigh:
+			profilesMap[v] = "constrained_high"
+		default:
+			t.Error("Unhandled profile ", v)
+		}
+	}
+
+	for codecProfile, profileString := range profilesMap {
+		tc := NewTranscoder()
+		profile := P144p30fps16x9
+		profile.Profile = codecProfile
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test.ts", dir), Accel: accel}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out_%s.mp4", dir, profileString),
+			Accel:   accel,
+			Profile: profile,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error("Unexpected error ", err)
+		}
+		tc.StopTranscoder()
+	}
+
+	// Verify outputs have correct profile names
+	cmd = `
+		ffprobe -loglevel warning -show_streams out_baseline.mp4 | grep "profile=Constrained Baseline"
+		ffprobe -loglevel warning -show_streams out_main.mp4 | grep "profile=Main"
+		ffprobe -loglevel warning -show_streams out_high.mp4 | grep "profile=High"
+		ffprobe -loglevel warning -show_streams out_constrained_high.mp4 | grep "profile=High"
+	`
+	run(cmd)
+
+	// Verify the two constrained profiles (Baseline & Constrained High) do not have any b frames
+	cmd = `
+		ffprobe -loglevel warning -show_streams out_baseline.mp4 | grep has_b_frames=0
+		ffprobe -loglevel warning -show_streams out_constrained_high.mp4 | grep has_b_frames=0
+	`
+	run(cmd)
+
+	// Verify the other two profiles have B frames
+	cmd = `
+		ffprobe -loglevel warning -show_streams out_main.mp4 | grep has_b_frames=2
+		ffprobe -loglevel warning -show_streams out_high.mp4 | grep has_b_frames=2
+	`
+	// TODO: Only CPU encoder seems to use B frames by default, check if we can enable them for NVIDIA
+	if accel == Software {
+		run(cmd)
+	}
+
+	// Interlaced Input with Constrained Profiles
+	cmd = `
+		ffmpeg -i test.ts -vf "tinterlace=5" -c:v libx264 -flags +ilme+ildct -x264opts bff=1 -c:a copy test_interlaced.ts
+
+		# Sanity check that new input has interlaced flag set
+		ffprobe test_interlaced.ts -show_frames | head -n 100 | grep interlaced_frame=1
+	`
+	run(cmd)
+	constrainedProfilesMap := map[Profile]string{
+		ProfileH264Baseline:        "baseline",
+		ProfileH264ConstrainedHigh: "constrained_high",
+	}
+	for codecProfile, profileString := range constrainedProfilesMap {
+		tc := NewTranscoder()
+		profile := P144p30fps16x9
+		profile.Profile = codecProfile
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test_interlaced.ts", dir), Accel: accel}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out_interlaced_%s.ts", dir, profileString),
+			Accel:   accel,
+			Profile: profile,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error("Unexpected error ", err)
+		}
+		tc.StopTranscoder()
+	}
+	cmd = `
+		ffprobe out_interlaced_baseline.ts -show_frames | head -n 100 | grep interlaced_frame=0
+		ffprobe out_interlaced_constrained_high.ts -show_frames | head -n 100 | grep interlaced_frame=0
+	`
+	run(cmd)
+
+	// Unknown profile
+	tc := NewTranscoder()
+	profile := P144p30fps16x9
+	profile.Profile = 420 // incorrect profile
+	in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test.ts", dir), Accel: accel}
+	out := []TranscodeOptions{{
+		Oname:   fmt.Sprintf("%s/out_dummy.mp4", dir),
+		Accel:   accel,
+		Profile: profile,
+	}}
+	_, err := tc.Transcode(in, out)
+	if err != ErrTranscoderPrf {
+		t.Errorf("Unexpected error; wanted %v but got %v", ErrTranscoderPrf, err)
+	}
+	tc.StopTranscoder()
+}

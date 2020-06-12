@@ -785,4 +785,8 @@ func TestNvidia_ConsecutiveMuxerOpts(t *testing.T) {
 	consecutiveMuxerOpts(t, Nvidia)
 }
 
+func TestNvidia_EncoderProfiles(t *testing.T) {
+	encodingProfiles(t, Nvidia)
+}
+
 // XXX test bframes or delayed frames
