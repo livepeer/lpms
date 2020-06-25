@@ -23,6 +23,7 @@ var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
 var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
+var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 
 type Acceleration int
 
@@ -274,6 +275,17 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				// Do nothing, the encoder will use default profile
 			default:
 				return nil, ErrTranscoderPrf
+			}
+		}
+		if param.GOP != 0 {
+			if param.GOP <= GOPInvalid {
+				return nil, ErrTranscoderGOP
+			} else {
+				if param.Framerate > 0 {
+					gop := param.GOP.Seconds()
+					interval := strconv.Itoa(int(gop * float64(param.Framerate)))
+					p.VideoEncoder.Opts["g"] = interval
+				}
 			}
 		}
 		vidOpts := C.component_opts{

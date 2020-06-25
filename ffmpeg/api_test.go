@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestAPI_SkippedSegment(t *testing.T) {
@@ -1007,4 +1008,74 @@ func encodingProfiles(t *testing.T, accel Acceleration) {
 		t.Errorf("Unexpected error; wanted %v but got %v", ErrTranscoderPrf, err)
 	}
 	tc.StopTranscoder()
+}
+
+func TestAPI_SetGOPs(t *testing.T) {
+	setGops(t, Software)
+}
+
+func setGops(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+
+        cp "$1/../transcoder/test.ts" .
+
+        # ffmpeg sanity checks
+
+        ffmpeg -loglevel warning -i test.ts -c copy -f hls out.m3u8
+        function prepare {
+            f=$1
+
+            ffprobe -loglevel warning $f -select_streams v -show_packets | grep flags=K | wc -l | grep 1
+            ffprobe -loglevel warning $f -select_streams v -show_packets | grep flags= | wc -l | grep 120
+            ffmpeg -loglevel warning -i $f -force_key_frames 'expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+0.3))' -an -c:v libx264 -s 100x100 forced_$f
+        }
+
+        prepare out0.ts
+        prepare out1.ts
+        prepare out2.ts
+        prepare out3.ts
+
+    `
+	run(cmd)
+
+	p := P144p30fps16x9
+	p.GOP = 300 * time.Millisecond
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf(dir+"/out%d.ts", i)
+		oname := fmt.Sprintf(dir+"/lpms%d.ts", i)
+		_, err := tc.Transcode(&TranscodeOptionsIn{Fname: fname, Accel: accel}, []TranscodeOptions{{Oname: oname, Accel: accel, Profile: p}})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	cmd = `
+        function check {
+            f=$1
+            ffprobe -loglevel warning $f -select_streams v -show_packets | grep flags=K | wc -l | grep 7
+        }
+
+        # ensures we match ffmpeg with the same check
+        check forced_out0.ts
+        check forced_out1.ts
+        check forced_out2.ts
+        check forced_out3.ts
+
+        check lpms0.ts
+        check lpms1.ts
+        check lpms2.ts
+        check lpms3.ts
+    `
+	run(cmd)
+
+	// check invalid gop lengths
+	p.GOP = GOPInvalid
+	_, err := tc.Transcode(&TranscodeOptionsIn{Fname: "asdf"}, []TranscodeOptions{{Oname: "qwerty", Profile: p}})
+	if err == nil || err != ErrTranscoderGOP {
+		t.Error("Did not expected error ", err)
+	}
 }

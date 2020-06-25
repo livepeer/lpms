@@ -789,4 +789,8 @@ func TestNvidia_EncoderProfiles(t *testing.T) {
 	encodingProfiles(t, Nvidia)
 }
 
+func TestNvidia_SetGOPs(t *testing.T) {
+	setGops(t, Nvidia)
+}
+
 // XXX test bframes or delayed frames
