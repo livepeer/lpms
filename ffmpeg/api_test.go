@@ -1037,6 +1037,10 @@ func setGops(t *testing.T, accel Acceleration) {
         prepare out2.ts
         prepare out3.ts
 
+        # extremely low frame rate
+        ffmpeg -loglevel warning -i test.ts -c:v libx264 -r 1 lowfps.ts
+        ffprobe -loglevel warning lowfps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 9
+        ffprobe -loglevel warning lowfps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 1
     `
 	run(cmd)
 
@@ -1051,6 +1055,26 @@ func setGops(t *testing.T, accel Acceleration) {
 		if err != nil {
 			t.Error(err)
 		}
+	}
+
+	// passthru fps tests
+	tc2 := NewTranscoder() // mitigate out of order segment issue
+	defer tc2.StopTranscoder()
+	p.Framerate = 0
+	for i := 0; i < 4; i++ {
+		fname := fmt.Sprintf(dir+"/out%d.ts", i)
+		oname := fmt.Sprintf(dir+"/passthrough%d.ts", i)
+		_, err := tc2.Transcode(&TranscodeOptionsIn{Fname: fname, Accel: accel}, []TranscodeOptions{{Oname: oname, Accel: accel, Profile: p}})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	// extremely low frame rate with passthru fps
+	p.GOP = 2 * time.Second
+	_, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/lowfps.ts", Accel: accel}, []TranscodeOptions{{Oname: dir + "/lpms_lowfps.ts", Accel: accel, Profile: p}})
+	if err != nil {
+		t.Error(err)
 	}
 
 	cmd = `
@@ -1069,12 +1093,21 @@ func setGops(t *testing.T, accel Acceleration) {
         check lpms1.ts
         check lpms2.ts
         check lpms3.ts
+
+        check passthrough0.ts
+        check passthrough1.ts
+        check passthrough2.ts
+        check passthrough3.ts
+
+        # low framerate checks. sanity check number of packets vs keyframes
+        ffprobe -loglevel warning lpms_lowfps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 9
+        ffprobe -loglevel warning lpms_lowfps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 5
     `
 	run(cmd)
 
 	// check invalid gop lengths
 	p.GOP = GOPInvalid
-	_, err := tc.Transcode(&TranscodeOptionsIn{Fname: "asdf"}, []TranscodeOptions{{Oname: "qwerty", Profile: p}})
+	_, err = tc.Transcode(&TranscodeOptionsIn{Fname: "asdf"}, []TranscodeOptions{{Oname: "qwerty", Profile: p}})
 	if err == nil || err != ErrTranscoderGOP {
 		t.Error("Did not expected error ", err)
 	}

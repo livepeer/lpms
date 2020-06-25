@@ -141,6 +141,8 @@ struct output_ctx {
 
   int64_t drop_ts;     // preroll audio ts to drop
 
+  int64_t gop_time, gop_pts_len, next_kf_pts; // for gop reset
+
   output_results  *res; // data to return for this output
 
 };
@@ -626,6 +628,17 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
   } else if (octx->vc) {
     st->time_base = octx->vc->time_base;
     ret = avcodec_parameters_from_context(st->codecpar, octx->vc);
+    if (octx->gop_time) {
+      // Rescale the gop time to the expected timebase after filtering.
+      // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
+      // while non-fps will retain the input timebase.
+      AVRational gop_tb = {1, 1000};
+      AVRational dest_tb;
+      if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
+      else dest_tb = ictx->ic->streams[ictx->vi]->time_base;
+      octx->gop_pts_len = av_rescale_q(octx->gop_time, gop_tb, dest_tb);
+      octx->next_kf_pts = 0; // force for first frame
+    }
     if (ret < 0) vs_err("Error setting video params from encoder\n");
   } else vs_err("No video encoder, not a copy; what is this?\n");
   return 0;
@@ -1231,6 +1244,12 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     // frame gets its pts incremented by one. This may not always hold later on!
     // TODO rescale flush_count towards filter output timebase as appropriate.
     if (frame) frame->pts -= filter->flush_count;
+    // Set GOP interval if necessary
+    if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
+        octx->gop_pts_len && frame && frame->pts >= octx->next_kf_pts) {
+        frame->pict_type = AV_PICTURE_TYPE_I;
+        octx->next_kf_pts = frame->pts + octx->gop_pts_len;
+    }
     ret = encode(encoder, frame, octx, ost);
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
@@ -1318,6 +1337,7 @@ int transcode(struct transcode_thread *h,
       octx->vfilters = params[i].vfilters;
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
+      if (params[i].gop_time) octx->gop_time = params[i].gop_time;
       octx->dv = ictx->vi < 0 || is_drop(octx->video->name);
       octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
       octx->res = &results[i];

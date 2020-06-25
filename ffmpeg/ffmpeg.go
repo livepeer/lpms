@@ -277,6 +277,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				return nil, ErrTranscoderPrf
 			}
 		}
+		gopMs := 0
 		if param.GOP != 0 {
 			if param.GOP <= GOPInvalid {
 				return nil, ErrTranscoderGOP
@@ -285,6 +286,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 					gop := param.GOP.Seconds()
 					interval := strconv.Itoa(int(gop * float64(param.Framerate)))
 					p.VideoEncoder.Opts["g"] = interval
+				} else {
+					gopMs = int(param.GOP.Milliseconds())
 				}
 			}
 		}
@@ -306,7 +309,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		defer C.free(unsafe.Pointer(vfilt))
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			muxer: muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
+			gop_time: C.int(gopMs),
+			muxer:    muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
 		defer func(param *C.output_params) {
 			// Work around the ownership rules:
 			// ffmpeg normally takes ownership of the following AVDictionary options
