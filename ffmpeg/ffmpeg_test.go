@@ -1512,3 +1512,45 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		t.Error("Did not get expected error with invalid format ", err)
 	}
 }
+
+func TestTranscoder_IgnoreUnknown(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+        ffmpeg -i "$1/../transcoder/test.ts" -c copy -t 1 test.ts
+        echo "data file" > data
+
+        ffmpeg -loglevel verbose -i test.ts \
+            -f  bin -i data  \
+            -map 0:v:0 \
+            -map 0:a:0 \
+            -map 1:0 \
+            -c copy \
+            out.ts
+
+        ffprobe -show_streams out.ts | grep codec_name > streams.out
+        tee expected-streams.out <<-EOF
+			codec_name=h264
+			codec_name=aac
+			codec_name=bin_data
+			EOF
+        diff -u expected-streams.out streams.out
+    `
+	run(cmd)
+	in := &TranscodeOptionsIn{Fname: dir + "/out.ts"}
+	out := []TranscodeOptions{{Oname: dir + "/transcoded.ts", Profile: P144p30fps16x9}}
+	_, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	// transcoded output should ignore the unknown streams
+	cmd = `
+        ffprobe -show_streams transcoded.ts | grep codec_name > transcoded-streams.out
+        tee transcoded-expected-streams.out <<-EOF
+			codec_name=h264
+			codec_name=aac
+			EOF
+        diff -u transcoded-expected-streams.out transcoded-streams.out
+    `
+	run(cmd)
+}
