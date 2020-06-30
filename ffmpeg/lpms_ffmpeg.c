@@ -999,7 +999,6 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
   // Read a packet and attempt to decode it.
   // If decoding was not possible, return the packet anyway for streamcopy
   av_init_packet(pkt);
-  // TODO this while-loop isn't necessary anymore; clean up
   while (1) {
     AVStream *ist = NULL;
     AVCodecContext *decoder = NULL;
@@ -1010,7 +1009,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     if (ist->index == ictx->vi && ictx->vc) decoder = ictx->vc;
     else if (ist->index == ictx->ai && ictx->ac) decoder = ictx->ac;
     else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai) break;
-    else dec_err("Could not find decoder or stream\n");
+    else goto drop_packet; // could be an extra stream; skip
 
     if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY) {
       // This would compare dts for every packet in an audio-only stream.
@@ -1041,6 +1040,9 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     }
     else if (ret < 0) dec_err("Error receiving frame from decoder\n");
     break;
+
+drop_packet:
+    av_packet_unref(pkt);
   }
 
 dec_cleanup:
