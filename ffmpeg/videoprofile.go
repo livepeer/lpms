@@ -30,8 +30,10 @@ const (
 // For additional "special" GOP values
 // enumerate backwards from here
 const (
+	GOPIntraOnly time.Duration = -1
+
 	// Must always be last. Renumber as needed.
-	GOPInvalid = -1
+	GOPInvalid = -2
 )
 
 //Standard Profiles:

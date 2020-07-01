@@ -281,6 +281,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if param.GOP != 0 {
 			if param.GOP <= GOPInvalid {
 				return nil, ErrTranscoderGOP
+			}
+			// Check for intra-only
+			if param.GOP == GOPIntraOnly {
+				p.VideoEncoder.Opts["g"] = "0"
 			} else {
 				if param.Framerate > 0 {
 					gop := param.GOP.Seconds()

@@ -1072,7 +1072,14 @@ func setGops(t *testing.T, accel Acceleration) {
 
 	// extremely low frame rate with passthru fps
 	p.GOP = 2 * time.Second
-	_, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/lowfps.ts", Accel: accel}, []TranscodeOptions{{Oname: dir + "/lpms_lowfps.ts", Accel: accel, Profile: p}})
+	o1 := TranscodeOptions{Oname: dir + "/lpms_lowfps.ts", Accel: accel, Profile: p}
+	p2 := p
+	p2.GOP = GOPIntraOnly // intra only
+	o2 := TranscodeOptions{Oname: dir + "/lpms_intra.ts", Accel: accel, Profile: p2}
+	p3 := p2
+	p3.Framerate = 10
+	o3 := TranscodeOptions{Oname: dir + "/lpms_intra_10fps.ts", Accel: accel, Profile: p3}
+	_, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/lowfps.ts", Accel: accel}, []TranscodeOptions{o1, o2, o3})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1102,6 +1109,16 @@ func setGops(t *testing.T, accel Acceleration) {
         # low framerate checks. sanity check number of packets vs keyframes
         ffprobe -loglevel warning lpms_lowfps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 9
         ffprobe -loglevel warning lpms_lowfps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 5
+
+        # intra checks with passthrough fps.
+        # sanity check number of packets vs keyframes
+        ffprobe -loglevel warning lpms_intra.ts -select_streams v -show_packets| grep flags= | wc -l | grep 9
+        ffprobe -loglevel warning lpms_intra.ts -select_streams v -show_packets|grep flags=K | wc -l | grep 9
+
+        # intra checks with fixed fps.
+        # sanity check number of packets vs keyframes
+        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 90
+        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 90
     `
 	run(cmd)
 
