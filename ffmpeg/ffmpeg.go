@@ -23,6 +23,7 @@ var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
 var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
+var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 
 type Acceleration int
 
@@ -276,6 +277,24 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				return nil, ErrTranscoderPrf
 			}
 		}
+		gopMs := 0
+		if param.GOP != 0 {
+			if param.GOP <= GOPInvalid {
+				return nil, ErrTranscoderGOP
+			}
+			// Check for intra-only
+			if param.GOP == GOPIntraOnly {
+				p.VideoEncoder.Opts["g"] = "0"
+			} else {
+				if param.Framerate > 0 {
+					gop := param.GOP.Seconds()
+					interval := strconv.Itoa(int(gop * float64(param.Framerate)))
+					p.VideoEncoder.Opts["g"] = interval
+				} else {
+					gopMs = int(param.GOP.Milliseconds())
+				}
+			}
+		}
 		vidOpts := C.component_opts{
 			name: C.CString(encoder),
 			opts: newAVOpts(p.VideoEncoder.Opts),
@@ -294,7 +313,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		defer C.free(unsafe.Pointer(vfilt))
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			muxer: muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
+			gop_time: C.int(gopMs),
+			muxer:    muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
 		defer func(param *C.output_params) {
 			// Work around the ownership rules:
 			// ffmpeg normally takes ownership of the following AVDictionary options

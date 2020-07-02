@@ -21,7 +21,7 @@ typedef struct {
 typedef struct {
   char *fname;
   char *vfilters;
-  int w, h, bitrate;
+  int w, h, bitrate, gop_time;
   AVRational fps;
 
   component_opts muxer;

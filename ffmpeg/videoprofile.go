@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/m3u8"
@@ -26,6 +27,15 @@ const (
 	ProfileH264ConstrainedHigh
 )
 
+// For additional "special" GOP values
+// enumerate backwards from here
+const (
+	GOPIntraOnly time.Duration = -1
+
+	// Must always be last. Renumber as needed.
+	GOPInvalid = -2
+)
+
 //Standard Profiles:
 //1080p60fps: 9000kbps
 //1080p30fps: 6000kbps
@@ -44,6 +54,7 @@ type VideoProfile struct {
 	AspectRatio  string
 	Format       Format
 	Profile      Profile
+	GOP          time.Duration
 }
 
 //Some sample video profiles
