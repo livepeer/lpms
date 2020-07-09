@@ -115,8 +115,9 @@ struct filter_ctx {
   //      ( pts received from filter will be wrong by however many flushed
   //      frames received )
   // the cumulative offset effect of flushing
-  int64_t flush_offset;
-  int flushed, flush_count;
+  int64_t custom_pts; // custom PTS that we set to be monotonically increasing
+  int64_t pts_diff;   // difference between the segment's actual first packet pts, and our custom pts
+  int flushed;
 };
 
 struct output_ctx {
@@ -288,6 +289,7 @@ static void close_output(struct output_ctx *octx)
   if (octx->vc && AV_HWDEVICE_TYPE_NONE == octx->hw_type) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
+  octx->vf.pts_diff = INT64_MIN;
 }
 
 static void free_output(struct output_ctx *octx) {
@@ -421,6 +423,7 @@ static int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     outputs = avfilter_inout_alloc();
     inputs = avfilter_inout_alloc();
     vf->graph = avfilter_graph_alloc();
+    vf->pts_diff = INT64_MIN;
     if (!outputs || !inputs || !vf->graph) {
       ret = AVERROR(ENOMEM);
       filters_err("Unble to allocate filters\n");
@@ -1011,22 +1014,9 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai) break;
     else goto drop_packet; // could be an extra stream; skip
 
-    if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY) {
-      // This would compare dts for every packet in an audio-only stream.
-      // Probably okay for now, since DTS really shouldn't go backwards anyway.
-      AVFrame *last_frame = NULL;
-      if (decoder == ictx->vc) {
-        ictx->first_pkt = av_packet_clone(pkt);
-        ictx->first_pkt->pts = -1;
-        last_frame = ictx->last_frame_v;
-      } else {
-        last_frame = ictx->last_frame_a;
-      }
-      if (AV_NOPTS_VALUE != last_frame->pkt_dts &&
-          pkt->dts <= last_frame->pkt_dts) {
-        ret = lpms_ERR_DTS;
-        dec_err("decoder: Segment out of order\n");
-      }
+    if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
+      ictx->first_pkt = av_packet_clone(pkt);
+      ictx->first_pkt->pts = -1;
     }
 
     ret = lpms_send_packet(ictx, decoder, pkt);
@@ -1173,39 +1163,51 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     return encode(encoder, inf, octx, ost);
   }
 
+  int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
   // Sometimes we have to reset the filter if the HW context is updated
   // because we initially set the filter before the decoder is fully ready
   // and the decoder may change HW params
-  if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
-      inf && inf->hw_frames_ctx && filter->hwframes &&
+  if (is_video && inf && inf->hw_frames_ctx && filter->hwframes &&
       inf->hw_frames_ctx->data != filter->hwframes) {
     free_filter(&octx->vf); // XXX really should flush filter first
     ret = init_video_filters(ictx, octx);
     if (ret < 0) return lpms_ERR_FILTERS;
   }
-  // Start filter flushing process if necessary
-  if (!inf && !filter->flushed) {
-    // Set input frame to the last frame
-    int is_video = AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type;
-    AVFrame *frame = is_video ? ictx->last_frame_v : ictx->last_frame_a;
-    // Increment pts offset by:
-    // - input packet's duration usually
-    int64_t dur = frame->pkt_duration;
-    // - output packet's duration if using fps filter & haven't encoded anything yet
-    if (is_video && octx->fps.den && !octx->res->frames) {
-      AVStream *ist = ictx->ic->streams[ictx->vi];
-      dur = av_rescale_q(frame->pkt_duration, ist->r_frame_rate, octx->fps);
+
+  AVStream *vst = ictx->ic->streams[ictx->vi];
+  if (inf) { // Non-Flush Frame
+    inf->opaque = (void *) inf->pts; // Store original PTS for calc later
+    if (is_video && octx->fps.den) {
+      // Custom PTS set when FPS filter is used
+      filter->custom_pts += av_rescale_q(1, av_inv_q(vst->r_frame_rate), vst->time_base);
+    } else {
+      filter->custom_pts = inf->pts;
     }
-    filter->flush_offset += dur;
-    inf = frame;
-    inf->opaque = (void*)inf->pts; // value doesn't matter; just needs to be set
+  } else if (!filter->flushed) { // Flush Frame
+    int ts_step;
+    inf = (is_video) ? ictx->last_frame_v : ictx->last_frame_a;
+    inf->opaque = (void *) (INT64_MIN); // Store INT64_MIN as pts for flush frames
     is_flushing = 1;
+    if (is_video) {
+      ts_step = av_rescale_q(1, av_inv_q(vst->r_frame_rate), vst->time_base);
+      if (octx->fps.den && !octx->res->frames) {
+        // Haven't encoded anything yet - force flush by rescaling PTS to match output timebase
+        ts_step = av_rescale_q(ts_step, vst->r_frame_rate, octx->fps);
+      }
+    }
+    if (!is_video || !octx->fps.den) {
+      // FPS Passthrough or Audio case - use packet duration instead of custom duration
+      ts_step = inf->pkt_duration;
+    }
+    filter->custom_pts += ts_step;
   }
+
   if (inf) {
-    // Apply the offset from filter flushing, then reset for the next output
-    inf->pts += filter->flush_offset;
+    // Apply the custom pts, then reset for the next output
+    int old_pts = inf->pts;
+    inf->pts = filter->custom_pts;
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
-    inf->pts -= filter->flush_offset;
+    inf->pts = old_pts;
     if (ret < 0) proc_err("Error feeding the filtergraph");
   }
 
@@ -1221,31 +1223,22 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       if (inf) return ret;
       frame = NULL;
     } else if (ret < 0) proc_err("Error consuming the filtergraph\n");
-    if (frame && frame->opaque) {
-      // opaque being set means it's a flush packet
-
-      // When using the fps filter, the timebase of the filtergraph is
-      // 1/framerate, so each frame output by the filter has its pts
-      // incremented by one. However, if the fps filter is *not* used
-      // (eg, in frame passthrough mode) then the pts is passed through
-      // the filtergraph untouched. In this case, the pts will be offset
-      // by the accumulated duration of any flush packets (and the input
-      // timebase *should* match the output timebase, so we can add
-      // without any rescaling).
-      // If any of these no longer hold (eg, due to future changes) then some
-      // unit tests should fail, and this approach needs to be re-evaluated.
-      if (octx->fps.den) filter->flush_count += 1;
-      else filter->flush_count += frame->pkt_duration;
-
+    if (frame && ((int64_t) frame->opaque == INT64_MIN)) {
+      // opaque being INT64_MIN means it's a flush packet
       // don't set flushed flag in case this is a flush from a previous segment
       if (is_flushing) filter->flushed = 1;
-      frame->opaque = NULL; // reset just to be sure
       continue;
+    } else if (frame && is_video && octx->fps.den) {
+      // We set custom PTS as an input of the filtergraph so we need to
+      // re-calculate our output PTS before passing it on to the encoder
+      if (filter->pts_diff == INT64_MIN) {
+        int64_t pts = (int64_t)frame->opaque; // original input PTS
+        pts = av_rescale_q_rnd(pts, ictx->ic->streams[ictx->vi]->time_base, av_buffersink_get_time_base(filter->sink_ctx), AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+        // difference between rescaled input PTS and the segment's first frame PTS of the filtergraph output
+        filter->pts_diff = pts - frame->pts;
+      }
+      frame->pts += filter->pts_diff; // Re-calculate by adding back this segment's difference calculated at start
     }
-    // For now, the time base of the filter output is 1/framerate, so each
-    // frame gets its pts incremented by one. This may not always hold later on!
-    // TODO rescale flush_count towards filter output timebase as appropriate.
-    if (frame) frame->pts -= filter->flush_count;
     // Set GOP interval if necessary
     if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
         octx->gop_pts_len && frame && frame->pts >= octx->next_kf_pts) {
