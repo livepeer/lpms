@@ -332,8 +332,8 @@ func TestTranscoder_Timestamp(t *testing.T) {
 		ffprobe -loglevel warning -select_streams v -show_streams -count_frames out0test.ts > test.out
 		grep avg_frame_rate=30 test.out
 		grep r_frame_rate=30 test.out
-		grep nb_read_frames=29 test.out
-		grep duration_ts=87000 test.out
+		grep nb_read_frames=30 test.out
+		grep duration_ts=90000 test.out
 		grep start_pts=138000 test.out
 	`
 	run(cmd)
@@ -1073,6 +1073,7 @@ func TestTranscoder_RepeatedTranscodes(t *testing.T) {
 }
 
 func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
+	// ALL FIXED, Keeping it around as a sanity check for now
 	// Encoded frame count does not match decoded frame count for mp4
 	// Note this is not an issue for mpegts! (this is sanity checked)
 	// See: https://github.com/livepeer/lpms/issues/155
@@ -1104,7 +1105,7 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	// TODO Ideally these two should match. As far as I can tell it is due
 	//      to timestamp rounding around EOF. Note this does not happen with
 	//      mpegts formatted output!
-	if res2.Decoded.Frames != 60 || res.Encoded[0].Frames != 61 {
+	if res2.Decoded.Frames != 60 || res.Encoded[0].Frames != 60 {
 		t.Error("Did not get expected frame counts: check if issue #155 is fixed!",
 			res2.Decoded.Frames, res.Encoded[0].Frames)
 	}
@@ -1114,7 +1115,7 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	cmd = `
         ffprobe -count_frames -show_packets -show_streams -select_streams v out.mp4 2>&1 > mp4.out
         grep nb_read_frames=60 mp4.out
-        grep nb_read_packets=61 mp4.out
+        grep nb_read_packets=60 mp4.out
     `
 	run(cmd)
 
@@ -1130,7 +1131,7 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res2.Decoded.Frames != 61 || res.Encoded[0].Frames != 61 {
+	if res2.Decoded.Frames != 60 || res.Encoded[0].Frames != 60 {
 		t.Error("Did not get expected frame counts for mpegts ",
 			res2.Decoded.Frames, res.Encoded[0].Frames)
 	}
@@ -1156,10 +1157,10 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 		t.Error(err)
 	}
 	// first output is mpegts
-	if res2.Decoded.Frames != 61 || res.Encoded[0].Frames != 61 {
+	if res2.Decoded.Frames != 60 || res.Encoded[0].Frames != 60 {
 		t.Error("Sanity check of mpegts failed ", res2.Decoded.Frames, res.Encoded[0].Frames)
 	}
-	if res3.Decoded.Frames != 60 || res.Encoded[1].Frames != 61 {
+	if res3.Decoded.Frames != 60 || res.Encoded[1].Frames != 60 {
 		t.Error("Sanity check of mp4 failed ", res3.Decoded.Frames, res.Encoded[1].Frames)
 	}
 }
@@ -1175,6 +1176,7 @@ func TestTranscoder_FFmpegMatching(t *testing.T) {
 	// 1 second input, N fps ( N frames )
 	// Output set to M fps. Output contains M frames
 
+	// TODO Unable to compare these since diverged FPS handling from from FFmpeg, Find a better way
 	// Weird framerate case
 	// 1 second input, N fps ( N frames )
 	// Output set to 123 fps. Output contains 125 frames
@@ -1267,7 +1269,7 @@ nb_read_frames=%d
 	}
 	checkStatsFile(in, &out[0], res)
 
-	// audio + 60fps input, 60fps output. 61 frames actual
+	// audio + 60fps input, 60fps output. 60 frames actual
 	in.Fname = dir + "/test-60fps.ts"
 	out[0].Oname = dir + "/out-60-to-120fps.ts"
 	out[0].Profile.Framerate = 60
@@ -1275,12 +1277,12 @@ nb_read_frames=%d
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Encoded[0].Frames != 61 { //
+	if res.Encoded[0].Frames != 60 { //
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
-	checkStatsFile(in, &out[0], res)
+	//checkStatsFile(in, &out[0], res)
 
-	// audio + 60fps input, 123 fps output. 125 frames actual
+	// audio + 60fps input, 123 fps output. 123 frames actual
 	in.Fname = dir + "/test-60fps.ts"
 	out[0].Oname = dir + "/out-123fps.ts"
 	out[0].Profile.Framerate = 123
@@ -1288,10 +1290,10 @@ nb_read_frames=%d
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Encoded[0].Frames != 125 { // TODO Find out why this isn't 123
+	if res.Encoded[0].Frames != 123 { // (FIXED) TODO Find out why this isn't 123
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
-	checkStatsFile(in, &out[0], res)
+	//checkStatsFile(in, &out[0], res)
 }
 
 func TestTranscoder_PassthroughFPS(t *testing.T) {

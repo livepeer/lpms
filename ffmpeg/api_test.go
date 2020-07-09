@@ -17,6 +17,7 @@ func TestAPI_SkippedSegment(t *testing.T) {
 	// tests that also check things like SSIM, MD5 hashes, etc...
 	// See TestNvidia_API_MixedOutput / TestTranscoder_EncoderOpts / TestTranscoder_StreamCopy
 	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
 	err := RTMPToHLS("../transcoder/test.ts", dir+"/out.m3u8", dir+"/out_%d.ts", "2", 0)
 	if err != nil {
 		t.Error(err)
@@ -277,12 +278,12 @@ pkt_pts=847500
 pkt_pts=848250
 
 ==> out_30fps_0.ts.pts <==
-pkt_pts=129000
 pkt_pts=132000
 pkt_pts=135000
-pkt_pts=300000
+pkt_pts=138000
 pkt_pts=303000
 pkt_pts=306000
+pkt_pts=309000
 
 ==> out_30fps_1.ts.pts <==
 pkt_pts=309000
@@ -403,6 +404,7 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 	// tests that also check things like SSIM, MD5 hashes, etc...
 	// See TestNvidia_API_MixedOutput / TestTranscoder_EncoderOpts / TestTranscoder_StreamCopy / TestNvidia_API_AlternatingTimestamps
 	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
 	err := RTMPToHLS("../transcoder/test.ts", dir+"/out.m3u8", dir+"/out_%d.ts", "2", 0)
 	if err != nil {
 		t.Error(err)
@@ -429,15 +431,8 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 			Profile: profile,
 		}}
 		res, err := tc.Transcode(in, out)
-		if (i == 1 || i == 3) && err != nil {
+		if err != nil {
 			t.Error(err)
-		}
-		if i == 0 || i == 2 {
-			if err == nil || err.Error() != "Segment out of order" {
-				t.Error(err)
-			}
-			// Maybe one day we'll be able to run the rest of this test
-			continue
 		}
 		if res.Decoded.Frames != 120 {
 			t.Error("Did not get decoded frames", res.Decoded.Frames)
@@ -454,7 +449,7 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
       diff -u $1.md5 ffmpeg_$1.md5
 
       ffmpeg -loglevel warning -i out_$1.ts -c:a aac -ar 44100 -ac 2 \
-        -vf fps=123,scale=w=256:h=144 -c:v libx264 ffmpeg_sw_$1.ts
+        -vf fps=123,scale=w=256:h=144 -c:v libx264 -muxdelay 0 -copyts ffmpeg_sw_$1.ts
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_sw_$1.ts | grep nb_read_frames=246
@@ -472,9 +467,9 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 
 
     # re-enable for seg 0 and 1 when alternating timestamps can be handled
-    # check 0
+    check 0
     check 1
-    # check 2
+    check 2
     check 3
   `
 	run(cmd)
@@ -507,9 +502,10 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	defer tc.StopTranscoder()
 	for i := 0; i < 4; i++ {
 		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
+		oname := fmt.Sprintf("%s/out%d.ts", dir, i)
 		t.Log("fname ", fname)
 		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
-		out := []TranscodeOptions{{Oname: dir + "/out.ts", Profile: P144p30fps16x9, Accel: accel}}
+		out := []TranscodeOptions{{Oname: oname, Profile: P144p30fps16x9, Accel: accel}}
 		res, err := tc.Transcode(in, out)
 		if err != nil {
 			t.Error(err)
