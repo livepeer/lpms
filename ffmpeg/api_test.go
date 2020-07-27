@@ -1129,3 +1129,53 @@ func setGops(t *testing.T, accel Acceleration) {
 		t.Error("Did not expected error ", err)
 	}
 }
+
+func TestTranscoder_SkippedFrames(t *testing.T) {
+	// Reproducing #197
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+    cp "$1/../transcoder/test.ts" .
+    ffmpeg -loglevel warning -i test.ts -c:a copy -vf fps=30 -c:v libx264 -muxdelay 0 test30.ts
+    ffmpeg -loglevel warning -i test30.ts -vf select='between(n\,0\,49)' -c:a copy -c:v libx264 -muxdelay 0 -copyts source-0.ts
+    ffmpeg -loglevel warning -i test30.ts -vf select='between(n\,60\,62)' -c:a copy -c:v libx264 -muxdelay 0 -copyts source-1.ts
+    ffmpeg -loglevel warning -i test30.ts -vf select='between(n\,120\,179)' -c:a copy -c:v libx264 -muxdelay 0 -copyts source-2.ts
+    for i in source-*.ts
+    do
+      ffprobe -show_streams -select_streams v $i | grep start_time >> source.txt
+    done
+  `
+	run(cmd)
+
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+
+	prof := P144p30fps16x9
+	prof.Framerate = 45
+	// Test encoding
+	for i := 0; i < 3; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/source-%d.ts", dir, i),
+			Accel: Software,
+		}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out-%d.ts", dir, i),
+			Profile: prof,
+			Accel:   Software,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	// Compare start times of original segments to the transcoded segments
+	cmd = `
+    for i in out-*.ts
+    do
+      ffprobe -show_streams -select_streams v $i | grep start_time >> out.txt
+    done
+    diff -u source.txt out.txt
+  `
+	run(cmd)
+}
