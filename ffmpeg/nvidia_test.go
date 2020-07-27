@@ -498,21 +498,15 @@ func TestNvidia_DrainFilters(t *testing.T) {
 	cmd = `
     # sanity check with ffmpeg itself
     ffmpeg -loglevel warning -i test.ts -c:a copy -c:v libx264 -vf fps=100 -vsync 0 ffmpeg-out.ts
+
     ffprobe -loglevel warning -show_streams -select_streams v -count_frames ffmpeg-out.ts > ffmpeg,out
-    grep nb_read_frames ffmpeg,out > ffmpeg-read-frames.out
-    grep duration= ffmpeg,out > ffmpeg-duration.out
-
-    # ensure output has correct fps and duration
     ffprobe -loglevel warning -show_streams -select_streams v -count_frames out.ts > probe.out
-    grep nb_read_frames probe.out > read-frames.out
-    diff -u ffmpeg-read-frames.out read-frames.out
-    grep duration= probe.out > duration.out
-    diff -u ffmpeg-duration.out duration.out
 
-    # actual values - these are not *that* important as long as they're
-    # reasonable and match ffmpeg's
-    grep nb_read_frames=102 probe.out
-    grep duration=1.0200 probe.out
+    # These used to be same, but aren't since we've diverged the flushing and PTS handling from ffmpeg
+    grep nb_read_frames=100 probe.out
+    grep duration=1.0000 probe.out
+    grep nb_read_frames=102 ffmpeg,out
+    grep duration=1.0200 ffmpeg,out
   `
 	run(cmd)
 
@@ -539,7 +533,7 @@ func TestNvidia_CountFrames(t *testing.T) {
 		in := &TranscodeOptionsIn{
 			Fname:  fmt.Sprintf("%s/test%d.ts", dir, i),
 			Accel:  Nvidia,
-			Device: "3",
+			Device: "0",
 		}
 		res, err := tc.Transcode(in, nil)
 		if err != nil {
@@ -708,12 +702,8 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 		if (i == 1 || i == 3) && err != nil {
 			t.Error(err)
 		}
-		if i == 0 || i == 2 {
-			if err == nil || err.Error() != "Segment out of order" {
-				t.Error(err)
-			}
-			// Maybe one day we'll be able to run the rest of this test
-			continue
+		if err != nil {
+			t.Error(err)
 		}
 		if res.Decoded.Frames != 120 {
 			t.Error("Did not get decoded frames", res.Decoded.Frames)
@@ -731,6 +721,7 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 
       ffmpeg -loglevel warning -i out_$1.ts -c:a aac -ar 44100 -ac 2 \
         -vf hwupload_cuda,fps=123,scale_cuda=w=256:h=144 -c:v h264_nvenc \
+        -muxdelay 0 -copyts \
         ffmpeg_nv_$1.ts
 
       # sanity check ffmpeg frame count against ours
@@ -755,9 +746,9 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 
 
     # re-enable for seg 0 and 1 when alternating timestamps can be handled
-    # check 0
+    check 0
     check 1
-    # check 2
+    check 2
     check 3
   `
 	run(cmd)
