@@ -104,19 +104,25 @@ struct filter_ctx {
 
   uint8_t *hwframes; // GPU frame pool data
 
+  // The fps filter expects monotonically increasing PTS, which might not hold
+  // for our input segments (they may be out of order, or have dropped frames).
+  // So we set a custom PTS before sending the frame to the filtergraph that is
+  // uniformly and monotonically increasing.
+  int64_t custom_pts;
+
+  // We need to update the post-filtergraph PTS before sending the frame for
+  // encoding because we modified the input PTS.
+  // We do this by calculating the difference between our custom PTS and actual
+  // PTS for the first-frame of every segment, and then applying this diff to
+  // every subsequent frame in the segment.
+  int64_t pts_diff;
+
   // When draining the filtergraph, we inject fake frames.
-  // These frames need monotonically increasing timestamps at
-  // approximately the same interval as a normal stream of frames.
-  // In order to continue using the filter after flushing, we need
-  // to do two things:
-  // Adjust input timestamps forward to match the expected cumulative offset
-  //      ( otherwise filter will drop frames <= current pts )
-  // Re-adjust output timestamps backwards to compensate for the offset
-  //      ( pts received from filter will be wrong by however many flushed
-  //      frames received )
-  // the cumulative offset effect of flushing
-  int64_t custom_pts; // custom PTS that we set to be monotonically increasing
-  int64_t pts_diff;   // difference between the segment's actual first packet pts, and our custom pts
+  // These frames have monotonically increasing timestamps at the same interval
+  // as a normal stream of frames. The custom_pts is set to more than usual jump
+  // when we have a small segment and haven't encoded anything yet but need to
+  // flush the filtergraph.
+  // We mark this boolean as flushed when done flushing.
   int flushed;
 };
 

@@ -1172,11 +1172,13 @@ func TestTranscoder_FFmpegMatching(t *testing.T) {
 	// 1 second input, N fps ( M frames; N != M for $reasons )
 	// Output set to N/2 fps . Output contains ( M / 2 ) frames
 
+	// TODO Unable to compare the frame counts in the following since diverged FPS handling from FFmpeg
+	// Even though the LPMS frame counts make sense on their own
+
 	// Other cases with audio result in frame count matching FPS
 	// 1 second input, N fps ( N frames )
 	// Output set to M fps. Output contains M frames
 
-	// TODO Unable to compare these since diverged FPS handling from from FFmpeg, Find a better way
 	// Weird framerate case
 	// 1 second input, N fps ( N frames )
 	// Output set to 123 fps. Output contains 125 frames
@@ -1280,7 +1282,7 @@ nb_read_frames=%d
 	if res.Encoded[0].Frames != 60 { //
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
-	//checkStatsFile(in, &out[0], res)
+	// checkStatsFile(in, &out[0], res) // TODO framecounts don't match ffmpeg
 
 	// audio + 60fps input, 123 fps output. 123 frames actual
 	in.Fname = dir + "/test-60fps.ts"
@@ -1293,7 +1295,7 @@ nb_read_frames=%d
 	if res.Encoded[0].Frames != 123 { // (FIXED) TODO Find out why this isn't 123
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
-	//checkStatsFile(in, &out[0], res)
+	// checkStatsFile(in, &out[0], res) // TODO framecounts don't match ffmpeg
 }
 
 func TestTranscoder_PassthroughFPS(t *testing.T) {
