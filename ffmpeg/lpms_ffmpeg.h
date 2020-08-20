@@ -54,5 +54,6 @@ int  lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 struct transcode_thread* lpms_transcode_new();
 void lpms_transcode_stop(struct transcode_thread* handle);
+int  lpms_is_bypass_needed(char *fname);
 
 #endif // _LPMS_FFMPEG_H_
