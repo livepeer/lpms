@@ -1175,3 +1175,69 @@ func TestTranscoder_SkippedFrames(t *testing.T) {
   `
 	run(cmd)
 }
+
+func audioOnlySegment(t *testing.T, accel Acceleration) {
+	// Reproducing #203
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+    # run segmenter and sanity check frame counts . Hardcode for now.
+    ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -f hls test.m3u8
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test0.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test1.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test2.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test3.ts | grep nb_read_frames=120
+
+    # drop all video frames from seg2
+    ffmpeg -loglevel warning -i test2.ts -c:a copy -c:v libx264 -vf "fps=fps=1/100000" test02.ts
+    mv test02.ts test2.ts
+
+    # verify no video frames in seg2
+    ffprobe -loglevel warning -show_streams -select_streams v -count_frames test2.ts | grep nb_read_frames=N/A
+  `
+	run(cmd)
+
+	// Test encoding with audio-only segment in between stream
+	tc := NewTranscoder()
+	prof := P144p30fps16x9
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/test%d.ts", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
+			Profile: prof,
+			Accel:   accel,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	tc.StopTranscoder()
+
+	// Test encoding with audio-only segment in start of stream
+	tc = NewTranscoder()
+	defer tc.StopTranscoder()
+	for i := 2; i < 4; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/test%d.ts", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out2_%d.ts", dir, i),
+			Profile: prof,
+			Accel:   accel,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+func TestTranscoder_AudioOnly(t *testing.T) {
+	audioOnlySegment(t, Software)
+}
