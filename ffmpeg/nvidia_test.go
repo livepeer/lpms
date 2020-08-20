@@ -784,4 +784,8 @@ func TestNvidia_SetGOPs(t *testing.T) {
 	setGops(t, Nvidia)
 }
 
+func TestNvidia_AudioOnly(t *testing.T) {
+	audioOnlySegment(t, Nvidia)
+}
+
 // XXX test bframes or delayed frames
