@@ -41,6 +41,7 @@ type ComponentOptions struct {
 type Transcoder struct {
 	handle  *C.struct_transcode_thread
 	stopped bool
+	started bool
 	mu      *sync.Mutex
 }
 
@@ -183,6 +184,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	hw_type, err := accelDeviceType(input.Accel)
 	if err != nil {
 		return nil, err
+	}
+	if !t.started {
+		ret := int(C.lpms_is_bypass_needed(C.CString(input.Fname)))
+		if ret != 1 {
+			// no bypass needed, continue
+			t.started = true
+		} else {
+			// audio-only segment, bypassed transcoding
+			return bypassTranscoding(input, ps)
+		}
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
@@ -364,6 +375,28 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		Pixels: int64(decoded.pixels),
 	}
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
+}
+
+// Force copy-transcoding for audio-only segments
+func bypassTranscoding(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	glog.Warningf("Input %s has audio & video streams but no video frames. Bypassing the transcoder.", input.Fname)
+	for i, p := range ps {
+		if p.Profile != (VideoProfile{}) {
+			p.Profile = (VideoProfile{})
+			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+				p.VideoEncoder = ComponentOptions{Name: "copy"}
+			}
+			if "drop" != p.AudioEncoder.Name && "copy" != p.AudioEncoder.Name {
+				p.AudioEncoder = ComponentOptions{Name: "copy"}
+			}
+			ps[i] = p
+		}
+	}
+	// use a new thread to transcode
+	t := NewTranscoder()
+	t.started = true
+	defer t.StopTranscoder()
+	return t.Transcode(input, ps)
 }
 
 func NewTranscoder() *Transcoder {
