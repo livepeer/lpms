@@ -381,8 +381,11 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 func bypassTranscoding(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
 	glog.Warningf("Input %s has audio & video streams but no video frames. Bypassing the transcoder.", input.Fname)
 	for i, p := range ps {
-		if p.Profile != (VideoProfile{}) {
-			p.Profile = (VideoProfile{})
+		if p.Profile != (VideoProfile{}) && p.Profile.Format != FormatMP4 {
+			// we only bypass when a VideoProfile is set (i.e. not a copy/drop) and output format
+			// is mpegts.
+			// FIXME: Temporary fix. The transcoder is not the place for such hacky code
+			p.Profile = VideoProfile{Name: p.Profile.Name, Format: FormatMPEGTS}
 			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
 				p.VideoEncoder = ComponentOptions{Name: "copy"}
 			}
