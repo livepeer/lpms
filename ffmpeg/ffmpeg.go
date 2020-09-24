@@ -188,11 +188,11 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if !t.started {
 		ret := int(C.lpms_is_bypass_needed(C.CString(input.Fname)))
 		if ret != 1 {
-			// no bypass needed, continue
+			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
 		} else {
-			// audio-only segment, bypassed transcoding
-			return bypassTranscoding(input, ps)
+			// Audio-only segment, fail fast right here as we cannot handle them nicely
+			return nil, errors.New("No video parameters found while initializing stream")
 		}
 	}
 	fname := C.CString(input.Fname)
@@ -375,31 +375,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		Pixels: int64(decoded.pixels),
 	}
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
-}
-
-// Force copy-transcoding for audio-only segments
-func bypassTranscoding(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
-	glog.Warningf("Input %s has audio & video streams but no video frames. Bypassing the transcoder.", input.Fname)
-	for i, p := range ps {
-		if p.Profile != (VideoProfile{}) && p.Profile.Format != FormatMP4 {
-			// we only bypass when a VideoProfile is set (i.e. not a copy/drop) and output format
-			// is mpegts.
-			// FIXME: Temporary fix. The transcoder is not the place for such hacky code
-			p.Profile = VideoProfile{Name: p.Profile.Name, Format: FormatMPEGTS}
-			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
-				p.VideoEncoder = ComponentOptions{Name: "copy"}
-			}
-			if "drop" != p.AudioEncoder.Name && "copy" != p.AudioEncoder.Name {
-				p.AudioEncoder = ComponentOptions{Name: "copy"}
-			}
-			ps[i] = p
-		}
-	}
-	// use a new thread to transcode
-	t := NewTranscoder()
-	t.started = true
-	defer t.StopTranscoder()
-	return t.Transcode(input, ps)
 }
 
 func NewTranscoder() *Transcoder {

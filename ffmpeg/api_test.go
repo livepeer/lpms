@@ -1232,7 +1232,9 @@ func audioOnlySegment(t *testing.T, accel Acceleration) {
 			Accel:   accel,
 		}}
 		_, err := tc.Transcode(in, out)
-		if err != nil {
+		if i == 2 && (err == nil || err.Error() != "No video parameters found while initializing stream") {
+			t.Error("Expected to fail for audio-only segment but did not")
+		} else if i != 2 && err != nil {
 			t.Error(err)
 		}
 	}
