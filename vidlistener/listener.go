@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	joy4rtmp "github.com/livepeer/joy4/format/rtmp"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
-	joy4rtmp "github.com/livepeer/joy4/format/rtmp"
 )
 
 var segOptions = segmenter.SegmenterOptions{SegLength: time.Second * 2}
@@ -40,7 +40,7 @@ func (self *VidListener) HandleRTMPPublish(
 				conn.Close()
 				return
 			}
-			s := stream.NewBasicRTMPVideoStream(strmID)
+			s := stream.NewBasicRTMPVideoStream(strmID, true)
 			ctx, cancel := context.WithCancel(context.Background())
 			eof, err := s.WriteRTMPToStream(ctx, conn)
 			if err != nil {

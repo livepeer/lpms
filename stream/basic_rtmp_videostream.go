@@ -26,7 +26,7 @@ type BasicRTMPVideoStream struct {
 }
 
 //NewBasicRTMPVideoStream creates a new BasicRTMPVideoStream.  The default RTMPTimeout is set to 10 milliseconds because we assume all RTMP streams are local.
-func NewBasicRTMPVideoStream(data AppData) *BasicRTMPVideoStream {
+func NewBasicRTMPVideoStream(data AppData, cacheStartPackets bool) *BasicRTMPVideoStream {
 	ch := make(chan *av.Packet)
 	eof := make(chan struct{})
 	listeners := make(map[string]av.MuxCloser)
@@ -37,6 +37,7 @@ func NewBasicRTMPVideoStream(data AppData) *BasicRTMPVideoStream {
 	//Automatically start a worker that reads packets.  There is no buffering of the video packets.
 	go func(strm *BasicRTMPVideoStream) {
 		var cache map[string]av.MuxCloser
+		var packetsCache []*av.Packet
 		for {
 			select {
 			case pkt := <-strm.ch:
@@ -49,6 +50,19 @@ func NewBasicRTMPVideoStream(data AppData) *BasicRTMPVideoStream {
 					strm.dirty = false
 				}
 				strm.listnersLock.Unlock()
+				if len(cache) == 0 && cacheStartPackets {
+					packetsCache = append(packetsCache, pkt)
+				} else if len(packetsCache) > 0 && len(cache) > 0 {
+					for _, p := range packetsCache {
+						for dstid, l := range cache {
+							if err := l.WritePacket(*p); err != nil {
+								glog.Infof("RTMP stream got error: %v", err)
+								go strm.deleteListener(dstid)
+							}
+						}
+					}
+					packetsCache = nil
+				}
 				for dstid, l := range cache {
 					if err := l.WritePacket(*pkt); err != nil {
 						glog.Infof("RTMP stream got error: %v", err)
