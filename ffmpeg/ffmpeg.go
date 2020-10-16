@@ -185,8 +185,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if err != nil {
 		return nil, err
 	}
+	fname := C.CString(input.Fname)
+	defer C.free(unsafe.Pointer(fname))
 	if !t.started {
-		ret := int(C.lpms_is_bypass_needed(C.CString(input.Fname)))
+		ret := int(C.lpms_is_bypass_needed(fname))
 		if ret != 1 {
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
@@ -195,8 +197,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			return nil, errors.New("No video parameters found while initializing stream")
 		}
 	}
-	fname := C.CString(input.Fname)
-	defer C.free(unsafe.Pointer(fname))
 	params := make([]C.output_params, len(ps))
 	for i, p := range ps {
 		oname := C.CString(p.Oname)
