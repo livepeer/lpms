@@ -213,6 +213,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
   avcodec_parameters_copy(ost->codecpar, ist->codecpar);
 
   av_dict_set(&md, "hls_time", seg_time, 0);
+  av_dict_set(&md, "hls_list_size", "0", 0);
   av_dict_set(&md, "hls_segment_filename", ts_tmpl, 0);
   av_dict_set(&md, "start_number", seg_start, 0);
   av_dict_set(&md, "hls_flags", "delete_segments", 0);

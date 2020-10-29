@@ -64,7 +64,7 @@ type FFMpegVideoSegmenter struct {
 
 func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, opt SegmenterOptions) *FFMpegVideoSegmenter {
 	if opt.SegLength == 0 {
-		opt.SegLength = time.Second * 4
+		opt.SegLength = time.Second * 2
 	}
 	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: opt.SegLength, curSegment: opt.StartSeq}
 }

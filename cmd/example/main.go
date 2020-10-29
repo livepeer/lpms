@@ -70,8 +70,8 @@ func main() {
 	if err != nil {
 		glog.Infof("Error getting work directory: %v", err)
 	}
-	glog.Infof("Settig working directory %v", fmt.Sprintf("%v/.tmp", dir))
-	lpms := core.New(&core.LPMSOpts{WorkDir: fmt.Sprintf("%v/.tmp", dir)})
+	glog.Infof("Settig working directory %v", fmt.Sprintf("%v/hls_out", dir))
+	lpms := core.New(&core.LPMSOpts{WorkDir: fmt.Sprintf("%v/hls_out", dir)})
 
 	//Streams needed for transcoding:
 	var rtmpStrm stream.RTMPVideoStream
@@ -101,7 +101,7 @@ func main() {
 			// }
 			// hlsStrm.SetSubscriber(subscriber)
 			// glog.Infof("After set subscriber")
-			opt := segmenter.SegmenterOptions{SegLength: 8 * time.Second}
+			opt := segmenter.SegmenterOptions{SegLength: 2 * time.Second}
 			var ctx context.Context
 			ctx, cancelSeg = context.WithCancel(context.Background())
 
