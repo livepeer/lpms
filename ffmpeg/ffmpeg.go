@@ -14,7 +14,8 @@ import (
 
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
 // #include <stdlib.h>
-// #include "lpms_ffmpeg.h"
+// #include "transcoder.h"
+// #include "extras.h"
 import "C"
 
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")

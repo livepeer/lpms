@@ -1,13 +1,17 @@
-#ifndef _LPMS_FFMPEG_H_
-#define _LPMS_FFMPEG_H_
+#ifndef _LPMS_TRANSCODER_H_
+#define _LPMS_TRANSCODER_H_
 
 #include <libavutil/hwcontext.h>
 #include <libavutil/rational.h>
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
 
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
 extern const int lpms_ERR_INPUT_CODEC;
 extern const int lpms_ERR_FILTERS;
+extern const int lpms_ERR_PACKET_ONLY;
+extern const int lpms_ERR_FILTER_FLUSHED;
 extern const int lpms_ERR_OUTPUTS;
 extern const int lpms_ERR_DTS;
 
@@ -50,10 +54,8 @@ typedef struct {
 } output_results;
 
 void lpms_init();
-int  lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char *seg_start);
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 struct transcode_thread* lpms_transcode_new();
 void lpms_transcode_stop(struct transcode_thread* handle);
-int  lpms_is_bypass_needed(char *fname);
 
-#endif // _LPMS_FFMPEG_H_
+#endif // _LPMS_TRANSCODER_H_
