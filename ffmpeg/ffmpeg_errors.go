@@ -2,7 +2,7 @@ package ffmpeg
 
 // #cgo pkg-config: libavformat
 //#include "ffmpeg_errors.h"
-//#include "lpms_ffmpeg.h"
+//#include "transcoder.h"
 import "C"
 import (
 	"encoding/binary"
