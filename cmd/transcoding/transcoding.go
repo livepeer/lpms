@@ -46,7 +46,7 @@ func main() {
 		opts := []ffmpeg.TranscodeOptions{}
 		for i := range profs {
 			o := ffmpeg.TranscodeOptions{
-				Oname:   fmt.Sprintf("out_%s_%d_out.mkv", lbl, i),
+				Oname:   fmt.Sprintf("out_%s_%d.ts", lbl, i),
 				Profile: profs[i],
 				Accel:   accel,
 			}
@@ -64,7 +64,7 @@ func main() {
 		dev = os.Args[4]
 	}
 
-	ffmpeg.InitFFmpeg()
+	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.FFLogInfo)
 
 	fmt.Printf("Setting fname %s encoding %d renditions with %v\n", fname, len(options), lbl)
 	res, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{

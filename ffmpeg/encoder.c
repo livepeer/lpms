@@ -157,7 +157,7 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   AVOutputFormat *fmt = NULL;
   AVFormatContext *oc = NULL;
-  AVCodecContext *vc  = NULL;
+  static AVCodecContext *vc  = NULL;
   AVCodec *codec      = NULL;
 
   // open muxer
@@ -177,26 +177,31 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
     // open video encoder
     // XXX use avoptions rather than manual enumeration
-    vc = avcodec_alloc_context3(codec);
-    if (!vc) LPMS_ERR(open_output_err, "Unable to alloc video encoder");
-    octx->vc = vc;
-    vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
-    vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
-    if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
-    else vc->framerate = ictx->vc->framerate;
-    if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
-    else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
-    else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
-    if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
-    if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
-      vc->hw_frames_ctx =
-        av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
-      if (!vc->hw_frames_ctx) LPMS_ERR(open_output_err, "Unable to alloc hardware context");
+    if (!vc) {
+        vc = avcodec_alloc_context3(codec);
+        if (!vc) LPMS_ERR(open_output_err, "Unable to alloc video encoder");
+        octx->vc = vc;
+        vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
+        vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
+        if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
+        else vc->framerate = ictx->vc->framerate;
+        if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
+        else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
+        else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
+        if (octx->bitrate) vc->bit_rate = vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+        if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
+          vc->hw_frames_ctx =
+            av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
+        if (!vc->hw_frames_ctx) LPMS_ERR(open_output_err, "Unable to alloc hardware context");
+        }
+        vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
+        if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+        av_log(NULL, AV_LOG_INFO, "Opening video encoder session for %dx%d fps %d/%d tb %d/%d bitrate %ld\n", vc->width, vc->height, vc->framerate.num, vc->framerate.den, vc->time_base.num, vc->time_base.den, (long) vc->bit_rate);
+        ret = avcodec_open2(vc, codec, &octx->video->opts);
+        if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
+    } else {
+        octx->vc = vc;
     }
-    vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
-    if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    ret = avcodec_open2(vc, codec, &octx->video->opts);
-    if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
     octx->hw_type = ictx->hw_type;
   }
 
@@ -328,6 +333,16 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   }
 
   int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
+
+  // set encoding session params for this session
+  if (is_video) {
+      encoder->height = av_buffersink_get_h(octx->vf.sink_ctx);
+      encoder->width = av_buffersink_get_w(octx->vf.sink_ctx);
+      if (octx->bitrate) encoder->bit_rate = encoder->rc_min_rate = encoder->rc_max_rate = encoder->rc_buffer_size = octx->bitrate;
+      /*av_log(NULL, AV_LOG_INFO, "Changing video encoder params to %dx%d bitrate %ld\n", encoder->width, encoder->height, (long) encoder->bit_rate);*/
+      if (inf) av_log(NULL, AV_LOG_INFO, "processing output segment %s frame pts %ld for resolution %dx%d br %ld\n", octx->fname, inf->pts, encoder->width, encoder->height, (long) encoder->bit_rate);
+  }
+
   ret = filtergraph_write(inf, ictx, octx, filter, is_video);
   if (ret < 0) goto proc_cleanup;
 

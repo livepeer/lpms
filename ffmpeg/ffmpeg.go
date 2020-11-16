@@ -307,6 +307,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				}
 			}
 		}
+		if encoder == "h264_nvenc" {
+			p.VideoEncoder.Opts["max_width"] = "1920"
+			p.VideoEncoder.Opts["max_height"] = "1080"
+		}
 		vidOpts := C.component_opts{
 			name: C.CString(encoder),
 			opts: newAVOpts(p.VideoEncoder.Opts),
