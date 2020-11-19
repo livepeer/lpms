@@ -73,6 +73,10 @@ var (
 	P240p30fps4x3  = VideoProfile{Name: "P240p30fps4x3", Bitrate: "600k", Framerate: 30, AspectRatio: "4:3", Resolution: "320x240"}
 	P144p30fps16x9 = VideoProfile{Name: "P144p30fps16x9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256x144"}
 	P144p25fps16x9 = VideoProfile{Name: "P144p25fps16x9", Bitrate: "400k", Framerate: 25, AspectRatio: "16:9", Resolution: "256x144"}
+	P240p0         = VideoProfile{Name: "240p0", Bitrate: "250k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", GOP: 2 * time.Second}
+	P360p0         = VideoProfile{Name: "360p0", Bitrate: "800k", Framerate: 30, AspectRatio: "16:9", Resolution: "640x360", GOP: 2 * time.Second}
+	P480p0         = VideoProfile{Name: "480p0", Bitrate: "1600k", Framerate: 30, AspectRatio: "16:9", Resolution: "854x480", GOP: 2 * time.Second}
+	P720p0         = VideoProfile{Name: "720p0", Bitrate: "3000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720", GOP: 2 * time.Second}
 )
 
 var VideoProfileLookup = map[string]VideoProfile{
@@ -89,6 +93,10 @@ var VideoProfileLookup = map[string]VideoProfile{
 	"P240p25fps16x9": P240p25fps16x9,
 	"P240p30fps4x3":  P240p30fps4x3,
 	"P144p30fps16x9": P144p30fps16x9,
+	"240p0":          P240p0,
+	"360p0":          P360p0,
+	"480p0":          P480p0,
+	"720p0":          P720p0,
 }
 
 var FormatExtensions = map[Format]string{
