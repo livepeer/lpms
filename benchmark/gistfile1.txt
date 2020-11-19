@@ -1,0 +1,8 @@
+# source video
+http://distribution.bbb3d.renderfarming.net/video/mp4/bbb_sunflower_1080p_30fps_normal.mp4
+
+# ffmpeg segmentation command
+ffmpeg -i bbb_sunflower_1080p_30fps_normal.mp4 -c:a copy -c:v libx264 -keyint_min 30 -g 30 -f hls -hls_time 2 -hls_playlist_type vod hls/bbb.m3u8
+
+# equivalent ffmpeg transcoding command
+time ffmpeg -benchmark -i hls/bbb.m3u8 -c:a aac -ac 2 -sample_rate 44100 -c:v libx264 -s hd720 -f null - -c:a aac -ac 2 -sample_rate 44100 -c:v libx264 -s 640x360 -f null - -c:a aac -ac 2 -sample_rate 44100 -c:v libx264 -s 426x240 -f null -

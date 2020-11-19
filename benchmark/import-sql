@@ -1,0 +1,21 @@
+if [ -z "$1" ]
+then
+  echo "Expecting output prefix"
+  exit 1
+fi
+
+pfx="$1"
+
+cat <<EOF > config-sql
+.mode csv
+.import stats/"$pfx"_nv_3.csv nv3
+.import stats/"$pfx"_nv_2.csv nv2
+.import stats/"$pfx"_nv_1.csv nv1
+
+.import stats/"$pfx"_sw_3.csv sw3
+.import stats/"$pfx"_sw_2.csv sw2
+.import stats/"$pfx"_sw_1.csv sw1
+.timer on
+EOF
+
+sqlite3 -header -column -init config-sql

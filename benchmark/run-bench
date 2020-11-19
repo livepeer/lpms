@@ -1,0 +1,18 @@
+if [ -z "$1" ]
+then
+  echo "Expecting output prefix"
+  exit 1
+fi
+
+inp=in/testharness.m3u8
+profs=P720p30fps16x9,P576p30fps16x9,P360p30fps16x9,P240p30fps16x9
+pfx="$1"
+
+./lpms-bench $inp $pfx 3 298 $profs nv 0 | tee stats/"$pfx"_nv_3.csv
+./lpms-bench $inp $pfx 2 298 $profs nv 0 | tee stats/"$pfx"_nv_2.csv
+./lpms-bench $inp $pfx 1 298 $profs nv 0 | tee stats/"$pfx"_nv_1.csv
+
+
+./lpms-bench $inp $pfx 3 298 $profs sw | tee stats/"$pfx"_sw_3.csv
+./lpms-bench $inp $pfx 2 298 $profs sw | tee stats/"$pfx"_sw_2.csv
+./lpms-bench $inp $pfx 1 298 $profs sw | tee stats/"$pfx"_sw_1.csv
