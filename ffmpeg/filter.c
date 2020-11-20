@@ -1,4 +1,5 @@
 #include "filter.h"
+#include "logging.h"
 
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
@@ -7,11 +8,6 @@
 
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
-#define filters_err(msg) { \
-  if (!ret) ret = -1; \
-  fprintf(stderr, msg); \
-  goto init_video_filters_cleanup; \
-}
     char args[512];
     int ret = 0;
     const AVFilter *buffersrc  = avfilter_get_by_name("buffer");
@@ -25,8 +21,8 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     enum AVPixelFormat in_pix_fmt = ictx->vc->pix_fmt;
 
     // no need for filters with the following conditions
-    if (vf->active) goto init_video_filters_cleanup; // already initialized
-    if (!needs_decoder(octx->video->name)) goto init_video_filters_cleanup;
+    if (vf->active) goto vf_init_cleanup; // already initialized
+    if (!needs_decoder(octx->video->name)) goto vf_init_cleanup;
 
     outputs = avfilter_inout_alloc();
     inputs = avfilter_inout_alloc();
@@ -34,7 +30,7 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     vf->pts_diff = INT64_MIN;
     if (!outputs || !inputs || !vf->graph) {
       ret = AVERROR(ENOMEM);
-      filters_err("Unble to allocate filters\n");
+      LPMS_ERR(vf_init_cleanup, "Unable to allocate filters");
     }
     if (ictx->vc->hw_device_ctx) in_pix_fmt = hw2pixfmt(ictx->vc);
 
@@ -47,7 +43,7 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
     ret = avfilter_graph_create_filter(&vf->src_ctx, buffersrc,
                                        "in", args, NULL, vf->graph);
-    if (ret < 0) filters_err("Cannot create video buffer source\n");
+    if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot create video buffer source");
     if (ictx->vc && ictx->vc->hw_frames_ctx) {
       // XXX a bit problematic in that it's set before decoder is fully ready
       AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
@@ -60,11 +56,11 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     /* buffer video sink: to terminate the filter chain. */
     ret = avfilter_graph_create_filter(&vf->sink_ctx, buffersink,
                                        "out", NULL, NULL, vf->graph);
-    if (ret < 0) filters_err("Cannot create video buffer sink\n");
+    if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot create video buffer sink");
 
     ret = av_opt_set_int_list(vf->sink_ctx, "pix_fmts", pix_fmts,
                               AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
-    if (ret < 0) filters_err("Cannot set output pixel format\n");
+    if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot set output pixel format");
 
     /*
      * Set the endpoints for the filter graph. The filter_graph will
@@ -95,32 +91,26 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
     ret = avfilter_graph_parse_ptr(vf->graph, filters_descr,
                                     &inputs, &outputs, NULL);
-    if (ret < 0) filters_err("Unable to parse video filters desc\n");
+    if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable to parse video filters desc");
 
     ret = avfilter_graph_config(vf->graph, NULL);
-    if (ret < 0) filters_err("Unable configure video filtergraph\n");
+    if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable configure video filtergraph");
 
     vf->frame = av_frame_alloc();
-    if (!vf->frame) filters_err("Unable to allocate video frame\n");
+    if (!vf->frame) LPMS_ERR(vf_init_cleanup, "Unable to allocate video frame");
 
     vf->active = 1;
 
-init_video_filters_cleanup:
+vf_init_cleanup:
     avfilter_inout_free(&inputs);
     avfilter_inout_free(&outputs);
 
     return ret;
-#undef filters_err
 }
 
 
 int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
-#define af_err(msg) { \
-  if (!ret) ret = -1; \
-  fprintf(stderr, msg); \
-  goto init_audio_filters_cleanup; \
-}
   int ret = 0;
   char args[512];
   char filters_descr[256];
@@ -132,8 +122,8 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
   AVRational time_base = ictx->ic->streams[ictx->ai]->time_base;
 
   // no need for filters with the following conditions
-  if (af->active) goto init_audio_filters_cleanup; // already initialized
-  if (!needs_decoder(octx->audio->name)) goto init_audio_filters_cleanup;
+  if (af->active) goto af_init_cleanup; // already initialized
+  if (!needs_decoder(octx->audio->name)) goto af_init_cleanup;
 
   outputs = avfilter_inout_alloc();
   inputs = avfilter_inout_alloc();
@@ -141,7 +131,7 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
   if (!outputs || !inputs || !af->graph) {
     ret = AVERROR(ENOMEM);
-    af_err("Unble to allocate audio filters\n");
+    LPMS_ERR(af_init_cleanup, "Unable to allocate audio filters");
   }
 
   /* buffer audio source: the decoded frames from the decoder will be inserted here. */
@@ -158,12 +148,12 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
   ret = avfilter_graph_create_filter(&af->src_ctx, buffersrc,
                                      "in", args, NULL, af->graph);
-  if (ret < 0) af_err("Cannot create audio buffer source\n");
+  if (ret < 0) LPMS_ERR(af_init_cleanup, "Cannot create audio buffer source");
 
   /* buffer audio sink: to terminate the filter chain. */
   ret = avfilter_graph_create_filter(&af->sink_ctx, buffersink,
                                      "out", NULL, NULL, af->graph);
-  if (ret < 0) af_err("Cannot create audio buffer sink\n");
+  if (ret < 0) LPMS_ERR(af_init_cleanup, "Cannot create audio buffer sink");
 
   /*
    * Set the endpoints for the filter graph. The filter_graph will
@@ -194,31 +184,23 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
   ret = avfilter_graph_parse_ptr(af->graph, filters_descr,
                                 &inputs, &outputs, NULL);
-  if (ret < 0) af_err("Unable to parse audio filters desc\n");
+  if (ret < 0) LPMS_ERR(af_init_cleanup, "Unable to parse audio filters desc");
 
   ret = avfilter_graph_config(af->graph, NULL);
-  if (ret < 0) af_err("Unable configure audio filtergraph\n");
+  if (ret < 0) LPMS_ERR(af_init_cleanup, "Unable configure audio filtergraph");
 
   af->frame = av_frame_alloc();
-  if (!af->frame) af_err("Unable to allocate audio frame\n");
+  if (!af->frame) LPMS_ERR(af_init_cleanup, "Unable to allocate audio frame");
 
   af->active = 1;
 
-init_audio_filters_cleanup:
+af_init_cleanup:
   avfilter_inout_free(&inputs);
   avfilter_inout_free(&outputs);
 
   return ret;
-#undef af_err
 }
 
-#define fg_err(msg) { \
-  char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
-  if (!ret) { fprintf(stderr, "u done messed up\n"); ret = AVERROR(ENOMEM); } \
-  if (ret < -1) av_strerror(ret, errstr, sizeof errstr); \
-  fprintf(stderr, "%s: %s\n", msg, errstr); \
-  return ret; \
-}
 int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video)
 {
   int ret = 0;
@@ -267,8 +249,9 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
     inf->pts = filter->custom_pts;
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
     inf->pts = old_pts;
-    if (ret < 0) fg_err("Error feeding the filtergraph");
+    if (ret < 0) LPMS_ERR(fg_write_cleanup, "Error feeding the filtergraph");
   }
+fg_write_cleanup:
   return ret;
 }
 
@@ -281,7 +264,7 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
     frame->pict_type = AV_PICTURE_TYPE_NONE;
 
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) return ret;
-    else if (ret < 0) fg_err("Error consuming the filtergraph\n");
+    else if (ret < 0) LPMS_ERR(fg_read_cleanup, "Error consuming the filtergraph");
 
     if (frame && ((int64_t) frame->opaque == INT64_MIN)) {
       // opaque being INT64_MIN means it's a flush packet
@@ -299,9 +282,9 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
       }
       frame->pts += filter->pts_diff; // Re-calculate by adding back this segment's difference calculated at start
     }
+fg_read_cleanup:
     return ret;
 }
-#undef fg_err
 
 void free_filter(struct filter_ctx *filter)
 {

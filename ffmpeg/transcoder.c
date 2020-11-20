@@ -2,6 +2,7 @@
 #include "decoder.h"
 #include "filter.h"
 #include "encoder.h"
+#include "logging.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -114,13 +115,6 @@ int transcode(struct transcode_thread *h,
   input_params *inp, output_params *params,
   output_results *results, output_results *decoded_results)
 {
-#define main_err(msg) { \
-  char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
-  if (!ret) ret = AVERROR(EINVAL); \
-  if (ret < -1) av_strerror(ret, errstr, sizeof errstr); \
-  fprintf(stderr, "%s: %s\n", msg, errstr); \
-  goto transcode_cleanup; \
-}
   int ret = 0, i = 0;
   int reopen_decoders = 1;
   struct input_ctx *ictx = &h->ictx;
@@ -129,7 +123,7 @@ int transcode(struct transcode_thread *h,
   AVPacket ipkt = {0};
   AVFrame *dframe = NULL;
 
-  if (!inp) main_err("transcoder: Missing input params\n")
+  if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
 
   // by default we re-use decoder between segments of same stream
   // unless we are using SW deocder and had to re-open IO or demuxer
@@ -137,22 +131,22 @@ int transcode(struct transcode_thread *h,
     // reopen demuxer for the input segment if needed
     // XXX could open_input() be re-used here?
     ret = avformat_open_input(&ictx->ic, inp->fname, NULL, NULL);
-    if (ret < 0) main_err("Unable to reopen demuxer");
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen demuxer");
     ret = avformat_find_stream_info(ictx->ic, NULL);
-    if (ret < 0) main_err("Unable to find info for reopened stream")
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to find info for reopened stream")
   } else if (!ictx->ic->pb) {
     // reopen input segment file IO context if needed
     ret = avio_open(&ictx->ic->pb, inp->fname, AVIO_FLAG_READ);
-    if (ret < 0) main_err("Unable to reopen file");
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen file");
   } else reopen_decoders = 0;
   if (reopen_decoders) {
     // XXX check to see if we can also reuse decoder for sw decoding
     if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
       ret = open_video_decoder(inp, ictx);
-      if (ret < 0) main_err("Unable to reopen video decoder");
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video decoder");
     }
     ret = open_audio_decoder(inp, ictx);
-    if (ret < 0) main_err("Unable to reopen audio decoder")
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen audio decoder")
   }
 
   // populate output contexts
@@ -176,18 +170,18 @@ int transcode(struct transcode_thread *h,
       // XXX valgrind this line up
       if (!h->initialized || AV_HWDEVICE_TYPE_NONE == octx->hw_type) {
         ret = open_output(octx, ictx);
-        if (ret < 0) main_err("transcoder: Unable to open output");
+        if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
         continue;
       }
 
       // non-first segment of a HW session
       ret = reopen_output(octx, ictx);
-      if (ret < 0) main_err("transcoder: Unable to re-open output for HW session");
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to re-open output for HW session");
   }
 
   av_init_packet(&ipkt);
   dframe = av_frame_alloc();
-  if (!dframe) main_err("transcoder: Unable to allocate frame\n");
+  if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
 
   while (1) {
     // DEMUXING & DECODING
@@ -199,7 +193,7 @@ int transcode(struct transcode_thread *h,
     if (ret == AVERROR_EOF) break;
                             // Bail out on streams that appear to be broken
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
-    else if (ret < 0) main_err("transcoder: Could not decode; stopping\n");
+    else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
     ist = ictx->ic->streams[ipkt.stream_index];
     has_frame = lpms_ERR_PACKET_ONLY != ret;
 
@@ -221,7 +215,7 @@ int transcode(struct transcode_thread *h,
         dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
       } else {
         // TODO use better heuristics for this; look at how ffmpeg does it
-        fprintf(stderr, "Could not determine next pts; filter might drop\n");
+        LPMS_WARN("Could not determine next pts; filter might drop");
       }
       dframe->pkt_duration = dur;
       av_frame_unref(last_frame);
@@ -261,14 +255,14 @@ int transcode(struct transcode_thread *h,
         if (ipkt.pts == AV_NOPTS_VALUE) continue;
 
         pkt = av_packet_clone(&ipkt);
-        if (!pkt) main_err("transcoder: Error allocating packet\n");
+        if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
         ret = mux(pkt, ist->time_base, octx, ost);
         av_packet_free(&pkt);
       } else if (has_frame) {
         ret = process_out(ictx, octx, encoder, ost, filter, dframe);
       }
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
-      else if (ret < 0) main_err("transcoder: Error encoding\n");
+      else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
     }
 whileloop_end:
     av_packet_unref(&ipkt);
@@ -277,7 +271,7 @@ whileloop_end:
   // flush outputs
   for (i = 0; i < nb_outputs; i++) {
     ret = flush_outputs(ictx, &outputs[i]);
-    if (ret < 0) main_err("transcoder: Unable to fully flush outputs")
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
   }
 
 transcode_cleanup:
