@@ -1,4 +1,5 @@
 #include "encoder.h"
+#include "logging.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavfilter/buffersrc.h>
@@ -6,24 +7,18 @@
 
 static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
 {
-#define vs_err(msg) { \
-  if (!ret) ret = -1; \
-  fprintf(stderr, "Error adding video stream: " msg); \
-  goto add_video_err; \
-}
-
   // video stream to muxer
   int ret = 0;
   AVStream *st = avformat_new_stream(octx->oc, NULL);
-  if (!st) vs_err("Unable to alloc video stream\n");
+  if (!st) LPMS_ERR(add_video_err, "Unable to alloc video stream");
   octx->vi = st->index;
   st->avg_frame_rate = octx->fps;
   if (is_copy(octx->video->name)) {
     AVStream *ist = ictx->ic->streams[ictx->vi];
-    if (ictx->vi < 0 || !ist) vs_err("Input video stream does not exist\n");
+    if (ictx->vi < 0 || !ist) LPMS_ERR(add_video_err, "Input video stream does not exist");
     st->time_base = ist->time_base;
     ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0) vs_err("Error copying video params from input stream\n");
+    if (ret < 0) LPMS_ERR(add_video_err, "Error copying video params from input stream");
     // Sometimes the codec tag is wonky for some reason, so correct it
     ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
     avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
@@ -41,24 +36,17 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
       octx->gop_pts_len = av_rescale_q(octx->gop_time, gop_tb, dest_tb);
       octx->next_kf_pts = 0; // force for first frame
     }
-    if (ret < 0) vs_err("Error setting video params from encoder\n");
-  } else vs_err("No video encoder, not a copy; what is this?\n");
+    if (ret < 0) LPMS_ERR(add_video_err, "Error setting video params from encoder");
+  } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
   return 0;
 
 add_video_err:
   // XXX free anything here?
   return ret;
-#undef vs_err
 }
 
 static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 {
-#define as_err(msg) { \
-  if (!ret) ret = -1; \
-  fprintf(stderr, "Error adding audio stream: " msg); \
-  goto add_audio_err; \
-}
-
   if (ictx->ai < 0 || octx->da) {
     // Don't need to add an audio stream if no input audio exists,
     // or we're dropping the output audio stream
@@ -68,25 +56,25 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
   // audio stream to muxer
   int ret = 0;
   AVStream *st = avformat_new_stream(octx->oc, NULL);
-  if (!st) as_err("Unable to alloc audio stream\n");
+  if (!st) LPMS_ERR(add_audio_err, "Unable to alloc audio stream");
   if (is_copy(octx->audio->name)) {
     AVStream *ist = ictx->ic->streams[ictx->ai];
-    if (ictx->ai < 0 || !ist) as_err("Input audio stream does not exist\n");
+    if (ictx->ai < 0 || !ist) LPMS_ERR(add_audio_err, "Input audio stream does not exist");
     st->time_base = ist->time_base;
     ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0) as_err("Error copying audio params from input stream\n");
+    if (ret < 0) LPMS_ERR(add_audio_err, "Error copying audio params from input stream");
     // Sometimes the codec tag is wonky for some reason, so correct it
     ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
     avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
   } else if (octx->ac) {
     st->time_base = octx->ac->time_base;
     ret = avcodec_parameters_from_context(st->codecpar, octx->ac);
-    if (ret < 0) as_err("Error setting audio params from encoder\n");
+    if (ret < 0) LPMS_ERR(add_audio_err, "Error setting audio params from encoder");
   } else if (is_drop(octx->audio->name)) {
     // Supposed to exit this function early if there's a drop
-    as_err("Shouldn't ever happen here\n");
+    LPMS_ERR(add_audio_err, "Shouldn't ever happen here");
   } else {
-    as_err("No audio encoder; not a copy; what is this?\n");
+    LPMS_ERR(add_audio_err, "No audio encoder; not a copy; what is this?");
   }
   octx->ai = st->index;
 
@@ -97,18 +85,11 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 add_audio_err:
   // XXX free anything here?
   return ret;
-#undef as_err
 }
 
 static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
   AVOutputFormat *fmt)
 {
-#define ao_err(msg) { \
-  if (!ret) ret = -1; \
-  fprintf(stderr, msg"\n"); \
-  goto audio_output_err; \
-}
-
   int ret = 0;
   AVCodec *codec = NULL;
   AVCodecContext *ac = NULL;
@@ -118,14 +99,14 @@ static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
 
     // initialize audio filters
     ret = init_audio_filters(ictx, octx);
-    if (ret < 0) ao_err("Unable to open audio filter")
+    if (ret < 0) LPMS_ERR(audio_output_err, "Unable to open audio filter")
 
     // open encoder
     codec = avcodec_find_encoder_by_name(octx->audio->name);
-    if (!codec) ao_err("Unable to find audio encoder");
+    if (!codec) LPMS_ERR(audio_output_err, "Unable to find audio encoder");
     // open audio encoder
     ac = avcodec_alloc_context3(codec);
-    if (!ac) ao_err("Unable to alloc audio encoder");
+    if (!ac) LPMS_ERR(audio_output_err, "Unable to alloc audio encoder");
     octx->ac = ac;
     ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
     ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);
@@ -134,18 +115,16 @@ static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
     ac->time_base = av_buffersink_get_time_base(octx->af.sink_ctx);
     if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     ret = avcodec_open2(ac, codec, &octx->audio->opts);
-    if (ret < 0) ao_err("Error opening audio encoder");
+    if (ret < 0) LPMS_ERR(audio_output_err, "Error opening audio encoder");
     av_buffersink_set_frame_size(octx->af.sink_ctx, ac->frame_size);
   }
 
   ret = add_audio_stream(ictx, octx);
-  if (ret < 0) ao_err("Error adding audio stream")
+  if (ret < 0) LPMS_ERR(audio_output_err, "Error adding audio stream")
 
 audio_output_err:
   // TODO clean up anything here?
   return ret;
-
-#undef ao_err
 }
 
 void close_output(struct output_ctx *octx)
@@ -174,11 +153,6 @@ void free_output(struct output_ctx *octx)
 
 int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
-#define em_err(msg) { \
-  if (!ret) ret = -1; \
-  fprintf(stderr, msg); \
-  goto open_output_err; \
-}
   int ret = 0, inp_has_stream;
 
   AVOutputFormat *fmt = NULL;
@@ -188,23 +162,23 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   // open muxer
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
-  if (!fmt) em_err("Unable to guess output format\n");
+  if (!fmt) LPMS_ERR(open_output_err, "Unable to guess output format");
   ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
-  if (ret < 0) em_err("Unable to alloc output context\n");
+  if (ret < 0) LPMS_ERR(open_output_err, "Unable to alloc output context");
   octx->oc = oc;
 
   // add video encoder if a decoder exists and this output requires one
   if (ictx->vc && needs_decoder(octx->video->name)) {
     ret = init_video_filters(ictx, octx);
-    if (ret < 0) em_err("Unable to open video filter");
+    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
 
     codec = avcodec_find_encoder_by_name(octx->video->name);
-    if (!codec) em_err("Unable to find encoder");
+    if (!codec) LPMS_ERR(open_output_err, "Unable to find encoder");
 
     // open video encoder
     // XXX use avoptions rather than manual enumeration
     vc = avcodec_alloc_context3(codec);
-    if (!vc) em_err("Unable to alloc video encoder\n");
+    if (!vc) LPMS_ERR(open_output_err, "Unable to alloc video encoder");
     octx->vc = vc;
     vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
     vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
@@ -217,12 +191,12 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
       vc->hw_frames_ctx =
         av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
-      if (!vc->hw_frames_ctx) em_err("Unable to alloc hardware context\n");
+      if (!vc->hw_frames_ctx) LPMS_ERR(open_output_err, "Unable to alloc hardware context");
     }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     ret = avcodec_open2(vc, codec, &octx->video->opts);
-    if (ret < 0) em_err("Error opening video encoder\n");
+    if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
     octx->hw_type = ictx->hw_type;
   }
 
@@ -230,71 +204,59 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   inp_has_stream = ictx->vi >= 0;
   if (inp_has_stream && !octx->dv) {
     ret = add_video_stream(octx, ictx);
-    if (ret < 0) em_err("Error adding video stream\n");
+    if (ret < 0) LPMS_ERR(open_output_err, "Error adding video stream");
   }
 
   ret = open_audio_output(ictx, octx, fmt);
-  if (ret < 0) em_err("Error opening audio output\n");
+  if (ret < 0) LPMS_ERR(open_output_err, "Error opening audio output");
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
     ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
-    if (ret < 0) em_err("Error opening output file\n");
+    if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
   }
 
   ret = avformat_write_header(oc, &octx->muxer->opts);
-  if (ret < 0) em_err("Error writing header\n");
+  if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
 
   return 0;
 
 open_output_err:
   free_output(octx);
   return ret;
-#undef em_err
 }
 
 int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
-#define ro_err(msg) { \
-  if (!ret) ret = -1; \
-  fprintf(stderr, msg); \
-  return ret; \
-}
   int ret = 0;
   // re-open muxer for HW encoding
   AVOutputFormat *fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
-  if (!fmt) ro_err("Unable to guess format for reopen\n");
+  if (!fmt) LPMS_ERR(reopen_out_err, "Unable to guess format for reopen");
   ret = avformat_alloc_output_context2(&octx->oc, fmt, NULL, octx->fname);
-  if (ret < 0) ro_err("Unable to alloc reopened out context\n");
+  if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to alloc reopened out context");
 
   // re-attach video encoder
   if (octx->vc) {
     ret = add_video_stream(octx, ictx);
-    if (ret < 0) ro_err("Unable to re-add video stream\n");
-  } else fprintf(stderr, "no video stream\n");
+    if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add video stream");
+  } else LPMS_INFO("No video stream!?");
 
   // re-attach audio encoder
   ret = open_audio_output(ictx, octx, fmt);
-  if (ret < 0) ro_err("Unable to re-add audio stream\n");
+  if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add audio stream");
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
     ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
-    if (ret < 0) ro_err("Error re-opening output file\n");
+    if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-opening output file");
   }
   ret = avformat_write_header(octx->oc, &octx->muxer->opts);
-  if (ret < 0) ro_err("Error re-writing header\n");
+  if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-writing header");
+
+reopen_out_err:
   return ret;
-#undef ro_err
 }
 
-static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost) {
-#define encode_err(msg) { \
-  char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
-  if (!ret) { fprintf(stderr, "should not happen\n"); ret = AVERROR(ENOMEM); } \
-  if (ret < -1) av_strerror(ret, errstr, sizeof errstr); \
-  fprintf(stderr, "%s: %s\n", msg, errstr); \
-  goto encode_cleanup; \
-}
-
+static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost)
+{
   int ret = 0;
   AVPacket pkt = {0};
 
@@ -312,7 +274,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
   if (AV_HWDEVICE_TYPE_NONE == octx->hw_type || frame) {
     ret = avcodec_send_frame(encoder, frame);
     if (AVERROR_EOF == ret) ; // continue ; drain encoder
-    else if (ret < 0) encode_err("Error sending frame to encoder");
+    else if (ret < 0) LPMS_ERR(encode_cleanup, "Error sending frame to encoder");
   }
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
@@ -324,7 +286,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     av_init_packet(&pkt);
     ret = avcodec_receive_packet(encoder, &pkt);
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
-    if (ret < 0) encode_err("Error receiving packet from encoder\n");
+    if (ret < 0) LPMS_ERR(encode_cleanup, "Error receiving packet from encoder");
     ret = mux(&pkt, encoder->time_base, octx, ost);
     if (ret < 0) goto encode_cleanup;
     av_packet_unref(&pkt);
@@ -333,8 +295,6 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
 encode_cleanup:
   av_packet_unref(&pkt);
   return ret;
-
-#undef encode_err
 }
 
 int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
@@ -358,16 +318,9 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
 int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   struct filter_ctx *filter, AVFrame *inf)
 {
-#define proc_err(msg) { \
-  char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
-  if (!ret) { fprintf(stderr, "u done messed up\n"); ret = AVERROR(ENOMEM); } \
-  if (ret < -1) av_strerror(ret, errstr, sizeof errstr); \
-  fprintf(stderr, "%s: %s\n", msg, errstr); \
-  goto proc_cleanup; \
-}
   int ret = 0;
 
-  if (!encoder) proc_err("Trying to transmux; not supported")
+  if (!encoder) LPMS_ERR(proc_cleanup, "Trying to transmux; not supported")
 
   if (!filter || !filter->active) {
     // No filter in between decoder and encoder, so use input frame directly
@@ -406,6 +359,5 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
 
 proc_cleanup:
   return ret;
-#undef proc_err
 }
 
