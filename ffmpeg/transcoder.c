@@ -78,9 +78,9 @@ struct transcode_thread {
 
 };
 
-void lpms_init()
+void lpms_init(enum LPMSLogLevel max_level)
 {
-  av_log_set_level(AV_LOG_WARNING);
+  av_log_set_level(max_level);
 }
 
 //
@@ -298,7 +298,6 @@ transcode_cleanup:
   if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
   for (i = 0; i < nb_outputs; i++) close_output(&outputs[i]);
   return ret == AVERROR_EOF ? 0 : ret;
-#undef main_err
 }
 
 int lpms_transcode(input_params *inp, output_params *params,

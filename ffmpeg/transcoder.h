@@ -53,7 +53,19 @@ typedef struct {
     int64_t pixels;
 } output_results;
 
-void lpms_init();
+enum LPMSLogLevel {
+  LPMS_LOG_TRACE    = AV_LOG_TRACE,
+  LPMS_LOG_DEBUG    = AV_LOG_DEBUG,
+  LPMS_LOG_VERBOSE  = AV_LOG_VERBOSE,
+  LPMS_LOG_INFO     = AV_LOG_INFO,
+  LPMS_LOG_WARNING  = AV_LOG_WARNING,
+  LPMS_LOG_ERROR    = AV_LOG_ERROR,
+  LPMS_LOG_FATAL    = AV_LOG_FATAL,
+  LPMS_LOG_PANIC    = AV_LOG_PANIC,
+  LPMS_LOG_QUIET    = AV_LOG_QUIET
+};
+
+void lpms_init(enum LPMSLogLevel max_level);
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 struct transcode_thread* lpms_transcode_new();
 void lpms_transcode_stop(struct transcode_thread* handle);
