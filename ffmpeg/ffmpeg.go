@@ -396,6 +396,24 @@ func (t *Transcoder) StopTranscoder() {
 	t.stopped = true
 }
 
+type LogLevel C.enum_LPMSLogLevel
+
+const (
+	FFLogTrace   = C.LPMS_LOG_TRACE
+	FFLogDebug   = C.LPMS_LOG_DEBUG
+	FFLogVerbose = C.LPMS_LOG_VERBOSE
+	FFLogInfo    = C.LPMS_LOG_INFO
+	FFLogWarning = C.LPMS_LOG_WARNING
+	FFLogError   = C.LPMS_LOG_ERROR
+	FFLogFatal   = C.LPMS_LOG_FATAL
+	FFLogPanic   = C.LPMS_LOG_PANIC
+	FFLogQuiet   = C.LPMS_LOG_QUIET
+)
+
+func InitFFmpegWithLogLevel(level LogLevel) {
+	C.lpms_init(C.enum_LPMSLogLevel(level))
+}
+
 func InitFFmpeg() {
-	C.lpms_init()
+	InitFFmpegWithLogLevel(FFLogWarning)
 }
