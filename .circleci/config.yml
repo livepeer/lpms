@@ -3,7 +3,7 @@ jobs:
   build:
     working_directory: /go/src/github.com/livepeer/lpms
     docker:
-      - image: "circleci/golang:1.13.4"
+      - image: "circleci/golang:1.15.5"
         environment:
           GOROOT: /usr/local/go
           PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
