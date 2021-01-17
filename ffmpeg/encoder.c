@@ -188,7 +188,10 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
         if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
         else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
         else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
-        if (octx->bitrate) vc->bit_rate = vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+        if (octx->bitrate) {
+            vc->bit_rate = vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+            av_log(NULL, AV_LOG_INFO, "set output Buffer Size to %d (width %d)\n", vc->rc_buffer_size, vc->width);
+        }
         if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
           vc->hw_frames_ctx =
             av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
@@ -338,7 +341,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   if (is_video) {
       encoder->height = av_buffersink_get_h(octx->vf.sink_ctx);
       encoder->width = av_buffersink_get_w(octx->vf.sink_ctx);
-      if (octx->bitrate) encoder->bit_rate = encoder->rc_min_rate = encoder->rc_max_rate = encoder->rc_buffer_size = octx->bitrate;
+      if (octx->bitrate) encoder->bit_rate = encoder->rc_min_rate = encoder->rc_max_rate = octx->bitrate;
       /*av_log(NULL, AV_LOG_INFO, "Changing video encoder params to %dx%d bitrate %ld\n", encoder->width, encoder->height, (long) encoder->bit_rate);*/
       if (inf) av_log(NULL, AV_LOG_INFO, "processing output segment %s frame pts %ld for resolution %dx%d br %ld\n", octx->fname, inf->pts, encoder->width, encoder->height, (long) encoder->bit_rate);
   }
