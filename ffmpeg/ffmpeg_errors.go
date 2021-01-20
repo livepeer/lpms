@@ -38,6 +38,7 @@ func error_map() map[int]error {
 		{code: C.lpms_ERR_OUTPUTS, desc: "Too many outputs"},
 		{code: C.lpms_ERR_DTS, desc: "Segment out of order"},
 		{code: C.lpms_ERR_INPUT_CODEC, desc: "Unsupported input codec"},
+		{code: C.lpms_ERR_INPUT_NOKF, desc: "No keyframes in input"},
 	}
 	for _, v := range lpmsErrors {
 		m[int(v.code)] = errors.New(v.desc)
