@@ -788,4 +788,10 @@ func TestNvidia_AudioOnly(t *testing.T) {
 	audioOnlySegment(t, Nvidia)
 }
 
+/*
+func TestNvidia_NoKeyframe(t *testing.T) {
+	noKeyframeSegment(t, Nvidia)
+}
+*/
+
 // XXX test bframes or delayed frames
