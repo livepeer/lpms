@@ -10,6 +10,17 @@ import (
 	"unsafe"
 )
 
+var LPMSErrors = []struct {
+	Code C.int
+	Desc string
+}{
+	{Code: C.lpms_ERR_INPUT_PIXFMT, Desc: "Unsupported input pixel format"},
+	{Code: C.lpms_ERR_FILTERS, Desc: "Error initializing filtergraph"},
+	{Code: C.lpms_ERR_OUTPUTS, Desc: "Too many outputs"},
+	{Code: C.lpms_ERR_INPUT_CODEC, Desc: "Unsupported input codec"},
+	{Code: C.lpms_ERR_INPUT_NOKF, Desc: "No keyframes in input"},
+}
+
 func error_map() map[int]error {
 	// errs is a []byte , we really need an []int so need to convert
 	errs := C.GoBytes(unsafe.Pointer(&C.ffmpeg_errors), C.sizeof_ffmpeg_errors)
@@ -29,19 +40,8 @@ func error_map() map[int]error {
 	}
 
 	// Add in LPMS specific errors
-	lpmsErrors := []struct {
-		code C.int
-		desc string
-	}{
-		{code: C.lpms_ERR_INPUT_PIXFMT, desc: "Unsupported input pixel format"},
-		{code: C.lpms_ERR_FILTERS, desc: "Error initializing filtergraph"},
-		{code: C.lpms_ERR_OUTPUTS, desc: "Too many outputs"},
-		{code: C.lpms_ERR_DTS, desc: "Segment out of order"},
-		{code: C.lpms_ERR_INPUT_CODEC, desc: "Unsupported input codec"},
-		{code: C.lpms_ERR_INPUT_NOKF, desc: "No keyframes in input"},
-	}
-	for _, v := range lpmsErrors {
-		m[int(v.code)] = errors.New(v.desc)
+	for _, v := range LPMSErrors {
+		m[int(v.Code)] = errors.New(v.Desc)
 	}
 
 	return m

@@ -15,7 +15,6 @@ const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
 const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_FILTER_FLUSHED = FFERRTAG('F','L','F','L');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
-const int lpms_ERR_DTS = FFERRTAG('-','D','T','S');
 
 //
 //  Notes on transcoder internals:
