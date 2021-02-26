@@ -2,6 +2,8 @@
 
 # LPMS - Livepeer media server
 
+This repository is forked from Livepeer LPMS repository [session reuse branch](https://github.com/livepeer/lpms/tree/jai/seshreuse).
+
 LPMS is a media server that can run independently, or on top of the [Livepeer](https://livepeer.org) 
 network.  It allows you to manipulate / broadcast a live video stream.  Currently, LPMS supports RTMP
 as input format and RTMP/HLS as output formats.

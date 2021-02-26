@@ -78,6 +78,13 @@ struct transcode_thread {
 
 };
 
+typedef struct {
+  AVFrame *dec_frame;
+  int has_frame;
+  AVStream *instream;
+  AVPacket in_pkt;
+} dframemeta;
+
 void lpms_init(enum LPMSLogLevel max_level)
 {
   av_log_set_level(max_level);
@@ -121,8 +128,8 @@ int transcode(struct transcode_thread *h,
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
   AVPacket ipkt = {0};
-  AVFrame *dframe = NULL;
-
+  // AVFrame *dframe = NULL;
+  dframemeta dframe[1000]; 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
 
   // by default we re-use decoder between segments of same stream
@@ -179,65 +186,124 @@ int transcode(struct transcode_thread *h,
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to re-open output for HW session");
   }
 
-  av_init_packet(&ipkt);
-  dframe = av_frame_alloc();
-  if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+  // av_init_packet(&ipkt); 
+  for(int dfcount=0; dfcount < 1000; dfcount++){
+    dframe[dfcount].dec_frame = av_frame_alloc();
+    av_init_packet(&dframe[dfcount].in_pkt);
+    if (!dframe[dfcount].dec_frame) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+  }
 
+  // if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+  int dfcount = 0;
   while (1) {
     // DEMUXING & DECODING
     int has_frame = 0;
     AVStream *ist = NULL;
     AVFrame *last_frame = NULL;
-    av_frame_unref(dframe);
-    ret = process_in(ictx, dframe, &ipkt);
+    av_frame_unref(dframe[dfcount].dec_frame);
+    // ret = process_in(ictx, dframe[dfcount].dec_frame, &ipkt);
+    ret = process_in(ictx, dframe[dfcount].dec_frame, &dframe[dfcount].in_pkt);
     if (ret == AVERROR_EOF) break;
                             // Bail out on streams that appear to be broken
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
     else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
-    ist = ictx->ic->streams[ipkt.stream_index];
+    ist = ictx->ic->streams[dframe[dfcount].in_pkt.stream_index];
     has_frame = lpms_ERR_PACKET_ONLY != ret;
-
+    dframe[dfcount].has_frame = has_frame;  
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
-      if (is_flush_frame(dframe)) goto whileloop_end;
+      if (is_flush_frame(dframe[dfcount].dec_frame)) goto whileloop_end;
       // width / height will be zero for pure streamcopy (no decoding)
-      decoded_results->frames += dframe->width && dframe->height;
-      decoded_results->pixels += dframe->width * dframe->height;
-      has_frame = has_frame && dframe->width && dframe->height;
+      decoded_results->frames += dframe[dfcount].dec_frame->width && dframe[dfcount].dec_frame->height;
+      decoded_results->pixels += dframe[dfcount].dec_frame->width * dframe[dfcount].dec_frame->height;
+      has_frame = has_frame && dframe[dfcount].dec_frame->width && dframe[dfcount].dec_frame->height;
+      dframe[dfcount].has_frame = has_frame;
       if (has_frame) last_frame = ictx->last_frame_v;
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
-      has_frame = has_frame && dframe->nb_samples;
+      has_frame = has_frame && dframe[dfcount].dec_frame->nb_samples;
+      dframe[dfcount].has_frame = has_frame;
       if (has_frame) last_frame = ictx->last_frame_a;
     }
     if (has_frame) {
       int64_t dur = 0;
-      if (dframe->pkt_duration) dur = dframe->pkt_duration;
+      if (dframe[dfcount].dec_frame->pkt_duration) dur = dframe[dfcount].dec_frame->pkt_duration;
       else if (ist->r_frame_rate.den) {
         dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
       } else {
         // TODO use better heuristics for this; look at how ffmpeg does it
         LPMS_WARN("Could not determine next pts; filter might drop");
       }
-      dframe->pkt_duration = dur;
+      dframe[dfcount].dec_frame->pkt_duration = dur;
       av_frame_unref(last_frame);
-      av_frame_ref(last_frame, dframe);
+      av_frame_ref(last_frame, dframe[dfcount].dec_frame);
+      dframe[dfcount].instream = ist;
+      dfcount++;
     }
 
     // ENCODING & MUXING OF ALL OUTPUT RENDITIONS
-    for (i = 0; i < nb_outputs; i++) {
-      struct output_ctx *octx = &outputs[i];
-      struct filter_ctx *filter = NULL;
-      AVStream *ost = NULL;
-      AVCodecContext *encoder = NULL;
-      ret = 0; // reset to avoid any carry-through
+    // for (i = 0; i < nb_outputs; i++) {
+    //   struct output_ctx *octx = &outputs[i];
+    //   struct filter_ctx *filter = NULL;
+    //   AVStream *ost = NULL;
+    //   AVCodecContext *encoder = NULL;
+    //   ret = 0; // reset to avoid any carry-through
 
-      if (ist->index == ictx->vi) {
+    //   if (ist->index == ictx->vi) {
+    //     if (octx->dv) continue; // drop video stream for this output
+    //     ost = octx->oc->streams[0];
+    //     if (ictx->vc) {
+    //       encoder = octx->vc;
+    //       filter = &octx->vf;
+    //     }
+    //   } else if (ist->index == ictx->ai) {
+    //     if (octx->da) continue; // drop audio stream for this output
+    //     ost = octx->oc->streams[!octx->dv]; // depends on whether video exists
+    //     if (ictx->ac) {
+    //       encoder = octx->ac;
+    //       filter = &octx->af;
+    //     }
+    //   } else continue; // dropped or unrecognized stream
+
+    //   if (!encoder && ost) {
+    //     // stream copy
+    //     AVPacket *pkt;
+
+    //     // we hit this case when decoder is flushing; will be no input packet
+    //     // (we don't need decoded frames since this stream is doing a copy)
+    //     if (ipkt.pts == AV_NOPTS_VALUE) continue;
+
+    //     pkt = av_packet_clone(&ipkt);
+    //     if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
+    //     ret = mux(pkt, ist->time_base, octx, ost);
+    //     av_packet_free(&pkt);
+    //   } else if (has_frame) {
+    //     ret = process_out(ictx, octx, encoder, ost, filter, dframe);
+    //   }
+    //   if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
+    //   else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
+    // }
+whileloop_end:
+    printf("dframe[%d] pts = %ld \n", dfcount, dframe[dfcount].dec_frame->pts);
+    // av_packet_unref(&ipkt);
+  }
+  
+  for (i = 0; i < nb_outputs; i++) {
+    struct output_ctx *octx = &outputs[i];
+    struct filter_ctx *filter = NULL;
+    AVStream *ost = NULL;
+    AVCodecContext *encoder = NULL;
+    int rewind_flag = 0;
+    for(int cnt=0; cnt < dfcount; cnt++){
+      ret = 0; // reset to avoid any carry-through
+      
+      if (dframe[cnt].instream->index == ictx->vi) {
         if (octx->dv) continue; // drop video stream for this output
+        octx->oc->streams[0]->cur_dts = 0;    // rewinding stream dts, just a temporary fix to non-monotonically increasing dts to muxer issue
         ost = octx->oc->streams[0];
         if (ictx->vc) {
           encoder = octx->vc;
           filter = &octx->vf;
         }
-      } else if (ist->index == ictx->ai) {
+      } else if (dframe[cnt].instream->index == ictx->ai) {
         if (octx->da) continue; // drop audio stream for this output
         ost = octx->oc->streams[!octx->dv]; // depends on whether video exists
         if (ictx->ac) {
@@ -249,25 +315,24 @@ int transcode(struct transcode_thread *h,
       if (!encoder && ost) {
         // stream copy
         AVPacket *pkt;
-
         // we hit this case when decoder is flushing; will be no input packet
         // (we don't need decoded frames since this stream is doing a copy)
-        if (ipkt.pts == AV_NOPTS_VALUE) continue;
+        if (dframe[cnt].in_pkt.pts == AV_NOPTS_VALUE) continue;
 
-        pkt = av_packet_clone(&ipkt);
+        pkt = av_packet_clone(&dframe[cnt].in_pkt);
         if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
-        ret = mux(pkt, ist->time_base, octx, ost);
+        ret = mux(pkt, dframe[cnt].instream->time_base, octx, ost);
         av_packet_free(&pkt);
-      } else if (has_frame) {
-        ret = process_out(ictx, octx, encoder, ost, filter, dframe);
+      } else if (dframe[cnt].has_frame) {
+        ret = process_out(ictx, octx, encoder, ost, filter, dframe[cnt].dec_frame);
+        // ret = process_out(ictx, octx, encoder, ost, filter, dframe);
       }
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
       else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
     }
-whileloop_end:
-    av_packet_unref(&ipkt);
   }
-
+  for(int j=0; j < dfcount; j++)
+    av_packet_unref(&dframe[j].in_pkt);
   // flush outputs
   for (i = 0; i < nb_outputs; i++) {
     ret = flush_outputs(ictx, &outputs[i]);
@@ -287,7 +352,9 @@ transcode_cleanup:
       avio_closep(&ictx->ic->pb);
     }
   }
-  if (dframe) av_frame_free(&dframe);
+  for (int j=0; j < dfcount; j++){
+    if (dframe[j].dec_frame) av_frame_free(&(dframe[j].dec_frame));
+  }
   ictx->flushed = 0;
   ictx->flushing = 0;
   ictx->pkt_diff = 0;
