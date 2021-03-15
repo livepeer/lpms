@@ -297,7 +297,7 @@ whileloop_end:
       
       if (dframe[cnt].instream->index == ictx->vi) {
         if (octx->dv) continue; // drop video stream for this output
-        octx->oc->streams[0]->cur_dts = 0;    // rewinding stream dts, just a temporary fix to non-monotonically increasing dts to muxer issue
+        /*octx->oc->streams[0]->cur_dts = 0;    // rewinding stream dts, just a temporary fix to non-monotonically increasing dts to muxer issue*/
         ost = octx->oc->streams[0];
         if (ictx->vc) {
           encoder = octx->vc;
@@ -330,14 +330,12 @@ whileloop_end:
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
       else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
     }
+    // flush outputs
+    ret = flush_outputs(ictx, octx);
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
   }
   for(int j=0; j < dfcount; j++)
     av_packet_unref(&dframe[j].in_pkt);
-  // flush outputs
-  for (i = 0; i < nb_outputs; i++) {
-    ret = flush_outputs(ictx, &outputs[i]);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
-  }
 
 transcode_cleanup:
   if (ictx->ic) {
