@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-var LPMSErrors = []struct {
+var lpmsErrors = []struct {
 	Code C.int
 	Desc string
 }{
@@ -40,7 +40,7 @@ func error_map() map[int]error {
 	}
 
 	// Add in LPMS specific errors
-	for _, v := range LPMSErrors {
+	for _, v := range lpmsErrors {
 		m[int(v.Code)] = errors.New(v.Desc)
 	}
 
@@ -48,6 +48,34 @@ func error_map() map[int]error {
 }
 
 var ErrorMap = error_map()
+
+func non_retryable_errs() []string {
+	errs := []string{}
+	// Add in Cgo LPMS specific errors
+	for _, v := range lpmsErrors {
+		errs = append(errs, v.Desc)
+	}
+	// Add in internal FFmpeg errors
+	// from https://ffmpeg.org/doxygen/trunk/error_8c_source.html#l00034
+	ffmpegErrors := []string{
+		"Decoder not found", "Demuxer not found", "Encoder not found",
+		"Muxer not found", "Option not found", "Invalid argument",
+	}
+	for _, v := range ffmpegErrors {
+		errs = append(errs, v)
+	}
+	// Add in ffmpeg.go transcoder specific errors
+	transcoderErrors := []error{
+		ErrTranscoderRes, ErrTranscoderVid, ErrTranscoderFmt,
+		ErrTranscoderPrf, ErrTranscoderGOP, ErrTranscoderDev,
+	}
+	for _, v := range transcoderErrors {
+		errs = append(errs, v.Error())
+	}
+	return errs
+}
+
+var NonRetryableErrs = non_retryable_errs()
 
 // Use of this source code is governed by a MIT license that can be found in the LICENSE file.
 // Corbatto (luca@corbatto.de)
