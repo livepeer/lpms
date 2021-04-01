@@ -21,10 +21,12 @@ import "C"
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
 var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
 var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
+var ErrTranscoderVid = errors.New("TranscoderInvalidVideo")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
 var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
 var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
+var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 
 type Acceleration int
 
@@ -144,7 +146,7 @@ func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, stri
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
-				return "", "", ErrTranscoderInp // XXX not allowed
+				return "", "", ErrTranscoderDev // XXX not allowed
 			}
 			return "h264_nvenc", "scale_cuda", nil
 		}
@@ -195,7 +197,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			t.started = true
 		} else {
 			// Audio-only segment, fail fast right here as we cannot handle them nicely
-			return nil, errors.New("No video parameters found while initializing stream")
+			return nil, ErrTranscoderVid
 		}
 	}
 	params := make([]C.output_params, len(ps))
