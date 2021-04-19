@@ -70,6 +70,10 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
 int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video);
 void free_filter(struct filter_ctx *filter);
 
+int init_video_filters1(struct decode_meta *dmeta, struct output_ctx *octx);
+int filtergraph_write1(AVFrame *inf, struct decode_meta *dmeta, struct output_ctx *octx, struct filter_ctx *filter, int is_video);
+int filtergraph_read1(struct decode_meta *dmeta, struct output_ctx *octx, struct filter_ctx *filter, int is_video);
+
 // UTILS
 inline int is_copy(char *encoder) {
   return encoder && !strcmp("copy", encoder);

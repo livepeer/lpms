@@ -5,6 +5,8 @@
 #include <libavcodec/avcodec.h>
 #include "transcoder.h"
 
+#define MAX_CHUNK_CNT 10
+#define MAX_DFRAME_CNT 1000
 struct input_ctx {
   AVFormatContext *ic; // demuxer required
   AVCodecContext  *vc; // video decoder optional
@@ -35,6 +37,18 @@ struct input_ctx {
   AVFrame *last_frame_v, *last_frame_a;
 };
 
+// struct decode_thread {
+//   int initialized;
+//   int gpuid;
+//   int chunkcnt;
+//   struct input_ctx ictx;
+//   struct dframemeta *dec_chunk[MAX_CHUNK_CNT]; 
+// };
+
+struct decode_thread* lpms_decode_new();
+void lpms_decode_stop(struct decode_thread* handle);
+
+
 // Exported methods
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt);
 enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx);
@@ -43,10 +57,11 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx);
 int open_audio_decoder(input_params *params, struct input_ctx *ctx);
 void free_input(struct input_ctx *inctx);
 
+int lpms_decode(input_params *inp,  output_results *decoded_results, dframe_buffer *dframe_buf, struct input_ctx *ictx, struct decode_meta *dmeta);
 // Utility functions
 inline int is_flush_frame(AVFrame *frame)
 {
   return -1 == frame->pts;
 }
-
+void set_ictx(struct transcode_thread *h, struct input_ctx *ictx);
 #endif // _LPMS_DECODER_H_

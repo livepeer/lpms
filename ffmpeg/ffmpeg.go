@@ -3,18 +3,20 @@ package ffmpeg
 import (
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/golang/glog"
 )
 
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
 // #include <stdlib.h>
 // #include "transcoder.h"
+// #include "decoder.h"
 // #include "extras.h"
 import "C"
 
@@ -52,6 +54,16 @@ type TranscodeOptionsIn struct {
 	Device string
 }
 
+type EncodeOptionsIn struct {
+	Fname     string
+	DframeBuf DframeBuffer
+	Accel     Acceleration
+	Device    string
+	DecHandle *C.struct_transcode_thread
+	Ictx *C.struct_input_ctx
+	Dmeta     *C.struct_decode_meta
+}
+
 type TranscodeOptions struct {
 	Oname   string
 	Profile VideoProfile
@@ -71,6 +83,32 @@ type MediaInfo struct {
 type TranscodeResults struct {
 	Decoded MediaInfo
 	Encoded []MediaInfo
+}
+
+type DecodeResults struct {
+	Decoded   MediaInfo
+	DframeBuf DframeBuffer
+	Ictx      *C.struct_input_ctx
+	DecHandle *C.struct_transcode_thread
+	Dmeta     *C.struct_decode_meta
+}
+
+type Decoder struct {
+	handle  *C.struct_transcode_thread
+	stopped bool
+	started bool
+	mu      *sync.Mutex
+}
+
+type DframeBuffer struct {
+	Dframebuffer *C.dframe_buffer
+}
+
+type Encoder struct {
+	handle  *C.struct_transcode_thread
+	stopped bool
+	started bool
+	mu      *sync.Mutex
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
@@ -382,6 +420,59 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
 }
 
+func (t *Decoder) Decode(input *TranscodeOptionsIn) (*DecodeResults, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped || t.handle == nil {
+		return nil, ErrTranscoderStp
+	}
+	if input == nil {
+		return nil, ErrTranscoderInp
+	}
+	hw_type, err := accelDeviceType(input.Accel)
+	if err != nil {
+		return nil, err
+	}
+	fname := C.CString(input.Fname)
+	defer C.free(unsafe.Pointer(fname))
+	if !t.started {
+		ret := int(C.lpms_is_bypass_needed(fname))
+		if ret != 1 {
+			// Stream is either OK or completely broken, let the transcoder handle it
+			t.started = true
+		} else {
+			// Audio-only segment, fail fast right here as we cannot handle them nicely
+			return nil, errors.New("No video parameters found while initializing stream")
+		}
+	}
+	var device *C.char
+	if input.Device != "" {
+		device = C.CString(input.Device)
+		defer C.free(unsafe.Pointer(device))
+	}
+	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
+		dec_handle: t.handle}
+
+	// results := make([]C.output_results, len(ps))
+	decoded := &C.output_results{}
+	dframe_buffer := &C.dframe_buffer{}
+
+	ictx := &C.struct_input_ctx{}
+	// decode_meta := C.alloc_decode_meta()
+	decode_meta := &C.struct_decode_meta{}
+	ret := int(C.lpms_decode(inp, decoded, dframe_buffer, ictx, decode_meta))
+	if 0 != ret {
+		glog.Error("Transcoder Return : ", ErrorMap[ret])
+		return nil, ErrorMap[ret]
+	}
+
+	dec := MediaInfo{
+		Frames: int(decoded.frames),
+		Pixels: int64(decoded.pixels),
+	}
+	return &DecodeResults{Decoded: dec, DframeBuf: DframeBuffer{Dframebuffer: dframe_buffer}, Ictx: ictx, DecHandle: t.handle, Dmeta: decode_meta}, nil
+}
+
 func NewTranscoder() *Transcoder {
 	return &Transcoder{
 		handle: C.lpms_transcode_new(),
@@ -398,6 +489,268 @@ func (t *Transcoder) StopTranscoder() {
 	C.lpms_transcode_stop(t.handle)
 	t.handle = nil // prevent accidental reuse
 	t.stopped = true
+}
+
+func Decode(input *TranscodeOptionsIn) (*DecodeResults, error) {
+	d := NewDecoder()
+	fmt.Println("decoder created")
+	defer d.StopDecoder()
+	return d.Decode(input)
+}
+
+func NewDecoder() *Decoder {
+	return &Decoder{
+		// handle: C.lpms_decode_new(),
+		handle: C.lpms_transcode_new(),
+		mu:     &sync.Mutex{},
+	}
+}
+
+func (d *Decoder) StopDecoder() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stopped {
+		return
+	}
+	// C.lpms_decode_stop(d.handle)
+	C.lpms_transcode_stop(d.handle)
+	d.handle = nil // prevent accidental reuse
+	d.stopped = true
+}
+
+func Encode(input *EncodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	e := NewEncoder()
+	fmt.Println("encoder created")
+	defer e.StopEncoder()
+	return e.Encode(input, ps)
+}
+
+func NewEncoder() *Encoder {
+	return &Encoder{
+		handle: C.lpms_transcode_new(),
+		mu:     &sync.Mutex{},
+	}
+}
+
+func (e *Encoder) StopEncoder() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.stopped {
+		return
+	}
+	C.lpms_transcode_stop(e.handle)
+	e.handle = nil // prevent accidental reuse
+	e.stopped = true
+}
+
+func (t *Encoder) Encode(input *EncodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped || t.handle == nil {
+		return nil, ErrTranscoderStp
+	}
+	if input == nil {
+		return nil, ErrTranscoderInp
+	}
+	hw_type, err := accelDeviceType(input.Accel)
+	if err != nil {
+		return nil, err
+	}
+	fname := C.CString(input.Fname)
+	defer C.free(unsafe.Pointer(fname))
+	if !t.started {
+		ret := int(C.lpms_is_bypass_needed(fname))
+		if ret != 1 {
+			// Stream is either OK or completely broken, let the transcoder handle it
+			t.started = true
+		} else {
+			// Audio-only segment, fail fast right here as we cannot handle them nicely
+			return nil, errors.New("No video parameters found while initializing stream")
+		}
+	}
+	params := make([]C.output_params, len(ps))
+	for i, p := range ps {
+		oname := C.CString(p.Oname)
+		defer C.free(unsafe.Pointer(oname))
+
+		param := p.Profile
+		w, h, err := VideoProfileResolution(param)
+		if err != nil {
+			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+				return nil, err
+			}
+		}
+		br := strings.Replace(param.Bitrate, "k", "000", 1)
+		bitrate, err := strconv.Atoi(br)
+		if err != nil {
+			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+				return nil, err
+			}
+		}
+		encoder, scale_filter := p.VideoEncoder.Name, "scale"
+		if encoder == "" {
+			encoder, scale_filter, err = configAccel(input.Accel, p.Accel, input.Device, p.Device)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// preserve aspect ratio along the larger dimension when rescaling
+		var filters string
+		filters = fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
+		if input.Accel != Software && p.Accel == Software {
+			// needed for hw dec -> hw rescale -> sw enc
+			filters = filters + ",hwdownload,format=nv12"
+		}
+		// set FPS denominator to 1 if unset by user
+		if param.FramerateDen == 0 {
+			param.FramerateDen = 1
+		}
+		// Add fps filter *after* scale filter because otherwise we could
+		// be scaling duplicate frames unnecessarily. This becomes a DoS vector
+		// when a user submits two frames that are "far apart" in pts and
+		// the fps filter duplicates frames to fill out the difference to maintain
+		// a consistent frame rate.
+		// Once we allow for alternating segments, this issue should be mitigated
+		// and the fps filter can come *before* the scale filter to minimize work
+		// when going from high fps to low fps (much more common when transcoding
+		// than going from low fps to high fps)
+		var fps C.AVRational
+		if param.Framerate > 0 {
+			filters += fmt.Sprintf(",fps=%d/%d", param.Framerate, param.FramerateDen)
+			fps = C.AVRational{num: C.int(param.Framerate), den: C.int(param.FramerateDen)}
+		}
+		var muxOpts C.component_opts
+		var muxName string
+		switch p.Profile.Format {
+		case FormatNone:
+			muxOpts = C.component_opts{
+				// don't free this bc of avformat_write_header API
+				opts: newAVOpts(p.Muxer.Opts),
+			}
+			muxName = p.Muxer.Name
+		case FormatMPEGTS:
+			muxName = "mpegts"
+		case FormatMP4:
+			muxName = "mp4"
+			muxOpts = C.component_opts{
+				opts: newAVOpts(map[string]string{"movflags": "faststart"}),
+			}
+		default:
+			return nil, ErrTranscoderFmt
+		}
+		if muxName != "" {
+			muxOpts.name = C.CString(muxName)
+			defer C.free(unsafe.Pointer(muxOpts.name))
+		}
+		// Set video encoder options
+		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
+			p.VideoEncoder.Opts = map[string]string{
+				"forced-idr": "1",
+			}
+			switch p.Profile.Profile {
+			case ProfileH264Baseline, ProfileH264Main, ProfileH264High:
+				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+			case ProfileH264ConstrainedHigh:
+				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+				p.VideoEncoder.Opts["bf"] = "0"
+			case ProfileNone:
+				// Do nothing, the encoder will use default profile
+			default:
+				return nil, ErrTranscoderPrf
+			}
+		}
+		gopMs := 0
+		if param.GOP != 0 {
+			if param.GOP <= GOPInvalid {
+				return nil, ErrTranscoderGOP
+			}
+			// Check for intra-only
+			if param.GOP == GOPIntraOnly {
+				p.VideoEncoder.Opts["g"] = "0"
+			} else {
+				if param.Framerate > 0 {
+					gop := param.GOP.Seconds()
+					interval := strconv.Itoa(int(gop * float64(param.Framerate)))
+					p.VideoEncoder.Opts["g"] = interval
+				} else {
+					gopMs = int(param.GOP.Milliseconds())
+				}
+			}
+		}
+		if encoder == "h264_nvenc" {
+			p.VideoEncoder.Opts["max_width"] = "1920"
+			p.VideoEncoder.Opts["max_height"] = "1080"
+		}
+		vidOpts := C.component_opts{
+			name: C.CString(encoder),
+			opts: newAVOpts(p.VideoEncoder.Opts),
+		}
+		audioEncoder := p.AudioEncoder.Name
+		if audioEncoder == "" {
+			audioEncoder = "aac"
+		}
+		audioOpts := C.component_opts{
+			name: C.CString(audioEncoder),
+			opts: newAVOpts(p.AudioEncoder.Opts),
+		}
+		vfilt := C.CString(filters)
+		defer C.free(unsafe.Pointer(vidOpts.name))
+		defer C.free(unsafe.Pointer(audioOpts.name))
+		defer C.free(unsafe.Pointer(vfilt))
+		params[i] = C.output_params{fname: oname, fps: fps,
+			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
+			gop_time: C.int(gopMs),
+			muxer:    muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
+		defer func(param *C.output_params) {
+			// Work around the ownership rules:
+			// ffmpeg normally takes ownership of the following AVDictionary options
+			// However, if we don't pass these opts to ffmpeg, then we need to free
+			if param.muxer.opts != nil {
+				C.av_dict_free(&param.muxer.opts)
+			}
+			if param.audio.opts != nil {
+				C.av_dict_free(&param.audio.opts)
+			}
+			if param.video.opts != nil {
+				C.av_dict_free(&param.video.opts)
+			}
+		}(&params[i])
+	}
+	var device *C.char
+	if input.Device != "" {
+		device = C.CString(input.Device)
+		defer C.free(unsafe.Pointer(device))
+	}
+
+	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
+		handle: t.handle}
+	results := make([]C.output_results, len(ps))
+	decoded := &C.output_results{}
+	var (
+		paramsPointer  *C.output_params
+		resultsPointer *C.output_results
+	)
+	if len(params) > 0 {
+		paramsPointer = (*C.output_params)(&params[0])
+		resultsPointer = (*C.output_results)(&results[0])
+	}
+	ret := int(C.lpms_encode1(inp, input.DframeBuf.Dframebuffer, paramsPointer, resultsPointer, C.int(len(params)), decoded, input.Dmeta))
+	if 0 != ret {
+		glog.Error("Transcoder Return : ", ErrorMap[ret])
+		return nil, ErrorMap[ret]
+	}
+	tr := make([]MediaInfo, len(ps))
+	for i, r := range results {
+		tr[i] = MediaInfo{
+			Frames: int(r.frames),
+			Pixels: int64(r.pixels),
+		}
+	}
+	dec := MediaInfo{
+		Frames: int(decoded.frames),
+		Pixels: int64(decoded.pixels),
+	}
+	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
 }
 
 type LogLevel C.enum_LPMSLogLevel

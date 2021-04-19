@@ -37,7 +37,6 @@ packet_cleanup:
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 {
   int ret = 0;
-
   // Read a packet and attempt to decode it.
   // If decoding was not possible, return the packet anyway for streamcopy
   av_init_packet(pkt);
@@ -52,12 +51,11 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     else if (ist->index == ictx->ai && ictx->ac) decoder = ictx->ac;
     else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai) break;
     else goto drop_packet; // could be an extra stream; skip
-
+ 
     if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
       ictx->first_pkt = av_packet_clone(pkt);
       ictx->first_pkt->pts = -1;
     }
-
     ret = lpms_send_packet(ictx, decoder, pkt);
     if (ret < 0) LPMS_ERR(dec_cleanup, "Error sending packet to decoder");
     ret = lpms_receive_frame(ictx, decoder, frame);
@@ -300,4 +298,183 @@ void free_input(struct input_ctx *inctx)
   if (inctx->last_frame_v) av_frame_free(&inctx->last_frame_v);
   if (inctx->last_frame_a) av_frame_free(&inctx->last_frame_a);
 }
+
+// struct decode_thread* lpms_decode_new() {
+//   struct decode_thread *h = malloc(sizeof (struct decode_thread));
+//   if (!h) return NULL;
+//   memset(h, 0, sizeof *h);
+//   return h;
+// }
+
+// void lpms_decode_stop(struct decode_thread *handle) {
+//   // not threadsafe as-is; calling function must ensure exclusivity!
+
+//   int i;
+
+//   if (!handle) return;
+
+//   free_input(&handle->ictx);
+//   // for (i = 0; i < MAX_CHUNK_CNT; i++) {
+//   //   free_output(&handle->[i]);
+//   // }
+//   free(handle);
+// }
+
+// same function as in transcode.c
+// static int is_mpegts(AVFormatContext *ic) {
+//   return !strcmp("mpegts", ic->iformat->name);
+// }
+
+// int decode(struct transcode_thread *h,
+//   input_params *inp, output_results *decoded_results, dframe_buffer *dframe_buf, struct input_ctx *ictx1)
+// {
+//   int ret = 0, i = 0;
+//   int reopen_decoders = 1;
+//   struct input_ctx *ictx = &h->ictx;
+//   AVPacket ipkt = {0};
+//   dframe_buf->cnt = 0;
+//   dframe_buf->dframes =  malloc(sizeof(dframemeta) * 1000);
+//   // dframemeta dframe[1000]; 
+//   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
+//   if(!ictx->vc)
+//     printf("no video decoder\n");
+//   // by default we re-use decoder between segments of same stream
+//   // unless we are using SW deocder and had to re-open IO or demuxer
+//   if (!ictx->ic) {
+//     // reopen demuxer for the input segment if needed
+//     // XXX could open_input() be re-used here?
+//     ret = avformat_open_input(&ictx->ic, inp->fname, NULL, NULL);
+//     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen demuxer");
+//     ret = avformat_find_stream_info(ictx->ic, NULL);
+//     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to find info for reopened stream")
+//   } else if (!ictx->ic->pb) {
+//     // reopen input segment file IO context if needed
+//     ret = avio_open(&ictx->ic->pb, inp->fname, AVIO_FLAG_READ);
+//     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen file");
+//   } else reopen_decoders = 0;
+//   if (reopen_decoders) {
+//     // XXX check to see if we can also reuse decoder for sw decoding
+//     if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
+//       ret = open_video_decoder(inp, ictx);
+//       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video decoder");
+//     }
+//     ret = open_audio_decoder(inp, ictx);
+//     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen audio decoder")
+//   }
+
+//   for(int dfcount=0; dfcount < 1000; dfcount++){
+//     // dframe[dfcount].dec_frame = av_frame_alloc();
+//     // av_init_packet(&dframe[dfcount].in_pkt);
+//     // if (!dframe[dfcount].dec_frame) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+//     dframe_buf->dframes[dfcount].dec_frame = av_frame_alloc();
+//     av_init_packet(&(dframe_buf->dframes[dfcount].in_pkt));
+//     if (!dframe_buf->dframes[dfcount].dec_frame) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+//   }
+  
+//   int dfcount = 0;
+//   while (1) {
+//     // DEMUXING & DECODING
+//     int has_frame = 0;
+//     AVStream *ist = NULL;
+//     AVFrame *last_frame = NULL;
+//     // av_frame_unref(dframe[dfcount].dec_frame);
+//     av_frame_unref(dframe_buf->dframes[dfcount].dec_frame);
+//     // printf("decode test 333\n");
+//     // ret = process_in(ictx, dframe[dfcount].dec_frame, &dframe[dfcount].in_pkt);
+//     ret = process_in(ictx, dframe_buf->dframes[dfcount].dec_frame, &dframe_buf->dframes[dfcount].in_pkt);
+//     if (ret == AVERROR_EOF) break;
+//                             // Bail out on streams that appear to be broken
+//     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
+//     else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
+//     // ist = ictx->ic->streams[dframe[dfcount].in_pkt.stream_index];
+//     ist = ictx->ic->streams[dframe_buf->dframes[dfcount].in_pkt.stream_index];
+
+//     has_frame = lpms_ERR_PACKET_ONLY != ret;
+//     // dframe[dfcount].has_frame = has_frame;  //nick
+//     dframe_buf->dframes[dfcount].has_frame = has_frame;  
+//     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+//       // if (is_flush_frame(dframe[dfcount].dec_frame)) continue;
+//       if (is_flush_frame(dframe_buf->dframes[dfcount].dec_frame)) continue;
+//       // width / height will be zero for pure streamcopy (no decoding)
+//       // decoded_results->frames += dframe[dfcount].dec_frame->width && dframe[dfcount].dec_frame->height;
+//       // decoded_results->pixels += dframe[dfcount].dec_frame->width * dframe[dfcount].dec_frame->height;
+//       // has_frame = has_frame && dframe[dfcount].dec_frame->width && dframe[dfcount].dec_frame->height;
+//       // dframe[dfcount].has_frame = has_frame;
+//       decoded_results->frames += dframe_buf->dframes[dfcount].dec_frame->width && dframe_buf->dframes[dfcount].dec_frame->height;
+//       decoded_results->pixels += dframe_buf->dframes[dfcount].dec_frame->width * dframe_buf->dframes[dfcount].dec_frame->height;
+//       has_frame = has_frame && dframe_buf->dframes[dfcount].dec_frame->width && dframe_buf->dframes[dfcount].dec_frame->height;
+//       dframe_buf->dframes[dfcount].has_frame = has_frame;
+//       if (has_frame) last_frame = ictx->last_frame_v;
+//     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
+//       // has_frame = has_frame && dframe[dfcount].dec_frame->nb_samples;
+//       // dframe[dfcount].has_frame = has_frame;
+//       has_frame = has_frame && dframe_buf->dframes[dfcount].dec_frame->nb_samples;
+//       dframe_buf->dframes[dfcount].has_frame = has_frame;
+//       if (has_frame) last_frame = ictx->last_frame_a;
+//     }
+//     if (has_frame) {
+//       int64_t dur = 0;
+//       // if (dframe[dfcount].dec_frame->pkt_duration) dur = dframe[dfcount].dec_frame->pkt_duration;
+//       if (dframe_buf->dframes[dfcount].dec_frame->pkt_duration) dur = dframe_buf->dframes[dfcount].dec_frame->pkt_duration;
+//       else if (ist->r_frame_rate.den) {
+//         dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
+//       } else {
+//         // TODO use better heuristics for this; look at how ffmpeg does it
+//         LPMS_WARN("Could not determine next pts; filter might drop");
+//       }
+//       // dframe[dfcount].dec_frame->pkt_duration = dur;
+//       dframe_buf->dframes[dfcount].dec_frame->pkt_duration = dur;
+//       av_frame_unref(last_frame);
+//       // av_frame_ref(last_frame, dframe[dfcount].dec_frame);
+//       av_frame_ref(last_frame, dframe_buf->dframes[dfcount].dec_frame);
+//       dfcount++;
+//     }
+//   }
+//   dframe_buf->cnt = dfcount;
+//   ictx1 = &h->ictx;
+// transcode_cleanup:
+//   // if (ictx->ic) {
+//   //   // Only mpegts reuse the demuxer for subsequent segments.
+//   //   // Close the demuxer for everything else.
+//   //   // TODO might be reusable with fmp4 ; check!
+//   //   if (!is_mpegts(ictx->ic)) avformat_close_input(&ictx->ic);
+//   //   else if (ictx->ic->pb) {
+//   //     // Reset leftovers from demuxer internals to prepare for next segment
+//   //     avio_flush(ictx->ic->pb);
+//   //     avformat_flush(ictx->ic);
+//   //     avio_closep(&ictx->ic->pb);
+//   //   }
+//   // }
+//   // ictx->flushed = 0;
+//   // ictx->flushing = 0;
+//   // ictx->pkt_diff = 0;
+//   // ictx->sentinel_count = 0;
+//   // av_packet_unref(&ipkt);  // needed for early exits
+//   // if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
+//   // if (ictx->ac) avcodec_free_context(&ictx->ac);
+//   // if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
+//   return ret == AVERROR_EOF ? 0 : ret;
+// }
+
+// int lpms_decode(input_params *inp,  output_results *decoded_results, dframe_buffer *dframe_buf, struct input_ctx *ictx)
+// {
+//   int ret = 0;
+//   struct transcode_thread *h = inp->dec_handle;
+
+//   if (!h->initialized) {
+//     int i = 0;
+//     int decode_a = 0, decode_v = 0;
+
+//     // populate input context
+//     ret = open_input(inp, &h->ictx);
+//     // ret = open_input(inp, ictx);
+//     if (ret < 0) {
+//       return ret;
+//     }
+//   }
+//   ret = decode(h, inp, decoded_results, dframe_buf, ictx);
+//   h->initialized = 1;
+
+//   return ret;
+// }
 

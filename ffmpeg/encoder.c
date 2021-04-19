@@ -379,3 +379,198 @@ proc_cleanup:
   return ret;
 }
 
+
+static int add_video_stream1(struct output_ctx *octx, struct decode_meta *dmeta)
+{
+  // video stream to muxer
+  int ret = 0;
+  AVStream *st = avformat_new_stream(octx->oc, NULL);
+  if (!st) LPMS_ERR(add_video_err, "Unable to alloc video stream");
+  octx->vi = st->index;
+  st->avg_frame_rate = octx->fps;
+  if (octx->vc) {
+    st->time_base = octx->vc->time_base;
+    ret = avcodec_parameters_from_context(st->codecpar, octx->vc);
+    if (octx->gop_time) {
+      // Rescale the gop time to the expected timebase after filtering.
+      // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
+      // while non-fps will retain the input timebase.
+      AVRational gop_tb = {1, 1000};
+      AVRational dest_tb;
+      if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
+      else dest_tb = dmeta->time_base;
+      octx->gop_pts_len = av_rescale_q(octx->gop_time, gop_tb, dest_tb);
+      octx->next_kf_pts = 0; // force for first frame
+    }
+    if (ret < 0) LPMS_ERR(add_video_err, "Error setting video params from encoder");
+  } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
+  return 0;
+
+add_video_err:
+  // XXX free anything here?
+  return ret;
+}
+
+int open_output1(struct output_ctx *octx, struct decode_meta *dmeta)
+{
+  int ret = 0, inp_has_stream;
+
+  AVOutputFormat *fmt = NULL;
+  AVFormatContext *oc = NULL;
+  static AVCodecContext *vc  = NULL;
+  AVCodec *codec      = NULL;
+  // open muxer
+  fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
+  if (!fmt) LPMS_ERR(open_output_err, "Unable to guess output format");
+  ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
+  if (ret < 0) LPMS_ERR(open_output_err, "Unable to alloc output context");
+  octx->oc = oc;
+  // add video encoder if a decoder exists and this output requires one
+  if (needs_decoder(octx->video->name)) {
+    ret = init_video_filters1(dmeta, octx);
+    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
+
+    codec = avcodec_find_encoder_by_name(octx->video->name);
+    if (!codec) LPMS_ERR(open_output_err, "Unable to find encoder");
+    
+    // open video encoder
+    // XXX use avoptions rather than manual enumeration
+    if (!vc) {
+        vc = avcodec_alloc_context3(codec);
+        if (!vc) LPMS_ERR(open_output_err, "Unable to alloc video encoder");
+        octx->vc = vc;
+        vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
+        vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
+        if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
+        else vc->framerate = dmeta->framerate;
+        if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
+        else if (dmeta->time_base.num && dmeta->time_base.den) vc->time_base = dmeta->time_base; //time base different??
+        else vc->time_base = dmeta->time_base;
+        if (octx->bitrate) {
+            vc->bit_rate = vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+            av_log(NULL, AV_LOG_INFO, "set output Buffer Size to %d (width %d)\n", vc->rc_buffer_size, vc->width);
+        }
+        if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
+          vc->hw_frames_ctx =
+            av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
+        if (!vc->hw_frames_ctx) LPMS_ERR(open_output_err, "Unable to alloc hardware context");
+        }
+        vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
+        if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+        av_log(NULL, AV_LOG_INFO, "Opening video encoder session for %dx%d fps %d/%d tb %d/%d bitrate %ld\n", vc->width, vc->height, vc->framerate.num, vc->framerate.den, vc->time_base.num, vc->time_base.den, (long) vc->bit_rate);
+        ret = avcodec_open2(vc, codec, &octx->video->opts);
+        if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
+    } else {
+        octx->vc = vc;
+    }
+    octx->hw_type = dmeta->hw_type;
+  }
+  // add video stream if input contains video
+  // inp_has_stream = ictx->vi >= 0;
+  if (!octx->dv) {
+    ret = add_video_stream1(octx, dmeta);
+    if (ret < 0) LPMS_ERR(open_output_err, "Error adding video stream");
+  }
+  // ret = open_audio_output(ictx, octx, fmt);
+  // if (ret < 0) LPMS_ERR(open_output_err, "Error opening audio output");
+
+  if (!(fmt->flags & AVFMT_NOFILE)) {
+    ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
+    if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
+  }
+
+  ret = avformat_write_header(oc, &octx->muxer->opts);
+  if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
+
+  return 0;
+
+open_output_err:
+  free_output(octx);
+  return ret;
+}
+
+int reopen_output1(struct output_ctx *octx, struct decode_meta *dmeta)
+{
+  int ret = 0;
+  // re-open muxer for HW encoding
+  AVOutputFormat *fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
+  if (!fmt) LPMS_ERR(reopen_out_err, "Unable to guess format for reopen");
+  ret = avformat_alloc_output_context2(&octx->oc, fmt, NULL, octx->fname);
+  if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to alloc reopened out context");
+
+  // re-attach video encoder
+  if (octx->vc) {
+    ret = add_video_stream1(octx, dmeta);
+    if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add video stream");
+  } else LPMS_INFO("No video stream!?");
+
+  // re-attach audio encoder
+  // ret = open_audio_output(ictx, octx, fmt);
+  // if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add audio stream");
+
+  if (!(fmt->flags & AVFMT_NOFILE)) {
+    ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
+    if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-opening output file");
+  }
+  ret = avformat_write_header(octx->oc, &octx->muxer->opts);
+  if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-writing header");
+
+reopen_out_err:
+  return ret;
+}
+
+int process_out1(struct decode_meta *dmeta, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
+  struct filter_ctx *filter, AVFrame *inf)
+{
+  int ret = 0;
+
+  if (!encoder) LPMS_ERR(proc_cleanup, "Trying to transmux; not supported")
+
+  if (!filter || !filter->active) {
+    // No filter in between decoder and encoder, so use input frame directly
+    return encode(encoder, inf, octx, ost);
+  }
+
+  int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
+
+  // set encoding session params for this session
+  if (is_video) {
+      encoder->height = av_buffersink_get_h(octx->vf.sink_ctx);
+      encoder->width = av_buffersink_get_w(octx->vf.sink_ctx);
+      if (octx->bitrate) encoder->bit_rate = encoder->rc_min_rate = encoder->rc_max_rate = octx->bitrate;
+      /*av_log(NULL, AV_LOG_INFO, "Changing video encoder params to %dx%d bitrate %ld\n", encoder->width, encoder->height, (long) encoder->bit_rate);*/
+      if (inf) av_log(NULL, AV_LOG_INFO, "processing output segment %s frame pts %ld for resolution %dx%d br %ld\n", octx->fname, inf->pts, encoder->width, encoder->height, (long) encoder->bit_rate);
+  }
+
+  ret = filtergraph_write1(inf, dmeta, octx, filter, is_video);
+  if (ret < 0) goto proc_cleanup;
+
+  while (1) {
+    // Drain the filter. Each input frame may have multiple output frames
+    AVFrame *frame = filter->frame;
+    ret = filtergraph_read1(dmeta, octx, filter, is_video);
+    if (ret == lpms_ERR_FILTER_FLUSHED) continue;
+    else if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) {
+      // no frame returned from filtergraph
+      // proceed only if the input frame is a flush (inf == null)
+      if (inf) return ret;
+      frame = NULL;
+    } else if (ret < 0) goto proc_cleanup;
+
+    // Set GOP interval if necessary
+    if (is_video && octx->gop_pts_len && frame && frame->pts >= octx->next_kf_pts) {
+        frame->pict_type = AV_PICTURE_TYPE_I;
+        octx->next_kf_pts = frame->pts + octx->gop_pts_len;
+    }
+    ret = encode(encoder, frame, octx, ost);
+    av_frame_unref(frame);
+    // For HW we keep the encoder open so will only get EAGAIN.
+    // Return EOF in place of EAGAIN for to terminate the flush
+    if (frame == NULL && AV_HWDEVICE_TYPE_NONE != octx->hw_type &&
+        AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
+    if (frame == NULL) return ret;
+  }
+
+proc_cleanup:
+  return ret;
+}
