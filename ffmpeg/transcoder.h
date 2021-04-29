@@ -5,6 +5,7 @@
 #include <libavutil/rational.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include "logging.h"
 
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
@@ -53,6 +54,8 @@ typedef struct {
 typedef struct {
     int frames;
     int64_t pixels;
+    //for scene classification  
+    float probs[MAX_CLASSIFY_SIZE];//probability
 } output_results;
 
 enum LPMSLogLevel {

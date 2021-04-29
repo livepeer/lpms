@@ -59,7 +59,9 @@ struct output_ctx {
   int64_t drop_ts;     // preroll audio ts to drop
 
   int64_t gop_time, gop_pts_len, next_kf_pts; // for gop reset
-
+#ifdef USE_LVPDNN_
+  int dummy;
+#endif
   output_results  *res; // data to return for this output
 
 };
