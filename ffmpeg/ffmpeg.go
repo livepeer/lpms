@@ -32,6 +32,7 @@ var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
 var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 var ErrEmptyData = errors.New("EmptyData")
+var ErrDNNInitialize = errors.New("TranscoderInvalidDNNProfile")
 
 type Acceleration int
 
@@ -61,10 +62,11 @@ type TranscodeOptionsIn struct {
 }
 
 type TranscodeOptions struct {
-	Oname   string
-	Profile VideoProfile
-	Accel   Acceleration
-	Device  string
+	Oname    string
+	Profile  VideoProfile
+	Detector DetectorProfile
+	Accel    Acceleration
+	Device   string
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -72,8 +74,9 @@ type TranscodeOptions struct {
 }
 
 type MediaInfo struct {
-	Frames int
-	Pixels int64
+	Frames     int
+	Pixels     int64
+	DetectData DetectData
 }
 
 type TranscodeResults struct {
@@ -246,6 +249,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	params := make([]C.output_params, len(ps))
 	for i, p := range ps {
+		if p.Detector != nil {
+			// We don't do any encoding for detector profiles
+			// Adding placeholder values to pass checks for these everywhere
+			p.Oname = "/dev/null"
+			p.Profile = P144p30fps16x9
+			p.Muxer = ComponentOptions{Name: "mpegts"}
+		}
 		oname := C.CString(p.Oname)
 		defer C.free(unsafe.Pointer(oname))
 
@@ -294,6 +304,19 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if param.Framerate > 0 {
 			filters += fmt.Sprintf(",fps=%d/%d", param.Framerate, param.FramerateDen)
 			fps = C.AVRational{num: C.int(param.Framerate), den: C.int(param.FramerateDen)}
+		}
+		// if has a detector profile, ignore all video options
+		if p.Detector != nil {
+			deviceid := "0"
+			if input.Accel != Software && len(input.Device) > 0 {
+				deviceid = input.Device
+			}
+			switch p.Detector.Type() {
+			case SceneClassification:
+				detectorProfile := p.Detector.(*SceneClassificationProfile)
+				filters = fmt.Sprintf("lvpdnn=filter_type=lvpclassify:device=%s:model=%s:input=%s:output=%s:sample=%d",
+					deviceid, detectorProfile.ModelPath, detectorProfile.Input, detectorProfile.Output, detectorProfile.SampleRate)
+			}
 		}
 		var muxOpts C.component_opts
 		var muxName string
@@ -419,6 +442,18 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			Frames: int(r.frames),
 			Pixels: int64(r.pixels),
 		}
+		// add detect result
+		if ps[i].Detector != nil {
+			switch ps[i].Detector.Type() {
+			case SceneClassification:
+				detector := ps[i].Detector.(*SceneClassificationProfile)
+				res := make(SceneClassificationData)
+				for j, class := range detector.Classes {
+					res[class.ID] = float64(r.probs[j])
+				}
+				tr[i].DetectData = res
+			}
+		}
 	}
 	dec := MediaInfo{
 		Frames: int(decoded.frames),
@@ -471,4 +506,34 @@ func InitFFmpegWithLogLevel(level LogLevel) {
 
 func InitFFmpeg() {
 	InitFFmpegWithLogLevel(FFLogWarning)
+}
+
+func ReleaseFFmpegDetectorProfile() {
+	C.lpms_dnnrelease()
+}
+func InitFFmpegWithDetectorProfile(detector DetectorProfile, deviceids string) error {
+
+	switch detector.Type() {
+	case SceneClassification:
+		detectorProfile := detector.(*SceneClassificationProfile)
+		dnnOpt := &C.lvpdnn_opts{
+			modelpath:  C.CString(detectorProfile.ModelPath),
+			inputname:  C.CString(detectorProfile.Input),
+			outputname: C.CString(detectorProfile.Output),
+			deviceids:  C.CString(deviceids),
+		}
+		defer C.free(unsafe.Pointer(dnnOpt.modelpath))
+		defer C.free(unsafe.Pointer(dnnOpt.inputname))
+		defer C.free(unsafe.Pointer(dnnOpt.outputname))
+		defer C.free(unsafe.Pointer(dnnOpt.deviceids))
+
+		ret := int(C.lpms_dnninit(dnnOpt))
+		if 0 != ret {
+			glog.Error("lpms_dnninit Return : ", ErrorMap[ret])
+			return ErrDNNInitialize
+		}
+	}
+
+	InitFFmpegWithLogLevel(FFLogWarning)
+	return nil
 }

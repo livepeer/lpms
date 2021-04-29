@@ -60,6 +60,8 @@ struct output_ctx {
 
   int64_t gop_time, gop_pts_len, next_kf_pts; // for gop reset
 
+  int is_dnn_profile; //if not dnn profile: 0
+
   output_results  *res; // data to return for this output
 
 };

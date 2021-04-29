@@ -5,6 +5,8 @@
 #include <libavutil/rational.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavfilter/avfilter.h>
+#include "logging.h"
 
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
@@ -50,9 +52,22 @@ typedef struct {
   int transmuxe;
 } input_params;
 
+#define MAX_CLASSIFY_SIZE 10
+#define LVPDNN_FILTER_NAME "lvpdnn"
+#define LVPDNN_FILTER_META "lavfi.lvpdnn.text"
+
+typedef struct {
+    char *modelpath;
+    char *inputname;
+    char *outputname;
+    char *deviceids;
+} lvpdnn_opts;
+
 typedef struct {
     int frames;
     int64_t pixels;
+    //for scene classification  
+    float probs[MAX_CLASSIFY_SIZE];//probability
 } output_results;
 
 enum LPMSLogLevel {
@@ -72,5 +87,8 @@ int  lpms_transcode(input_params *inp, output_params *params, output_results *re
 struct transcode_thread* lpms_transcode_new();
 void lpms_transcode_stop(struct transcode_thread* handle);
 void lpms_transcode_discontinuity(struct transcode_thread *handle);
+
+int lpms_dnninit(lvpdnn_opts *dnn_opts);
+void lpms_dnnrelease();
 
 #endif // _LPMS_TRANSCODER_H_
