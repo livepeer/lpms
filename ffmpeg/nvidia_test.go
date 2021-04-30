@@ -788,6 +788,10 @@ func TestNvidia_AudioOnly(t *testing.T) {
 	audioOnlySegment(t, Nvidia)
 }
 
+func TestNvidia_OutputFPS(t *testing.T) {
+	outputFPS(t, Nvidia)
+}
+
 /*
 func TestNvidia_NoKeyframe(t *testing.T) {
 	noKeyframeSegment(t, Nvidia)

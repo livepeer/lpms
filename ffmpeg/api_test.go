@@ -1244,6 +1244,55 @@ func TestTranscoder_AudioOnly(t *testing.T) {
 	audioOnlySegment(t, Software)
 }
 
+func outputFPS(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+	# convert test segment to 24fps and sanity check
+	ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -vf fps=24 -c:a copy -c:v libx264 -f mpegts test24fps.ts
+    ffprobe -loglevel warning -select_streams v -show_streams test24fps.ts | grep avg_frame_rate=24/1
+  `
+	run(cmd)
+
+	tc := NewTranscoder()
+	passthru := P144p30fps16x9
+	passthru.Framerate = 0 // passthrough FPS
+	in := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("%s/test24fps.ts", dir),
+		Accel: accel,
+	}
+	out := []TranscodeOptions{
+		{
+			Oname:   fmt.Sprintf("%s/out24fps.ts", dir),
+			Profile: passthru,
+			Accel:   accel,
+		},
+		{
+			Oname:   fmt.Sprintf("%s/out30fps.ts", dir),
+			Profile: P144p30fps16x9,
+			Accel:   accel,
+		},
+	}
+	_, err := tc.Transcode(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	tc.StopTranscoder()
+
+	cmd = `
+	# verify that the output fps reported in the muxed segment is correct for passthrough (fps=24)
+    ffprobe -loglevel warning -select_streams v -show_streams out24fps.ts | grep avg_frame_rate=24/1
+	# and non-passthrough (fps=30)
+    ffprobe -loglevel warning -select_streams v -show_streams out30fps.ts | grep avg_frame_rate=30/1
+  `
+	run(cmd)
+}
+
+func TestTranscoder_OutputFPS(t *testing.T) {
+	outputFPS(t, Software)
+}
+
 /*
 func noKeyframeSegment(t *testing.T, accel Acceleration) {
 	// Reproducing #219
