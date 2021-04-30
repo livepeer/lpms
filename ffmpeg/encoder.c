@@ -12,7 +12,8 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
   AVStream *st = avformat_new_stream(octx->oc, NULL);
   if (!st) LPMS_ERR(add_video_err, "Unable to alloc video stream");
   octx->vi = st->index;
-  st->avg_frame_rate = octx->fps;
+  if (octx->fps.den) st->avg_frame_rate = octx->fps;
+  else st->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
   if (is_copy(octx->video->name)) {
     AVStream *ist = ictx->ic->streams[ictx->vi];
     if (ictx->vi < 0 || !ist) LPMS_ERR(add_video_err, "Input video stream does not exist");
@@ -183,7 +184,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
     vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
     if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
-    else vc->framerate = ictx->vc->framerate;
+    else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->framerate = ictx->vc->framerate;
+    else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate;
     if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
     else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
     else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
