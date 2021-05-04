@@ -141,7 +141,7 @@ this.
 To execute the nvidia tests within the `ffmpeg` directory, run this command:
 
 ```
-go test -tag=nvidia -run Nvidia
+go test --tags=nvidia -run Nvidia
 
 ```
 
@@ -149,7 +149,7 @@ To run the tests on a particular GPU, use the GPU_DEVICE environment variable:
 
 ```
 # Runs on GPU number 3
-GPU_DEVICE=3 go test -tag nvidia -run Nvidia
+GPU_DEVICE=3 go test --tags=nvidia -run Nvidia
 ```
 
 Aside from the tests themselves, there is a
