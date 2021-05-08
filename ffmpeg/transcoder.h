@@ -46,6 +46,8 @@ typedef struct {
   // Optional hardware acceleration
   enum AVHWDeviceType hw_type;
   char *device;
+
+  int transmuxe;
 } input_params;
 
 typedef struct {
@@ -69,5 +71,6 @@ void lpms_init(enum LPMSLogLevel max_level);
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 struct transcode_thread* lpms_transcode_new();
 void lpms_transcode_stop(struct transcode_thread* handle);
+void lpms_transcode_discontinuity(struct transcode_thread *handle);
 
 #endif // _LPMS_TRANSCODER_H_

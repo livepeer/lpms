@@ -116,8 +116,8 @@ int transcode(struct transcode_thread *h,
   output_results *results, output_results *decoded_results)
 {
   int ret = 0, i = 0;
-  int reopen_decoders = 1;
   struct input_ctx *ictx = &h->ictx;
+  int reopen_decoders = !ictx->transmuxing;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
   AVPacket ipkt = {0};
@@ -168,15 +168,21 @@ int transcode(struct transcode_thread *h,
 
       // first segment of a stream, need to initalize output HW context
       // XXX valgrind this line up
-      if (!h->initialized || AV_HWDEVICE_TYPE_NONE == octx->hw_type) {
+      if (!h->initialized || AV_HWDEVICE_TYPE_NONE == octx->hw_type && !ictx->transmuxing) {
         ret = open_output(octx, ictx);
         if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
+        if (ictx->transmuxing) {
+          octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
+          octx->oc->flush_packets = 1;
+        }
         continue;
       }
 
-      // non-first segment of a HW session
-      ret = reopen_output(octx, ictx);
+      if (!ictx->transmuxing) {
+        // non-first segment of a HW session
+        ret = reopen_output(octx, ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to re-open output for HW session");
+      }
   }
 
   av_init_packet(&ipkt);
@@ -223,6 +229,24 @@ int transcode(struct transcode_thread *h,
       av_frame_unref(last_frame);
       av_frame_ref(last_frame, dframe);
     }
+    if (ictx->transmuxing) {
+      decoded_results->frames++;
+      if (ictx->discontinuity) {
+        // calc pts diff
+        ictx->pts_diff = ictx->last_pts + ictx->last_duration - ipkt.pts;
+        ictx->discontinuity = 0;
+      }
+
+      ipkt.pts += ictx->pts_diff;
+      ipkt.dts += ictx->pts_diff;
+
+      if (ipkt.stream_index == 0) {
+        ictx->last_pts = ipkt.pts;
+        if (ipkt.duration) {
+          ictx->last_duration = ipkt.duration;
+        }
+      }
+    }
 
     // ENCODING & MUXING OF ALL OUTPUT RENDITIONS
     for (i = 0; i < nb_outputs; i++) {
@@ -232,7 +256,9 @@ int transcode(struct transcode_thread *h,
       AVCodecContext *encoder = NULL;
       ret = 0; // reset to avoid any carry-through
 
-      if (ist->index == ictx->vi) {
+      if (ictx->transmuxing)
+        ost = octx->oc->streams[ipkt.stream_index];
+      else if (ist->index == ictx->vi) {
         if (octx->dv) continue; // drop video stream for this output
         ost = octx->oc->streams[0];
         if (ictx->vc) {
@@ -268,6 +294,15 @@ int transcode(struct transcode_thread *h,
     }
 whileloop_end:
     av_packet_unref(&ipkt);
+  }
+
+  if (ictx->transmuxing) {
+    for (i = 0; i < nb_outputs; i++) {
+      av_interleaved_write_frame(outputs[i].oc, NULL); // flush muxer
+      avformat_close_input(&ictx->ic);
+      ictx->ic = NULL;
+    }
+    return 0;
   }
 
   // flush outputs
@@ -356,8 +391,17 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
 
   free_input(&handle->ictx);
   for (i = 0; i < MAX_OUTPUT_SIZE; i++) {
+    if (handle->ictx.transmuxing && handle->outputs[i].oc) {
+        av_write_trailer(handle->outputs[i].oc);
+    }
     free_output(&handle->outputs[i]);
   }
 
   free(handle);
+}
+
+void lpms_transcode_discontinuity(struct transcode_thread *handle) {
+  if (!handle)
+    return;
+  handle->ictx.discontinuity = 1;
 }
