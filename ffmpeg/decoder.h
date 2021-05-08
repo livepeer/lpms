@@ -31,6 +31,15 @@ struct input_ctx {
 #define SENTINEL_MAX 5
   uint16_t sentinel_count;
 
+  // last non-zero duration
+  int64_t last_duration;
+  // 
+  int64_t last_pts;
+  // 
+  int64_t pts_diff;
+  //
+  int discontinuity;
+
   // Filter flush
   AVFrame *last_frame_v, *last_frame_a;
 };

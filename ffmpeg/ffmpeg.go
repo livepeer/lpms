@@ -3,18 +3,21 @@ package ffmpeg
 import (
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/golang/glog"
 )
 
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
+// #cgo LDFLAGS: -framework Foundation -framework Security
 // #include <stdlib.h>
 // #include "transcoder.h"
+// #include "transmuxer.h"
 // #include "extras.h"
 import "C"
 
@@ -75,6 +78,13 @@ type TranscodeResults struct {
 	Encoded []MediaInfo
 }
 
+type Transmuxer struct {
+	handle  *C.struct_transmuxe_thread
+	stopped bool
+	started bool
+	mu      *sync.Mutex
+}
+
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
 	inp := C.CString(localRTMPUrl)
 	outp := C.CString(outM3U8)
@@ -87,7 +97,7 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 	C.free(unsafe.Pointer(ts_tmpl))
 	C.free(unsafe.Pointer(seglen))
 	C.free(unsafe.Pointer(segstart))
-	if 0 != ret {
+	if ret != 0 {
 		glog.Infof("RTMP2HLS Transmux Return : %v\n", Strerror(ret))
 		return ErrorMap[ret]
 	}
@@ -95,7 +105,6 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 }
 
 func Transcode(input string, workDir string, ps []VideoProfile) error {
-
 	opts := make([]TranscodeOptions, len(ps))
 	for i, param := range ps {
 		oname := path.Join(workDir, fmt.Sprintf("out%v%v", i, filepath.Base(input)))
@@ -190,6 +199,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
+	t.started = true
 	if !t.started {
 		ret := int(C.lpms_is_bypass_needed(fname))
 		if ret != 1 {
@@ -215,7 +225,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		br := strings.Replace(param.Bitrate, "k", "000", 1)
 		bitrate, err := strconv.Atoi(br)
 		if err != nil {
-			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+			if p.VideoEncoder.Name != "drop" && p.VideoEncoder.Name != "copy" {
 				return nil, err
 			}
 		}
@@ -362,7 +372,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		resultsPointer = (*C.output_results)(&results[0])
 	}
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
-	if 0 != ret {
+	if ret != 0 {
 		glog.Error("Transcoder Return : ", ErrorMap[ret])
 		return nil, ErrorMap[ret]
 	}
@@ -398,6 +408,24 @@ func (t *Transcoder) StopTranscoder() {
 	t.stopped = true
 }
 
+func NewTransmuxer() *Transmuxer {
+	return &Transmuxer{
+		handle: C.lpms_transmuxe_new(),
+		mu:     &sync.Mutex{},
+	}
+}
+
+func (t *Transmuxer) StopTransmuxer() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped {
+		return
+	}
+	C.lpms_transmuxe_stop(t.handle)
+	t.handle = nil // prevent accidental reuse
+	t.stopped = true
+}
+
 type LogLevel C.enum_LPMSLogLevel
 
 const (
@@ -418,4 +446,59 @@ func InitFFmpegWithLogLevel(level LogLevel) {
 
 func InitFFmpeg() {
 	InitFFmpegWithLogLevel(FFLogWarning)
+}
+
+func (t *Transmuxer) Discontinuity() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	C.lpms_transmuxe_discontinuity(t.handle)
+}
+
+func (t *Transmuxer) Transmuxe(input *TranscodeOptionsIn, ps TranscodeOptions) (*TranscodeResults, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped || t.handle == nil {
+		return nil, ErrTranscoderStp
+	}
+	if input == nil {
+		return nil, ErrTranscoderInp
+	}
+	fname := C.CString(input.Fname)
+	defer C.free(unsafe.Pointer(fname))
+	t.started = true
+	var params C.m_output_params
+	oname := C.CString(ps.Oname)
+	defer C.free(unsafe.Pointer(oname))
+
+	muxOpts := C.component_opts{
+		// don't free this bc of avformat_write_header API
+		opts: newAVOpts(ps.Muxer.Opts),
+		name: C.CString(ps.Muxer.Name),
+	}
+
+	defer C.free(unsafe.Pointer(muxOpts.name))
+	params = C.m_output_params{
+		fname: oname,
+		muxer: muxOpts,
+	}
+	defer func(param *C.m_output_params) {
+		// Work around the ownership rules:
+		// ffmpeg normally takes ownership of the following AVDictionary options
+		// However, if we don't pass these opts to ffmpeg, then we need to free
+		if param.muxer.opts != nil {
+			C.av_dict_free(&param.muxer.opts)
+		}
+	}(&params)
+	inp := &C.m_input_params{fname: fname, handle: t.handle}
+	results := &C.output_results{}
+	ret := int(C.lpms_transmuxe(inp, &params, results))
+	if ret != 0 {
+		glog.Error("Transcoder Return : ", ErrorMap[ret])
+		return nil, ErrorMap[ret]
+	}
+	dec := MediaInfo{
+		Frames: int(results.frames),
+		Pixels: int64(results.pixels),
+	}
+	return &TranscodeResults{Decoded: dec}, nil
 }
