@@ -198,7 +198,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
-	t.started = true
 	if !t.started {
 		ret := int(C.lpms_is_bypass_needed(fname))
 		if ret != 1 {
