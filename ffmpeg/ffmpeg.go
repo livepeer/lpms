@@ -14,7 +14,6 @@ import (
 )
 
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
-// #cgo LDFLAGS: -framework Foundation -framework Security
 // #include <stdlib.h>
 // #include "transcoder.h"
 // #include "transmuxer.h"
