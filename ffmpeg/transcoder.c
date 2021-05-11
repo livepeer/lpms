@@ -160,7 +160,7 @@ int transcode(struct transcode_thread *h,
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
 #ifdef USE_LVPDNN_
-      octx->dummy = (strncmp(octx->vfilters,LVPDNN_FILTER_NAME, strlen(LVPDNN_FILTER_NAME)) == 0 );      
+      octx->is_dnn_profile = (strncmp(octx->vfilters,LVPDNN_FILTER_NAME, strlen(LVPDNN_FILTER_NAME)) == 0 );      
 #endif      
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
@@ -320,11 +320,11 @@ whileloop_end:
   // flush outputs
   for (i = 0; i < nb_outputs; i++) {  
 #ifdef USE_LVPDNN_  
-    if(outputs[i].dummy == 0 ){
+    if(outputs[i].is_dnn_profile == 0 ){
       ret = flush_outputs(ictx, &outputs[i]);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
     } 
-    else if(outputs[i].dummy && outputs[i].res->frames > 0){      
+    else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0){      
        for (int j = 0; j < MAX_CLASSIFY_SIZE; j++){
          outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;         
        }

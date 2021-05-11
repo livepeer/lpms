@@ -419,7 +419,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         octx->next_kf_pts = frame->pts + octx->gop_pts_len;
     }
 #ifdef USE_LVPDNN_
-    if(octx->dummy){
+    if(octx->is_dnn_profile){
       ret =  getmetadatainf(frame, octx); 
       
     } 

@@ -71,8 +71,8 @@ type MediaInfo struct {
 	Frames int
 	Pixels int64
 	//for dnn result
-	Isdnn     bool
-	Dnnresult string
+	IsDNN     bool
+	DNNResult string
 }
 
 type TranscodeResults struct {
@@ -398,9 +398,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 					dnnresult += (ps[i].Profile.Detector.ClassNames[j] + ",")
 				}
 			}
-			tr[i].Isdnn = true
-			tr[i].Dnnresult = dnnresult
-		}		
+			tr[i].IsDNN = true
+			tr[i].DNNResult = dnnresult
+		}
 	}
 	dec := MediaInfo{
 		Frames: int(decoded.frames),

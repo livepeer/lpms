@@ -44,13 +44,13 @@ const (
 )
 
 type DetectorProfile struct {
-	Dnntype    int  //classification or object detect
+	DNNType    int  //classification or object detect
 	SampleRate uint //execute dnn filter per samplerate
 	ModelPath  string
 	Threshold  float32
 	Input      string
 	Output     string
-	Gpuid      int
+	GPUId      int
 	ClassIds   []int    // class id list want to detect, can select multi ids, ex. adult,soccer
 	ClassNames []string // class names in trained model
 }
@@ -93,10 +93,10 @@ var (
 	P240p30fps4x3  = VideoProfile{Name: "P240p30fps4x3", Bitrate: "600k", Framerate: 30, AspectRatio: "4:3", Resolution: "320x240"}
 	P144p30fps16x9 = VideoProfile{Name: "P144p30fps16x9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256x144"}
 	P144p25fps16x9 = VideoProfile{Name: "P144p25fps16x9", Bitrate: "400k", Framerate: 25, AspectRatio: "16:9", Resolution: "256x144"}
-	PDnnDetector   = VideoProfile{Name: "PDnnDetector", Bitrate: "400k", Framerate: 20, AspectRatio: "1:1", Resolution: "224x224",
+	PDnnDetector   = VideoProfile{Name: "PDnnDetector",
 		Detector: DetectorProfile{SampleRate: 30, ModelPath: "tasmodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
 			ClassIds: []int{1}, ClassNames: []string{"adult", "soccer"}}}
-	PDnnVioFilter = VideoProfile{Name: "PDnnVioFilter", Bitrate: "400k", Framerate: 20, AspectRatio: "1:1", Resolution: "224x224",
+	PDnnVioFilter = VideoProfile{Name: "PDnnVioFilter",
 		Detector: DetectorProfile{SampleRate: 30, ModelPath: "tviomodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
 			ClassIds: []int{0}, ClassNames: []string{"violence"}}}
 )

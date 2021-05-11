@@ -60,7 +60,7 @@ struct output_ctx {
 
   int64_t gop_time, gop_pts_len, next_kf_pts; // for gop reset
 #ifdef USE_LVPDNN_
-  int dummy;
+  int is_dnn_profile; //if not dnn profile: 0 
 #endif
   output_results  *res; // data to return for this output
 
