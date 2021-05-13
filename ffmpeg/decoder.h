@@ -38,9 +38,9 @@ struct input_ctx {
   // last non-zero duration
   int64_t last_duration;
   //
-  int64_t last_pts;
+  int64_t last_dts;
   //
-  int64_t pts_diff;
+  int64_t dts_diff;
   //
   int discontinuity;
   // Transmuxing mode. Close output in lpms_transcode_stop instead of

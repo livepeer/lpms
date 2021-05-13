@@ -232,16 +232,16 @@ int transcode(struct transcode_thread *h,
     if (ictx->transmuxing) {
       decoded_results->frames++;
       if (ictx->discontinuity) {
-        // calc pts diff
-        ictx->pts_diff = ictx->last_pts + ictx->last_duration - ipkt.pts;
+        // calc dts diff
+        ictx->dts_diff = ictx->last_dts + ictx->last_duration - ipkt.dts;
         ictx->discontinuity = 0;
       }
 
-      ipkt.pts += ictx->pts_diff;
-      ipkt.dts += ictx->pts_diff;
+      ipkt.pts += ictx->dts_diff;
+      ipkt.dts += ictx->dts_diff;
 
       if (ipkt.stream_index == 0) {
-        ictx->last_pts = ipkt.pts;
+        ictx->last_dts = ipkt.dts;
         if (ipkt.duration) {
           ictx->last_duration = ipkt.duration;
         }
