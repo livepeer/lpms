@@ -71,8 +71,9 @@ type MediaInfo struct {
 	Frames int
 	Pixels int64
 	//for dnn result
-	IsDNN     bool
-	DNNResult string
+	IsDNN     bool   //is DNN filter, even if it is true, the result may be an empty string.
+	DNNResult string //a speckled string. i.e. soccer,stadium
+
 }
 
 type TranscodeResults struct {
@@ -262,8 +263,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		//if has dnn filter, ignore all video options
 		if len(p.Profile.Detector.ModelPath) > 0 {
 			dnnProfile := p.Profile.Detector
-			//filters = "lvpdnn=model=tafmodel.pb:input=input_1:output=reshape_3/Reshape:sample=20:threshold=0.5"
-			filters = fmt.Sprintf("lvpdnn=model=%s:input=%s:output=%s:sample=%d:threshold=%.2f",
+			//filters = "lvpdnn=filter_type=0:model=tafmodel.pb:input=input_1:output=reshape_3/Reshape:sample=20:threshold=0.5"
+			filters = fmt.Sprintf("lvpdnn=filter_type=0:model=%s:input=%s:output=%s:sample=%d:threshold=%.2f",
 				dnnProfile.ModelPath, dnnProfile.Input, dnnProfile.Output, dnnProfile.SampleRate, dnnProfile.Threshold)
 		}
 		var muxOpts C.component_opts
@@ -391,8 +392,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			Pixels: int64(r.pixels),
 		}
 		//add dnn result
-		dnnresult := ""
 		if len(ps[i].Profile.Detector.ModelPath) > 0 {
+			dnnresult := ""
 			for _, j := range ps[i].Profile.Detector.ClassIds {
 				if float32(r.probs[j]) >= ps[i].Profile.Detector.Threshold {
 					dnnresult += (ps[i].Profile.Detector.ClassNames[j] + ",")
