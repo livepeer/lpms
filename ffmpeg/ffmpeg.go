@@ -50,10 +50,10 @@ type Transcoder struct {
 }
 
 type TranscodeOptionsIn struct {
-	Fname     string
-	Accel     Acceleration
-	Device    string
-	Transmuxe bool
+	Fname       string
+	Accel       Acceleration
+	Device      string
+	Transmuxing bool
 }
 
 type TranscodeOptions struct {
@@ -192,7 +192,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
-	if input.Transmuxe {
+	if input.Transmuxing {
 		t.started = true
 	}
 	if !t.started {
@@ -356,7 +356,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
 		handle: t.handle}
-	if input.Transmuxe {
+	if input.Transmuxing {
 		inp.transmuxe = 1
 	}
 	results := make([]C.output_results, len(ps))
