@@ -306,8 +306,10 @@ whileloop_end:
   if (ictx->transmuxing) {
     for (i = 0; i < nb_outputs; i++) {
       av_interleaved_write_frame(outputs[i].oc, NULL); // flush muxer
-      avformat_close_input(&ictx->ic);
-      ictx->ic = NULL;
+    }
+    if (ictx->ic) {
+        avformat_close_input(&ictx->ic);
+        ictx->ic = NULL;
     }
     return 0;
   }
