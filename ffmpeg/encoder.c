@@ -152,6 +152,37 @@ void free_output(struct output_ctx *octx)
   free_filter(&octx->af);
 }
 
+int open_remux_output(struct input_ctx *ictx, struct output_ctx *octx)
+{
+  int ret = 0;
+  octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
+  octx->oc->flush_packets = 1;
+  for (int i = 0; i < ictx->ic->nb_streams; i++) {
+    ret = 0;
+    AVStream *st = avformat_new_stream(octx->oc, NULL);
+    if (!st) LPMS_ERR(open_output_err, "Unable to alloc stream");
+    if (octx->fps.den)
+      st->avg_frame_rate = octx->fps;
+    else
+      st->avg_frame_rate = ictx->ic->streams[i]->r_frame_rate;
+
+    AVStream *ist = ictx->ic->streams[i];
+    st->time_base = ist->time_base;
+    ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
+    if (ret < 0)
+      LPMS_ERR(open_output_err, "Error copying params from input stream");
+    // Sometimes the codec tag is wonky for some reason, so correct it
+    ret = av_codec_get_tag2(octx->oc->oformat->codec_tag,
+                            st->codecpar->codec_id, &st->codecpar->codec_tag);
+    avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist,
+                                                  AVFMT_TBCF_DEMUXER);
+
+  }
+  return 0;
+open_output_err:
+  return ret;
+}
+
 int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
   int ret = 0, inp_has_stream;
@@ -213,27 +244,9 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = open_audio_output(ictx, octx, fmt);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening audio output");
   } else {
-    octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
-    octx->oc->flush_packets = 1;
-    for (int i = 0; i < ictx->ic->nb_streams; i++) {
-      ret = 0;
-      AVStream *st = avformat_new_stream(octx->oc, NULL);
-      if (!st) LPMS_ERR(open_output_err, "Unable to alloc stream");
-      if (octx->fps.den)
-        st->avg_frame_rate = octx->fps;
-      else
-        st->avg_frame_rate = ictx->ic->streams[i]->r_frame_rate;
-
-      AVStream *ist = ictx->ic->streams[i];
-      st->time_base = ist->time_base;
-      ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-      if (ret < 0)
-        LPMS_ERR(open_output_err, "Error copying params from input stream");
-      // Sometimes the codec tag is wonky for some reason, so correct it
-      ret = av_codec_get_tag2(octx->oc->oformat->codec_tag,
-                              st->codecpar->codec_id, &st->codecpar->codec_tag);
-      avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist,
-                                                    AVFMT_TBCF_DEMUXER);
+    ret = open_remux_output(ictx, octx);
+    if (ret < 0) {
+      goto open_output_err;
     }
   }
 
