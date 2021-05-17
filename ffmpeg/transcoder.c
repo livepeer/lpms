@@ -233,7 +233,11 @@ int transcode(struct transcode_thread *h,
       av_frame_ref(last_frame, dframe);
     }
     if (ictx->transmuxing) {
-      decoded_results->frames++;
+      // decoded_results->frames++;
+      ist = ictx->ic->streams[ipkt.stream_index];
+      if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+        decoded_results->frames++;
+      }
       if (ictx->discontinuity) {
         // calc dts diff
         ictx->dts_diff = ictx->last_dts + ictx->last_duration - ipkt.dts;
