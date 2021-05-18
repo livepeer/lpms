@@ -33,6 +33,19 @@ struct input_ctx {
 
   // Filter flush
   AVFrame *last_frame_v, *last_frame_a;
+
+  // transmuxing specific fields:
+  // last non-zero duration
+  int64_t last_duration;
+  //
+  int64_t last_dts;
+  //
+  int64_t dts_diff;
+  //
+  int discontinuity;
+  // Transmuxing mode. Close output in lpms_transcode_stop instead of
+  // at the end of lpms_transcode call.
+  int transmuxing;
 };
 
 // Exported methods

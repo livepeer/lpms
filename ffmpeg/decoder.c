@@ -52,7 +52,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
     ist = ictx->ic->streams[pkt->stream_index];
     if (ist->index == ictx->vi && ictx->vc) decoder = ictx->vc;
     else if (ist->index == ictx->ai && ictx->ac) decoder = ictx->ac;
-    else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai) break;
+    else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai || ictx->transmuxing) break;
     else goto drop_packet; // could be an extra stream; skip
 
     if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
@@ -271,20 +271,24 @@ int open_input(input_params *params, struct input_ctx *ctx)
   char *inp = params->fname;
   int ret = 0;
 
+  ctx->transmuxing = params->transmuxe;
+
   // open demuxer
   ret = avformat_open_input(&ic, inp, NULL, NULL);
   if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
   ctx->ic = ic;
   ret = avformat_find_stream_info(ic, NULL);
   if (ret < 0) LPMS_ERR(open_input_err, "Unable to find input info");
-  ret = open_video_decoder(params, ctx);
-  if (ret < 0) LPMS_ERR(open_input_err, "Unable to open video decoder")
-  ret = open_audio_decoder(params, ctx);
-  if (ret < 0) LPMS_ERR(open_input_err, "Unable to open audio decoder")
-  ctx->last_frame_v = av_frame_alloc();
-  if (!ctx->last_frame_v) LPMS_ERR(open_input_err, "Unable to alloc last_frame_v");
-  ctx->last_frame_a = av_frame_alloc();
-  if (!ctx->last_frame_a) LPMS_ERR(open_input_err, "Unable to alloc last_frame_a");
+  if (params->transmuxe == 0) {
+    ret = open_video_decoder(params, ctx);
+    if (ret < 0) LPMS_ERR(open_input_err, "Unable to open video decoder")
+    ret = open_audio_decoder(params, ctx);
+    if (ret < 0) LPMS_ERR(open_input_err, "Unable to open audio decoder")
+    ctx->last_frame_v = av_frame_alloc();
+    if (!ctx->last_frame_v) LPMS_ERR(open_input_err, "Unable to alloc last_frame_v");
+    ctx->last_frame_a = av_frame_alloc();
+    if (!ctx->last_frame_a) LPMS_ERR(open_input_err, "Unable to alloc last_frame_a");
+  }
 
   return 0;
 

@@ -3,13 +3,14 @@ package ffmpeg
 import (
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/golang/glog"
 )
 
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
@@ -49,9 +50,10 @@ type Transcoder struct {
 }
 
 type TranscodeOptionsIn struct {
-	Fname  string
-	Accel  Acceleration
-	Device string
+	Fname       string
+	Accel       Acceleration
+	Device      string
+	Transmuxing bool
 }
 
 type TranscodeOptions struct {
@@ -87,7 +89,7 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 	C.free(unsafe.Pointer(ts_tmpl))
 	C.free(unsafe.Pointer(seglen))
 	C.free(unsafe.Pointer(segstart))
-	if 0 != ret {
+	if ret != 0 {
 		glog.Infof("RTMP2HLS Transmux Return : %v\n", Strerror(ret))
 		return ErrorMap[ret]
 	}
@@ -190,6 +192,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
+	if input.Transmuxing {
+		t.started = true
+	}
 	if !t.started {
 		ret := int(C.lpms_is_bypass_needed(fname))
 		if ret != 1 {
@@ -208,14 +213,14 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		param := p.Profile
 		w, h, err := VideoProfileResolution(param)
 		if err != nil {
-			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+			if p.VideoEncoder.Name != "drop" && p.VideoEncoder.Name != "copy" {
 				return nil, err
 			}
 		}
 		br := strings.Replace(param.Bitrate, "k", "000", 1)
 		bitrate, err := strconv.Atoi(br)
 		if err != nil {
-			if "drop" != p.VideoEncoder.Name && "copy" != p.VideoEncoder.Name {
+			if p.VideoEncoder.Name != "drop" && p.VideoEncoder.Name != "copy" {
 				return nil, err
 			}
 		}
@@ -351,6 +356,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
 		handle: t.handle}
+	if input.Transmuxing {
+		inp.transmuxe = 1
+	}
 	results := make([]C.output_results, len(ps))
 	decoded := &C.output_results{}
 	var (
@@ -362,7 +370,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		resultsPointer = (*C.output_results)(&results[0])
 	}
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
-	if 0 != ret {
+	if ret != 0 {
 		glog.Error("Transcoder Return : ", ErrorMap[ret])
 		return nil, ErrorMap[ret]
 	}
@@ -378,6 +386,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		Pixels: int64(decoded.pixels),
 	}
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
+}
+
+func (t *Transcoder) Discontinuity() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	C.lpms_transcode_discontinuity(t.handle)
 }
 
 func NewTranscoder() *Transcoder {
