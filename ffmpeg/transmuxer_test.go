@@ -59,7 +59,7 @@ func TestTransmuxer_Join(t *testing.T) {
 
 func TestTransmuxer_Discontinuity(t *testing.T) {
 	run, dir := setupTest(t)
-	// defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir)
 	cmd := `
     # run segmenter and sanity check frame counts . Hardcode for now.
     ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -f hls test.m3u8
@@ -119,7 +119,7 @@ func TestTransmuxer_Discontinuity(t *testing.T) {
 	tc.StopTranscoder()
 	cmd = `
     ffprobe -loglevel warning -select_streams v -count_frames -show_streams out.mp4 | grep nb_read_frames=960
-    ffprobe -loglevel warning -select_streams v -count_frames -show_streams out.mp4 | pkt_pts=1444380
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams -show_frames out.mp4 | grep pkt_pts=1444380
   `
 	run(cmd)
 }
