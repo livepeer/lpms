@@ -36,25 +36,6 @@ const (
 	GOPInvalid = -2
 )
 
-// for sceneclassification
-type DNNFilterType int
-
-const (
-	DnnClassify DNNFilterType = iota
-	DnnODetect                //reservation
-)
-
-type DetectorProfile struct {
-	DNNType    int  //classification or object detect
-	SampleRate uint //execute dnn filter per samplerate
-	ModelPath  string
-	Threshold  float32
-	Input      string
-	Output     string
-	ClassIds   []int    // class id list want to detect, can select multi ids, ex. adult,soccer
-	ClassNames []string // class names in trained model
-}
-
 //Standard Profiles:
 //1080p60fps: 9000kbps
 //1080p30fps: 6000kbps
@@ -74,7 +55,6 @@ type VideoProfile struct {
 	Format       Format
 	Profile      Profile
 	GOP          time.Duration
-	Detector     DetectorProfile
 }
 
 //Some sample video profiles
@@ -93,12 +73,12 @@ var (
 	P240p30fps4x3  = VideoProfile{Name: "P240p30fps4x3", Bitrate: "600k", Framerate: 30, AspectRatio: "4:3", Resolution: "320x240"}
 	P144p30fps16x9 = VideoProfile{Name: "P144p30fps16x9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256x144"}
 	P144p25fps16x9 = VideoProfile{Name: "P144p25fps16x9", Bitrate: "400k", Framerate: 25, AspectRatio: "16:9", Resolution: "256x144"}
-	PDnnDetector   = VideoProfile{Name: "PDnnDetector", Bitrate: "1k", Resolution: "224x224",
-		Detector: DetectorProfile{SampleRate: 30, ModelPath: "tasmodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
-			ClassIds: []int{1}, ClassNames: []string{"adult", "soccer"}}}
-	PDnnVioFilter = VideoProfile{Name: "PDnnVioFilter", Bitrate: "1k", Resolution: "416x416",
-		Detector: DetectorProfile{SampleRate: 30, ModelPath: "tviomodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
-			ClassIds: []int{0}, ClassNames: []string{"violence"}}}
+	//PDnnDetector   = VideoProfile{Name: "PDnnDetector", Bitrate: "1k", Resolution: "224x224",
+	//Detector: DetectorProfile{SampleRate: 30, ModelPath: "tasmodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
+	//ClassIds: []int{1}, ClassNames: []string{"adult", "soccer"}}}
+	//PDnnVioFilter = VideoProfile{Name: "PDnnVioFilter", Bitrate: "1k", Resolution: "416x416",
+	//Detector: DetectorProfile{SampleRate: 30, ModelPath: "tviomodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
+	//ClassIds: []int{0}, ClassNames: []string{"violence"}}}
 )
 
 var VideoProfileLookup = map[string]VideoProfile{
@@ -115,8 +95,8 @@ var VideoProfileLookup = map[string]VideoProfile{
 	"P240p25fps16x9": P240p25fps16x9,
 	"P240p30fps4x3":  P240p30fps4x3,
 	"P144p30fps16x9": P144p30fps16x9,
-	"PDnnDetector":   PDnnDetector,
-	"PDnnVioFilter":  PDnnVioFilter,
+	//"PDnnDetector":   PDnnDetector,
+	//"PDnnVioFilter":  PDnnVioFilter,
 }
 
 var FormatExtensions = map[Format]string{

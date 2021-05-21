@@ -57,10 +57,11 @@ type TranscodeOptionsIn struct {
 }
 
 type TranscodeOptions struct {
-	Oname   string
-	Profile VideoProfile
-	Accel   Acceleration
-	Device  string
+	Oname    string
+	Profile  VideoProfile
+	Detector DetectorProfile
+	Accel    Acceleration
+	Device   string
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -68,12 +69,9 @@ type TranscodeOptions struct {
 }
 
 type MediaInfo struct {
-	Frames int
-	Pixels int64
-	//for dnn result
-	IsDNN     bool   //is DNN filter, even if it is true, the result may be an empty string.
-	DNNResult string //a speckled string. i.e. soccer,stadium
-
+	Frames     int
+	Pixels     int64
+	DetectData DetectData
 }
 
 type TranscodeResults struct {
@@ -261,11 +259,18 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			fps = C.AVRational{num: C.int(param.Framerate), den: C.int(param.FramerateDen)}
 		}
 		//if has dnn filter, ignore all video options
-		if len(p.Profile.Detector.ModelPath) > 0 {
-			dnnProfile := p.Profile.Detector
-			//filters = "lvpdnn=filter_type=0:model=tafmodel.pb:input=input_1:output=reshape_3/Reshape:sample=20:threshold=0.5"
-			filters = fmt.Sprintf("lvpdnn=filter_type=0:model=%s:input=%s:output=%s:sample=%d:threshold=%.2f",
-				dnnProfile.ModelPath, dnnProfile.Input, dnnProfile.Output, dnnProfile.SampleRate, dnnProfile.Threshold)
+		if p.Detector != nil {
+			switch p.Detector.Type() {
+			case SceneClassification:
+				// test
+				dnnProfile := p.Detector.(*SceneClassificationProfile)
+				//filters = "lvpdnn=filter_type=0:model=tafmodel.pb:input=input_1:output=reshape_3/Reshape:sample=20:threshold=0.5"
+				filters = fmt.Sprintf("lvpdnn=filter_type=0:model=%s:input=%s:output=%s:sample=%d:threshold=%.2f",
+					dnnProfile.ModelPath, dnnProfile.Input, dnnProfile.Output, dnnProfile.SampleRate, dnnProfile.Threshold)
+			default:
+				glog.Warningf("Unknown detector profile - skipping")
+
+			}
 		}
 		var muxOpts C.component_opts
 		var muxName string
@@ -392,15 +397,19 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			Pixels: int64(r.pixels),
 		}
 		//add dnn result
-		if len(ps[i].Profile.Detector.ModelPath) > 0 {
-			dnnresult := ""
-			for _, j := range ps[i].Profile.Detector.ClassIds {
-				if float32(r.probs[j]) >= ps[i].Profile.Detector.Threshold {
-					dnnresult += (ps[i].Profile.Detector.ClassNames[j] + ",")
+		if ps[i].Detector != nil {
+			switch ps[i].Detector.Type() {
+			case SceneClassification:
+				detector := ps[i].Detector.(*SceneClassificationProfile)
+				res := make(SceneClassificationData)
+				for j, class := range detector.Classes {
+					res[class.ID] = float64(r.probs[j])
 				}
+				tr[i].DetectData = res
+			default:
+				glog.Warningf("Unknown detector profile - skipping")
+
 			}
-			tr[i].IsDNN = true
-			tr[i].DNNResult = dnnresult
 		}
 	}
 	dec := MediaInfo{
