@@ -390,7 +390,9 @@ int lpms_transcode(input_params *inp, output_params *params,
   }
 
   if (h->nb_outputs != nb_outputs) {
-    return lpms_ERR_OUTPUTS; // Not the most accurate error...
+    LPMS_WARN("DIFFERENT NUMBER OF OUTPUTS BETWEEN SEGMENTS");
+    h->nb_outputs = nb_outputs;
+    /*return lpms_ERR_OUTPUTS; // Not the most accurate error...*/
   }
 
   ret = transcode(h, inp, params, results, decoded_results);

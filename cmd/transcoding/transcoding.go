@@ -48,7 +48,9 @@ func main() {
 			o := ffmpeg.TranscodeOptions{
 				Oname:   fmt.Sprintf("out_%s_%d_out.mkv", lbl, i),
 				Profile: profs[i],
-				Accel:   accel,
+				// Uncomment the following to test scene classifier
+				// Detector: &ffmpeg.DSceneAdultSoccer,
+				Accel: accel,
 			}
 			opts = append(opts, o)
 		}

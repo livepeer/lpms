@@ -1293,6 +1293,59 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 	outputFPS(t, Software)
 }
 
+func detectionFreq(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+    # run segmenter and sanity check frame counts . Hardcode for now.
+    ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -f hls test.m3u8
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test0.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test1.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test2.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test3.ts | grep nb_read_frames=120
+  `
+	run(cmd)
+
+	// Test encoding with only seg0 and seg2 under detection
+	tc := NewTranscoder()
+	prof := P144p30fps16x9
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/test%d.ts", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{
+			{
+				Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
+				Profile: prof,
+				Accel:   accel,
+			},
+		}
+		if i%2 == 0 {
+			out = append(out, TranscodeOptions{
+				Oname:    fmt.Sprintf("%s/out-dnn%d.ts", dir, i),
+				Profile:  prof,
+				Detector: &DSceneAdultSoccer,
+				Accel:    accel,
+			})
+		}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		for _, r := range res.Encoded {
+			if r.DetectData != nil {
+				fmt.Printf("!!!===== DETECTION RESULT %v\n", r.DetectData)
+			}
+		}
+	}
+	tc.StopTranscoder()
+}
+
+func TestTranscoder_DetectionFreq(t *testing.T) {
+	detectionFreq(t, Software)
+}
+
 /*
 func noKeyframeSegment(t *testing.T, accel Acceleration) {
 	// Reproducing #219
