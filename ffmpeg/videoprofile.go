@@ -73,12 +73,6 @@ var (
 	P240p30fps4x3  = VideoProfile{Name: "P240p30fps4x3", Bitrate: "600k", Framerate: 30, AspectRatio: "4:3", Resolution: "320x240"}
 	P144p30fps16x9 = VideoProfile{Name: "P144p30fps16x9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256x144"}
 	P144p25fps16x9 = VideoProfile{Name: "P144p25fps16x9", Bitrate: "400k", Framerate: 25, AspectRatio: "16:9", Resolution: "256x144"}
-	//PDnnDetector   = VideoProfile{Name: "PDnnDetector", Bitrate: "1k", Resolution: "224x224",
-	//Detector: DetectorProfile{SampleRate: 30, ModelPath: "tasmodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
-	//ClassIds: []int{1}, ClassNames: []string{"adult", "soccer"}}}
-	//PDnnVioFilter = VideoProfile{Name: "PDnnVioFilter", Bitrate: "1k", Resolution: "416x416",
-	//Detector: DetectorProfile{SampleRate: 30, ModelPath: "tviomodel.pb", Threshold: 0.8, Input: "input_1", Output: "reshape_3/Reshape",
-	//ClassIds: []int{0}, ClassNames: []string{"violence"}}}
 )
 
 var VideoProfileLookup = map[string]VideoProfile{

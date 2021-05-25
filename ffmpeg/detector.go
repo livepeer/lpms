@@ -30,6 +30,25 @@ func (p *SceneClassificationProfile) Type() DetectorType {
 	return SceneClassification
 }
 
+var (
+	DSceneAdultSoccer = SceneClassificationProfile{
+		SampleRate: 30,
+		ModelPath:  "tasmodel.pb",
+		Threshold:  0.0,
+		Input:      "input_1",
+		Output:     "reshape_3/Reshape",
+		Classes:    []DetectorClass{{ID: 0, Name: "adult"}, {ID: 1, Name: "soccer"}},
+	}
+	DSceneViolence = SceneClassificationProfile{
+		SampleRate: 30,
+		ModelPath:  "tviomodel.pb",
+		Threshold:  0.0,
+		Input:      "input_1",
+		Output:     "reshape_3/Reshape",
+		Classes:    []DetectorClass{{ID: 0, Name: "violence"}},
+	}
+)
+
 type DetectData interface {
 	Type() DetectorType
 }
