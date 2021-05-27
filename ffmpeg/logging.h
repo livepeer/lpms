@@ -1,13 +1,6 @@
 #ifndef _LPMS_LOGGING_H_
 #define _LPMS_LOGGING_H_
 
-//MACRO FOR DEVELOP
-#define USE_LVPDNN_
-#ifdef USE_LVPDNN_
-#define MAX_CLASSIFY_SIZE 10
-#define LVPDNN_FILTER_NAME "lvpdnn"
-#define LVPDNN_FILTER_META "lavfi.lvpdnn.text"
-#endif
 // LOGGING MACROS
 
 #define LPMS_ERR(label, msg) {\

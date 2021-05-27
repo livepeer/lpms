@@ -6,6 +6,7 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <stdbool.h>
 
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
@@ -390,9 +391,25 @@ int lpms_transcode(input_params *inp, output_params *params,
   }
 
   if (h->nb_outputs != nb_outputs) {
-    LPMS_WARN("DIFFERENT NUMBER OF OUTPUTS BETWEEN SEGMENTS");
-    h->nb_outputs = nb_outputs;
-    /*return lpms_ERR_OUTPUTS; // Not the most accurate error...*/
+#ifdef USE_LVPDNN_
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+    bool only_detector_diff = true;
+    // make sure only detection related outputs are changed
+    for (int i = MIN(nb_outputs, h->nb_outputs); i < MAX(nb_outputs, h->nb_outputs); i++) {
+      if (!h->outputs[i].is_dnn_profile)
+        only_detector_diff = false;
+    }
+    if (only_detector_diff) {
+      h->nb_outputs = nb_outputs;
+    } else {
+      return lpms_ERR_OUTPUTS;
+    }
+#undef MAX
+#undef MIN
+#elif
+    return lpms_ERR_OUTPUTS; // Not the most accurate error...
+#endif
   }
 
   ret = transcode(h, inp, params, results, decoded_results);

@@ -1329,14 +1329,9 @@ func detectionFreq(t *testing.T, accel Acceleration) {
 				Accel:    accel,
 			})
 		}
-		res, err := tc.Transcode(in, out)
+		_, err := tc.Transcode(in, out)
 		if err != nil {
 			t.Error(err)
-		}
-		for _, r := range res.Encoded {
-			if r.DetectData != nil {
-				fmt.Printf("!!!===== DETECTION RESULT %v\n", r.DetectData)
-			}
 		}
 	}
 	tc.StopTranscoder()

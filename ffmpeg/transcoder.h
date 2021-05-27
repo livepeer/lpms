@@ -51,6 +51,13 @@ typedef struct {
   int transmuxe;
 } input_params;
 
+#define USE_LVPDNN_
+#ifdef USE_LVPDNN_
+#define MAX_CLASSIFY_SIZE 10
+#define LVPDNN_FILTER_NAME "lvpdnn"
+#define LVPDNN_FILTER_META "lavfi.lvpdnn.text"
+#endif
+
 typedef struct {
     int frames;
     int64_t pixels;
