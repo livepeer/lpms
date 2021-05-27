@@ -89,8 +89,6 @@ var VideoProfileLookup = map[string]VideoProfile{
 	"P240p25fps16x9": P240p25fps16x9,
 	"P240p30fps4x3":  P240p30fps4x3,
 	"P144p30fps16x9": P144p30fps16x9,
-	//"PDnnDetector":   PDnnDetector,
-	//"PDnnVioFilter":  PDnnVioFilter,
 }
 
 var FormatExtensions = map[Format]string{

@@ -262,14 +262,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if p.Detector != nil {
 			switch p.Detector.Type() {
 			case SceneClassification:
-				// test
 				dnnProfile := p.Detector.(*SceneClassificationProfile)
-				//filters = "lvpdnn=filter_type=0:model=tafmodel.pb:input=input_1:output=reshape_3/Reshape:sample=20:threshold=0.5"
-				filters = fmt.Sprintf("lvpdnn=filter_type=0:model=%s:input=%s:output=%s:sample=%d:threshold=%.2f",
-					dnnProfile.ModelPath, dnnProfile.Input, dnnProfile.Output, dnnProfile.SampleRate, dnnProfile.Threshold)
-			default:
-				glog.Warningf("Unknown detector profile - skipping")
-
+				filters = fmt.Sprintf("lvpdnn=filter_type=lvpclassify:model=%s:input=%s:output=%s:sample=%d",
+					dnnProfile.ModelPath, dnnProfile.Input, dnnProfile.Output, dnnProfile.SampleRate)
 			}
 		}
 		var muxOpts C.component_opts
@@ -406,9 +401,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 					res[class.ID] = float64(r.probs[j])
 				}
 				tr[i].DetectData = res
-			default:
-				glog.Warningf("Unknown detector profile - skipping")
-
 			}
 		}
 	}

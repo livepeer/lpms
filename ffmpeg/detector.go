@@ -22,7 +22,6 @@ type SceneClassificationProfile struct {
 	ModelPath  string
 	Input      string
 	Output     string
-	Threshold  float32
 	Classes    []DetectorClass
 }
 
@@ -34,7 +33,6 @@ var (
 	DSceneAdultSoccer = SceneClassificationProfile{
 		SampleRate: 30,
 		ModelPath:  "tasmodel.pb",
-		Threshold:  0.0,
 		Input:      "input_1",
 		Output:     "reshape_3/Reshape",
 		Classes:    []DetectorClass{{ID: 0, Name: "adult"}, {ID: 1, Name: "soccer"}},
@@ -42,7 +40,6 @@ var (
 	DSceneViolence = SceneClassificationProfile{
 		SampleRate: 30,
 		ModelPath:  "tviomodel.pb",
-		Threshold:  0.0,
 		Input:      "input_1",
 		Output:     "reshape_3/Reshape",
 		Classes:    []DetectorClass{{ID: 0, Name: "violence"}},
