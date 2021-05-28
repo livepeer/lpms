@@ -80,7 +80,7 @@ func main() {
 	fmt.Printf("profile=input frames=%v pixels=%v\n", res.Decoded.Frames, res.Decoded.Pixels)
 	for i, r := range res.Encoded {
 		if r.DetectData != nil {
-			fmt.Printf("profile=%v frames=%v pixels=%v dnnfilter result =%v\n", profiles[i].Name, r.Frames, r.Pixels, r.DetectData)
+			fmt.Printf("profile=%v frames=%v pixels=%v detectdata=%v\n", profiles[i].Name, r.Frames, r.Pixels, r.DetectData)
 		} else {
 			fmt.Printf("profile=%v frames=%v pixels=%v\n", profiles[i].Name, r.Frames, r.Pixels)
 		}
