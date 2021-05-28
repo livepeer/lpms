@@ -391,7 +391,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			Frames: int(r.frames),
 			Pixels: int64(r.pixels),
 		}
-		//add dnn result
+		// add detect result
 		if ps[i].Detector != nil {
 			switch ps[i].Detector.Type() {
 			case SceneClassification:
