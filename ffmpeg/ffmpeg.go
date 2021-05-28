@@ -209,6 +209,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	params := make([]C.output_params, len(ps))
 	for i, p := range ps {
+		if p.Detector != nil {
+			// We don't do any encoding for detector profiles
+			// Adding placeholder values to pass checks for these everywhere
+			p.Oname = "/dev/null"
+			p.Profile = P144p30fps16x9
+			p.Muxer = ComponentOptions{Name: "mpegts"}
+		}
 		oname := C.CString(p.Oname)
 		defer C.free(unsafe.Pointer(oname))
 

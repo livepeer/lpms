@@ -1323,15 +1323,16 @@ func detectionFreq(t *testing.T, accel Acceleration) {
 		}
 		if i%2 == 0 {
 			out = append(out, TranscodeOptions{
-				Oname:    fmt.Sprintf("%s/out-dnn%d.ts", dir, i),
-				Profile:  prof,
 				Detector: &DSceneAdultSoccer,
 				Accel:    accel,
 			})
 		}
-		_, err := tc.Transcode(in, out)
+		res, err := tc.Transcode(in, out)
 		if err != nil {
 			t.Error(err)
+		}
+		if i%2 == 0 && (len(res.Encoded) < 2 || res.Encoded[1].DetectData == nil) {
+			t.Error("No detect data returned for detection profile")
 		}
 	}
 	tc.StopTranscoder()
