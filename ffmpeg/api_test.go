@@ -1293,6 +1293,7 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 	outputFPS(t, Software)
 }
 
+/*
 func detectionFreq(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
@@ -1341,6 +1342,7 @@ func detectionFreq(t *testing.T, accel Acceleration) {
 func TestTranscoder_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Software)
 }
+*/
 
 /*
 func noKeyframeSegment(t *testing.T, accel Acceleration) {
