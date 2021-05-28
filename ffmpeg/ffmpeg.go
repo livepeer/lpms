@@ -258,7 +258,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			filters += fmt.Sprintf(",fps=%d/%d", param.Framerate, param.FramerateDen)
 			fps = C.AVRational{num: C.int(param.Framerate), den: C.int(param.FramerateDen)}
 		}
-		//if has dnn filter, ignore all video options
+		// if has a detector profile, ignore all video options
 		if p.Detector != nil {
 			switch p.Detector.Type() {
 			case SceneClassification:
