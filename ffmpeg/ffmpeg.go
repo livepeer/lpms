@@ -262,7 +262,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if p.Detector != nil {
 			switch p.Detector.Type() {
 			case SceneClassification:
-				dnnProfile := p.Detector.(*SceneClassificationProfile)
+				detectorProfile := p.Detector.(*SceneClassificationProfile)
 				filters = fmt.Sprintf("lvpdnn=filter_type=lvpclassify:model=%s:input=%s:output=%s:sample=%d",
 					dnnProfile.ModelPath, dnnProfile.Input, dnnProfile.Output, dnnProfile.SampleRate)
 			}
