@@ -264,7 +264,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			case SceneClassification:
 				detectorProfile := p.Detector.(*SceneClassificationProfile)
 				filters = fmt.Sprintf("lvpdnn=filter_type=lvpclassify:model=%s:input=%s:output=%s:sample=%d",
-					dnnProfile.ModelPath, dnnProfile.Input, dnnProfile.Output, dnnProfile.SampleRate)
+					detectorProfile.ModelPath, detectorProfile.Input, detectorProfile.Output, detectorProfile.SampleRate)
 			}
 		}
 		var muxOpts C.component_opts
