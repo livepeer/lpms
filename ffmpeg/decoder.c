@@ -231,6 +231,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
 {
   int ret = 0;
   AVCodec *codec = NULL;
+  AVDictionary **opts = NULL;
   AVFormatContext *ic = ctx->ic;
   // open video decoder
   ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
@@ -253,6 +254,11 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
         ret = lpms_ERR_INPUT_PIXFMT;
         LPMS_ERR(open_decoder_err, "Non 4:2:0 pixel format detected in input");
       }
+    } else if (params->video.name && strlen(params->video.name) != 0) {
+      // Try to find user specified decoder by name
+      AVCodec *c = avcodec_find_decoder_by_name(params->video.name);
+      if (c) codec = c;
+      if (params->video.opts) opts = &params->video.opts;
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) LPMS_ERR(open_decoder_err, "Unable to alloc video codec");
@@ -270,7 +276,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       vc->get_format = get_hw_pixfmt;
     }
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
-    ret = avcodec_open2(vc, codec, NULL);
+    ret = avcodec_open2(vc, codec, opts);
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open video decoder");
   }
 

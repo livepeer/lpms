@@ -46,6 +46,7 @@ const (
 	Software Acceleration = iota
 	Nvidia
 	Amd
+	Netint
 )
 
 var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
@@ -249,18 +250,40 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, 
 			}
 			return encoder, "scale_cuda", nil
 		}
+	case Netint:
+		switch outAcc {
+		case Software, Nvidia:
+			return "", "", ErrTranscoderDev // XXX don't allow mix-match between NETINT and sw/nv
+		case Netint:
+			// Use software scale filter
+			// TODO replace with actual netint encoder name
+			return "h264netintencoder", "scale", nil
+		}
 	}
 	return "", "", ErrTranscoderHw
 }
 func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 	switch accel {
-	case Software:
+	// Netint and Software don't use HW accel API of libavcodec
+	case Software, Netint:
 		return C.AV_HWDEVICE_TYPE_NONE, nil
 	case Nvidia:
 		return C.AV_HWDEVICE_TYPE_CUDA, nil
 
 	}
 	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw
+}
+
+func decoderOpts(accel Acceleration) (string, map[string]string, error) {
+	switch accel {
+	case Netint:
+		opts := map[string]string{}
+		// TODO add any netint decoder opts
+		// opts["ffmpegflagkey"] = "flagvalue"
+		return "h264netintdecoder", opts, nil // TODO replace with actual netint decoder name
+	default:
+		return "", map[string]string{}, ErrTranscoderInp
+	}
 }
 
 func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
@@ -351,7 +374,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		// preserve aspect ratio along the larger dimension when rescaling
 		var filters string
 		filters = fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
-		if input.Accel != Software && p.Accel == Software {
+		if input.Accel == Nvidia && p.Accel == Software {
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ",hwdownload,format=nv12"
 		}
@@ -409,6 +432,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			defer C.free(unsafe.Pointer(muxOpts.name))
 		}
 		// Set video encoder options
+		// TODO understand how h264 profiles and GOP setting works for
+		// NETINT encoder, and make sure we change relevant things here
+		// Any other options for the encoder can also be added here
+
 		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
 			p.VideoEncoder.Opts = map[string]string{
 				"forced-idr": "1",
@@ -518,6 +545,23 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
 		handle: t.handle}
+	if input.Accel == Netint {
+		// Set decoder and AVOpts for NETINT
+		decoder, opts, err := decoderOpts(input.Accel)
+		if err != nil {
+			return nil, err
+		}
+		inp.video = C.component_opts{
+			name: C.CString(decoder),
+			opts: newAVOpts(opts),
+		}
+		defer C.free(unsafe.Pointer(inp.video.name))
+		defer func(param *C.input_params) {
+			if param.video.opts != nil {
+				C.av_dict_free(&param.video.opts)
+			}
+		}(inp)
+	}
 	if input.Transmuxing {
 		inp.transmuxe = 1
 	}
