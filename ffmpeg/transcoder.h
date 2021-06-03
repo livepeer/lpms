@@ -47,6 +47,9 @@ typedef struct {
   enum AVHWDeviceType hw_type;
   char *device;
 
+  // Optional video decoder + opts
+  component_opts video;
+
   int transmuxe;
 } input_params;
 
