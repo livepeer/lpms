@@ -84,6 +84,19 @@ void lpms_init(enum LPMSLogLevel max_level)
   av_log_set_level(max_level);
 }
 
+#ifdef USE_LVPDNN_
+int lpms_dnninit(lvpdnn_opts *dnn_opts) {
+
+    int res = avfilter_register_lvpdnn(dnn_opts->modelpath,dnn_opts->inputname,dnn_opts->outputname,dnn_opts->deviceids);
+    if(res != 0) {
+      LPMS_WARN("Could not initialize dnn module!");
+    }
+    return res;
+}
+void lpms_dnnrelease() {
+  avfilter_remove_lvpdnn();
+}
+#endif
 //
 // Transcoder
 //

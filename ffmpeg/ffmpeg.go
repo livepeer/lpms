@@ -28,6 +28,7 @@ var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
 var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
+var ErrDNNInitialize = errors.New("TranscoderInvalidDNNProfile")
 
 type Acceleration int
 
@@ -267,11 +268,15 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 		// if has a detector profile, ignore all video options
 		if p.Detector != nil {
+			deviceid := "0"
+			if input.Accel != Software && len(input.Device) > 0 {
+				deviceid = input.Device
+			}
 			switch p.Detector.Type() {
 			case SceneClassification:
 				detectorProfile := p.Detector.(*SceneClassificationProfile)
-				filters = fmt.Sprintf("lvpdnn=filter_type=lvpclassify:model=%s:input=%s:output=%s:sample=%d",
-					detectorProfile.ModelPath, detectorProfile.Input, detectorProfile.Output, detectorProfile.SampleRate)
+				filters = fmt.Sprintf("lvpdnn=filter_type=lvpclassify:device=%s:model=%s:input=%s:output=%s:sample=%d",
+					deviceid, detectorProfile.ModelPath, detectorProfile.Input, detectorProfile.Output, detectorProfile.SampleRate)
 			}
 		}
 		var muxOpts C.component_opts
@@ -462,4 +467,34 @@ func InitFFmpegWithLogLevel(level LogLevel) {
 
 func InitFFmpeg() {
 	InitFFmpegWithLogLevel(FFLogWarning)
+}
+
+func ReleaseFFmpeg() {
+	C.lpms_dnnrelease()
+}
+func InitFFmpegWithDetectProfile(detector DetectorProfile, deviceids string) error {
+
+	switch detector.Type() {
+	case SceneClassification:
+		detectorProfile := detector.(*SceneClassificationProfile)
+		dnnOpt := &C.lvpdnn_opts{
+			modelpath:  C.CString(detectorProfile.ModelPath),
+			inputname:  C.CString(detectorProfile.Input),
+			outputname: C.CString(detectorProfile.Output),
+			deviceids:  C.CString(deviceids),
+		}
+		defer C.free(unsafe.Pointer(dnnOpt.modelpath))
+		defer C.free(unsafe.Pointer(dnnOpt.inputname))
+		defer C.free(unsafe.Pointer(dnnOpt.outputname))
+		defer C.free(unsafe.Pointer(dnnOpt.deviceids))
+
+		ret := int(C.lpms_dnninit(dnnOpt))
+		if 0 != ret {
+			glog.Error("lpms_dnninit Return : ", ErrorMap[ret])
+			return ErrDNNInitialize
+		}
+	}
+
+	InitFFmpegWithLogLevel(FFLogWarning)
+	return nil
 }
