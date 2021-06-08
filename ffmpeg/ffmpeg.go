@@ -469,10 +469,10 @@ func InitFFmpeg() {
 	InitFFmpegWithLogLevel(FFLogWarning)
 }
 
-func ReleaseFFmpeg() {
+func ReleaseFFmpegDetectorProfile() {
 	C.lpms_dnnrelease()
 }
-func InitFFmpegWithDetectProfile(detector DetectorProfile, deviceids string) error {
+func InitFFmpegWithDetectorProfile(detector DetectorProfile, deviceids string) error {
 
 	switch detector.Type() {
 	case SceneClassification:

@@ -76,14 +76,14 @@ func main() {
 	}
 
 	t := time.Now()
-	err := ffmpeg.InitFFmpegWithDetectProfile(&ffmpeg.DSceneAdultSoccer, deviceids)
-	defer ffmpeg.ReleaseFFmpeg()
+	err := ffmpeg.InitFFmpegWithDetectorProfile(&ffmpeg.DSceneAdultSoccer, deviceids)
+	defer ffmpeg.ReleaseFFmpegDetectorProfile()
 	end := time.Now()
 
 	if err != nil {
 		panic("Could not initializ DNN engine!")
 	}
-	fmt.Printf("InitFFmpegWithDetectProfile time %0.4v\n", end.Sub(t).Seconds())
+	fmt.Printf("InitFFmpegWithDetectorProfile time %0.4v\n", end.Sub(t).Seconds())
 
 	t = time.Now()
 	fmt.Printf("Setting fname %s encoding %d renditions with %v\n", fname, len(options), lbl)

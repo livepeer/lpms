@@ -354,7 +354,7 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
 
   return av_interleaved_write_frame(octx->oc, pkt);
 }
-#ifdef USE_LVPDNN_
+
 static int getmetadatainf(AVFrame *inf, struct output_ctx *octx)
 {
   if(inf == NULL) return -1;
@@ -362,14 +362,11 @@ static int getmetadatainf(AVFrame *inf, struct output_ctx *octx)
   AVDictionaryEntry *element = NULL;
   AVDictionary *metadata = inf->metadata;
 
-  if(metadata != NULL){
+  if(metadata != NULL) {
     element = av_dict_get(metadata, LVPDNN_FILTER_META, element, 0);
-
-    if(element != NULL){
-
+    if(element != NULL) {
       strcpy(classinfo, element->value);
-
-      if(strlen(classinfo) > 0){
+      if(strlen(classinfo) > 0) {
         char * token = strtok(classinfo, ",");
         int cid = 0;
         while( token != NULL ) {
@@ -383,7 +380,6 @@ static int getmetadatainf(AVFrame *inf, struct output_ctx *octx)
   }
   return 0;
 }
-#endif
 
 int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   struct filter_ctx *filter, AVFrame *inf)
@@ -418,17 +414,11 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         frame->pict_type = AV_PICTURE_TYPE_I;
         octx->next_kf_pts = frame->pts + octx->gop_pts_len;
     }
-#ifdef USE_LVPDNN_
-    if(octx->is_dnn_profile){
-      ret =  getmetadatainf(frame, octx); 
-      
-    } 
-    else {    
-#endif    
-    ret = encode(encoder, frame, octx, ost);
-#ifdef USE_LVPDNN_
+    if(octx->is_dnn_profile) {
+      ret = getmetadatainf(frame, octx);
+    } else {
+      ret = encode(encoder, frame, octx, ost);
     }
-#endif    
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush

@@ -51,8 +51,6 @@ typedef struct {
   int transmuxe;
 } input_params;
 
-#define USE_LVPDNN_
-#ifdef USE_LVPDNN_
 #define MAX_CLASSIFY_SIZE 10
 #define LVPDNN_FILTER_NAME "lvpdnn"
 #define LVPDNN_FILTER_META "lavfi.lvpdnn.text"
@@ -63,8 +61,6 @@ typedef struct {
     char *outputname;
     char *deviceids;
 } lvpdnn_opts;
-
-#endif
 
 typedef struct {
     int frames;
@@ -91,9 +87,7 @@ struct transcode_thread* lpms_transcode_new();
 void lpms_transcode_stop(struct transcode_thread* handle);
 void lpms_transcode_discontinuity(struct transcode_thread *handle);
 
-#ifdef USE_LVPDNN_
 int lpms_dnninit(lvpdnn_opts *dnn_opts);
 void lpms_dnnrelease();
-#endif
 
 #endif // _LPMS_TRANSCODER_H_

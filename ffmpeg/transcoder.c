@@ -84,7 +84,6 @@ void lpms_init(enum LPMSLogLevel max_level)
   av_log_set_level(max_level);
 }
 
-#ifdef USE_LVPDNN_
 int lpms_dnninit(lvpdnn_opts *dnn_opts) {
 
     int res = avfilter_register_lvpdnn(dnn_opts->modelpath,dnn_opts->inputname,dnn_opts->outputname,dnn_opts->deviceids);
@@ -93,10 +92,11 @@ int lpms_dnninit(lvpdnn_opts *dnn_opts) {
     }
     return res;
 }
+
 void lpms_dnnrelease() {
   avfilter_remove_lvpdnn();
 }
-#endif
+
 //
 // Transcoder
 //
@@ -173,9 +173,7 @@ int transcode(struct transcode_thread *h,
       octx->audio = &params[i].audio;
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
-#ifdef USE_LVPDNN_
       octx->is_dnn_profile = (strncmp(octx->vfilters,LVPDNN_FILTER_NAME, strlen(LVPDNN_FILTER_NAME)) == 0 );      
-#endif      
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
       if (params[i].gop_time) octx->gop_time = params[i].gop_time;
@@ -332,21 +330,16 @@ whileloop_end:
   }
 
   // flush outputs
-  for (i = 0; i < nb_outputs; i++) {  
-#ifdef USE_LVPDNN_  
-    if(outputs[i].is_dnn_profile == 0 ){
+  for (i = 0; i < nb_outputs; i++) {
+    if(outputs[i].is_dnn_profile == 0) {
       ret = flush_outputs(ictx, &outputs[i]);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
-    } 
-    else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0){      
-       for (int j = 0; j < MAX_CLASSIFY_SIZE; j++){
+    }
+    else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0) {
+       for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
          outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;         
        }
     }
-#else
-	  ret = flush_outputs(ictx, &outputs[i]);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
-#endif
   }
 
 transcode_cleanup:
@@ -404,7 +397,6 @@ int lpms_transcode(input_params *inp, output_params *params,
   }
 
   if (h->nb_outputs != nb_outputs) {
-#ifdef USE_LVPDNN_
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
     bool only_detector_diff = true;
@@ -420,9 +412,6 @@ int lpms_transcode(input_params *inp, output_params *params,
     }
 #undef MAX
 #undef MIN
-#elif
-    return lpms_ERR_OUTPUTS; // Not the most accurate error...
-#endif
   }
 
   ret = transcode(h, inp, params, results, decoded_results);
