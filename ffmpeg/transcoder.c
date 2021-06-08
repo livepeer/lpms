@@ -6,6 +6,7 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavfilter/avfilter.h>
 #include <stdbool.h>
 
 // Not great to appropriate internal API like this...
