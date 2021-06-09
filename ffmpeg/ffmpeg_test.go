@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
 	"testing"
 )
 
@@ -1557,4 +1558,36 @@ func TestTranscoder_IgnoreUnknown(t *testing.T) {
         diff -u transcoded-expected-streams.out transcoded-streams.out
     `
 	run(cmd)
+}
+
+func TestTranscoder_ZeroFrame(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fname := path.Join(wd, "..", "data", "zero-frame.ts")
+	res := HasZeroVideoFrame(fname)
+	if res != 1 {
+		t.Errorf("Expecting 1, got %d fname=%s", res, fname)
+	}
+	data, err := ioutil.ReadFile(fname)
+	if err != nil {
+		t.Error(err)
+	}
+	res, err = HasZeroVideoFrameBytes(data)
+	if err != nil {
+		t.Error(err)
+	}
+	if res != 1 {
+		t.Errorf("Expecting 1, got %d fname=%s", res, fname)
+	}
+	res, err = HasZeroVideoFrameBytes(nil)
+	if err != ErrEmptyData {
+		t.Errorf("Unexpected error %v", err)
+	}
+	fname = path.Join(wd, "..", "data", "bunny.mp4")
+	res = HasZeroVideoFrame(fname)
+	if res != 0 {
+		t.Errorf("Expecting 0, got %d fname=%s", res, fname)
+	}
 }

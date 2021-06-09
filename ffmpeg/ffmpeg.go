@@ -1,8 +1,11 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -28,6 +31,7 @@ var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
 var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
+var ErrEmptyData = errors.New("EmptyData")
 
 type Acceleration int
 
@@ -75,6 +79,41 @@ type MediaInfo struct {
 type TranscodeResults struct {
 	Decoded MediaInfo
 	Encoded []MediaInfo
+}
+
+// HasZeroVideoFrame opens video file and returns 1 if it has video stream with 0-frame
+func HasZeroVideoFrame(fname string) int {
+	cfname := C.CString(fname)
+	defer C.free(unsafe.Pointer(cfname))
+	return int(C.lpms_is_bypass_needed(cfname))
+}
+
+// HasZeroVideoFrameBytes  opens video and returns 1 if it has video stream with 0-frame
+func HasZeroVideoFrameBytes(data []byte) (int, error) {
+	if len(data) == 0 {
+		return 0, ErrEmptyData
+	}
+	or, ow, err := os.Pipe()
+	if err != nil {
+		return -1, err
+	}
+	fname := fmt.Sprintf("pipe:%d", or.Fd())
+	cfname := C.CString(fname)
+	defer C.free(unsafe.Pointer(cfname))
+	done := make(chan struct{})
+	go func() {
+		var err2 error
+		br := bytes.NewReader(data)
+		_, err2 = io.Copy(ow, br)
+		if err2 != nil {
+			glog.Errorf("Error sending data to lpms_is_bypass_needed function err=%v", err2)
+		}
+		ow.Close()
+		done <- struct{}{}
+	}()
+	bres := int(C.lpms_is_bypass_needed(cfname))
+	<-done
+	return bres, nil
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
