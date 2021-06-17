@@ -13,8 +13,8 @@ type DetectorProfile interface {
 }
 
 type DetectorClass struct {
-	ID   int
-	Name string
+	ID   int    // unique ID within LPMS per class
+	Name string // unique Name within LPMS per class
 }
 
 type SceneClassificationProfile struct {
@@ -42,9 +42,21 @@ var (
 		ModelPath:  "tviomodel.pb",
 		Input:      "input_1",
 		Output:     "reshape_3/Reshape",
-		Classes:    []DetectorClass{{ID: 0, Name: "violence"}},
+		Classes:    []DetectorClass{{ID: 2, Name: "violence"}},
 	}
 )
+
+var SceneClassificationProfileLookup = map[string]SceneClassificationProfile{
+	"adult":    DSceneAdultSoccer,
+	"soccer":   DSceneAdultSoccer,
+	"violence": DSceneViolence,
+}
+
+var DetectorClassIDLookup = map[string]int{
+	"adult":    0,
+	"soccer":   1,
+	"violence": 2,
+}
 
 type DetectData interface {
 	Type() DetectorType
