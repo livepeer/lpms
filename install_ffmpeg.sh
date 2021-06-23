@@ -24,9 +24,15 @@ if [ ! -e "$HOME/x264/x264" ]; then
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
+  #LIBTENSORFLOW_VERSION=2.3.0 \
+  #&& curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  #&& sudo tar -C /usr/local -xzf libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  #&& sudo ldconfig  
+  # --enable-libtensorflow
+
   git clone https://github.com/livepeer/FFmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  git checkout 1fdf06e14239e1aaa9ddfb648fa374ca3cb1b269
+  git checkout b344789a31a2d806be702239d7614f7a9f51f941
   ./configure --prefix="$HOME/compiled" --enable-libx264 --enable-gnutls --enable-gpl --enable-static
   make
   make install

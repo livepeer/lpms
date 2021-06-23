@@ -6,6 +6,8 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavfilter/avfilter.h>
+#include <stdbool.h>
 
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
@@ -81,6 +83,19 @@ struct transcode_thread {
 void lpms_init(enum LPMSLogLevel max_level)
 {
   av_log_set_level(max_level);
+}
+
+int lpms_dnninit(lvpdnn_opts *dnn_opts) {
+
+    int res = avfilter_register_lvpdnn(dnn_opts->modelpath,dnn_opts->inputname,dnn_opts->outputname,dnn_opts->deviceids);
+    if(res != 0) {
+      LPMS_WARN("Could not initialize dnn module!");
+    }
+    return res;
+}
+
+void lpms_dnnrelease() {
+  avfilter_remove_lvpdnn();
 }
 
 //
@@ -159,6 +174,7 @@ int transcode(struct transcode_thread *h,
       octx->audio = &params[i].audio;
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
+      octx->is_dnn_profile = (strncmp(octx->vfilters,LVPDNN_FILTER_NAME, strlen(LVPDNN_FILTER_NAME)) == 0 );      
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
       if (params[i].gop_time) octx->gop_time = params[i].gop_time;
@@ -316,8 +332,15 @@ whileloop_end:
 
   // flush outputs
   for (i = 0; i < nb_outputs; i++) {
-    ret = flush_outputs(ictx, &outputs[i]);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
+    if(outputs[i].is_dnn_profile == 0) {
+      ret = flush_outputs(ictx, &outputs[i]);
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
+    }
+    else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0) {
+       for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
+         outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;         
+       }
+    }
   }
 
 transcode_cleanup:
@@ -375,7 +398,21 @@ int lpms_transcode(input_params *inp, output_params *params,
   }
 
   if (h->nb_outputs != nb_outputs) {
-    return lpms_ERR_OUTPUTS; // Not the most accurate error...
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+    bool only_detector_diff = true;
+    // make sure only detection related outputs are changed
+    for (int i = MIN(nb_outputs, h->nb_outputs); i < MAX(nb_outputs, h->nb_outputs); i++) {
+      if (!h->outputs[i].is_dnn_profile)
+        only_detector_diff = false;
+    }
+    if (only_detector_diff) {
+      h->nb_outputs = nb_outputs;
+    } else {
+      return lpms_ERR_OUTPUTS;
+    }
+#undef MAX
+#undef MIN
   }
 
   ret = transcode(h, inp, params, results, decoded_results);
