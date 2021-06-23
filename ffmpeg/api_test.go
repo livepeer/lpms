@@ -1244,8 +1244,6 @@ func TestTranscoder_AudioOnly(t *testing.T) {
 	audioOnlySegment(t, Software)
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 func outputFPS(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
@@ -1295,8 +1293,6 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 	outputFPS(t, Software)
 }
 
-=======
->>>>>>> ffmpeg: Comment out detection related tests
 /*
 func detectionFreq(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)
