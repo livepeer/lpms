@@ -1567,8 +1567,8 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
 	res := HasZeroVideoFrame(fname)
-	if res != 1 {
-		t.Errorf("Expecting 1, got %d fname=%s", res, fname)
+	if res != true {
+		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
 	data, err := ioutil.ReadFile(fname)
 	if err != nil {
@@ -1578,8 +1578,8 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res != 1 {
-		t.Errorf("Expecting 1, got %d fname=%s", res, fname)
+	if res != true {
+		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
 	res, err = HasZeroVideoFrameBytes(nil)
 	if err != ErrEmptyData {
@@ -1587,7 +1587,7 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
 	res = HasZeroVideoFrame(fname)
-	if res != 0 {
-		t.Errorf("Expecting 0, got %d fname=%s", res, fname)
+	if res != false {
+		t.Errorf("Expecting false, got %v fname=%s", res, fname)
 	}
 }

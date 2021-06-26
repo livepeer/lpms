@@ -84,21 +84,21 @@ type TranscodeResults struct {
 	Encoded []MediaInfo
 }
 
-// HasZeroVideoFrame opens video file and returns 1 if it has video stream with 0-frame
-func HasZeroVideoFrame(fname string) int {
+// HasZeroVideoFrame opens video file and returns true if it has video stream with 0-frame
+func HasZeroVideoFrame(fname string) bool {
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
-	return int(C.lpms_is_bypass_needed(cfname))
+	return int(C.lpms_is_bypass_needed(cfname)) == 1
 }
 
-// HasZeroVideoFrameBytes  opens video and returns 1 if it has video stream with 0-frame
-func HasZeroVideoFrameBytes(data []byte) (int, error) {
+// HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
+func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	if len(data) == 0 {
-		return 0, ErrEmptyData
+		return false, ErrEmptyData
 	}
 	or, ow, err := os.Pipe()
 	if err != nil {
-		return -1, err
+		return false, err
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	cfname := C.CString(fname)
@@ -116,7 +116,7 @@ func HasZeroVideoFrameBytes(data []byte) (int, error) {
 	}()
 	bres := int(C.lpms_is_bypass_needed(cfname))
 	<-done
-	return bres, nil
+	return bres == 1, nil
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
