@@ -348,8 +348,11 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				"forced-idr": "1",
 			}
 			switch p.Profile.Profile {
-			case ProfileH264Baseline, ProfileH264Main, ProfileH264High:
+			case ProfileH264Baseline:
 				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+			case ProfileH264Main, ProfileH264High:
+				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+				p.VideoEncoder.Opts["bf"] = "3"
 			case ProfileH264ConstrainedHigh:
 				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
 				p.VideoEncoder.Opts["bf"] = "0"
