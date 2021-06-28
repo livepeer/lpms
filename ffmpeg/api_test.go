@@ -950,11 +950,6 @@ func encodingProfiles(t *testing.T, accel Acceleration) {
 		ffprobe -loglevel warning -show_streams out_main.mp4 | grep has_b_frames=2
 		ffprobe -loglevel warning -show_streams out_high.mp4 | grep has_b_frames=2
 	`
-	// TODO: Only CPU encoder seems to use B frames by default, check if we can enable them for NVIDIA
-	if accel == Software {
-		run(cmd)
-	}
-
 	// Interlaced Input with Constrained Profiles
 	cmd = `
 		ffmpeg -i test.ts -vf "tinterlace=5" -c:v libx264 -flags +ilme+ildct -x264opts bff=1 -c:a copy test_interlaced.ts
