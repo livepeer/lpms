@@ -308,9 +308,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		// if has a detector profile, ignore all video options
 		if p.Detector != nil {
 			deviceid := "0"
-			if input.Accel != Software && len(input.Device) > 0 {
-				deviceid = input.Device
-			}
+			// FIXME: Hardcoded DNN filter device to 0 for now
+			//if input.Accel != Software && len(input.Device) > 0 {
+			//deviceid = input.Device
+			//}
 			switch p.Detector.Type() {
 			case SceneClassification:
 				detectorProfile := p.Detector.(*SceneClassificationProfile)
