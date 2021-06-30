@@ -85,26 +85,33 @@ dec_flush:
   // with video. If there's a nonzero response type, we know there are no more
   // video frames, so continue on to audio.
 
-  // Flush video decoder.
-  // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
-  // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
-  // buffered frames with no success.
-  // TODO this is unnecessary for SW decoding! SW process should match audio
-  if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
-    ictx->flushing = 1;
-    ret = send_first_pkt(ictx);
-    if (ret < 0) {
-      ictx->flushed = 1;
-      return ret;
-    }
-    ret = lpms_receive_frame(ictx, ictx->vc, frame);
-    pkt->stream_index = ictx->vi;
-    // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-      return 0; // ignore actual return value and keep flushing
-    } else {
-      ictx->flushed = 1;
+  // Flush video decoder
+  if (ictx->vc) {
+    if (ictx->hw_type == AV_HWDEVICE_TYPE_NONE) {
+      // Flushing for software decoder is straightforward
+      avcodec_send_packet(ictx->vc, NULL);
+      ret = avcodec_receive_frame(ictx->vc, frame);
+      pkt->stream_index = ictx->vi;
       if (!ret) return ret;
+    } else if (!ictx->flushed && ictx->pkt_diff > 0) {
+      // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
+      // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
+      // buffered frames with no success.
+      ictx->flushing = 1;
+      ret = send_first_pkt(ictx);
+      if (ret < 0) {
+        ictx->flushed = 1;
+        return ret;
+      }
+      ret = lpms_receive_frame(ictx, ictx->vc, frame);
+      pkt->stream_index = ictx->vi;
+      // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
+      if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
+        return 0; // ignore actual return value and keep flushing
+      } else {
+        ictx->flushed = 1;
+        if (!ret) return ret;
+      }
     }
   }
   // Flush audio decoder.
