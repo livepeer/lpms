@@ -22,10 +22,10 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
   AVStream *ost         = NULL;
   AVDictionary *md      = NULL;
   AVCodec *codec        = NULL;
+  AVPacket *pkt         = NULL;
   int64_t prev_ts[2]    = {AV_NOPTS_VALUE, AV_NOPTS_VALUE};
   int stream_map[2]     = {-1, -1};
   int got_video_kf      = 0;
-  AVPacket pkt;
 
   ret = avformat_open_input(&ic, listen, NULL, NULL);
   if (ret < 0) r2h_err("segmenter: Unable to open input\n");
@@ -59,44 +59,46 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
   ret = avformat_write_header(oc, &md);
   if (ret < 0) r2h_err("Error writing header\n");
 
-  av_init_packet(&pkt);
+  pkt = av_packet_alloc();
+  if (!pkt) r2h_err("Error allocating packet\n");
   while (1) {
-    ret = av_read_frame(ic, &pkt);
+    ret = av_read_frame(ic, pkt);
     if (ret == AVERROR_EOF) {
       av_interleaved_write_frame(oc, NULL); // flush
       break;
     } else if (ret < 0) r2h_err("Error reading\n");
     // rescale timestamps
-    if (pkt.stream_index == stream_map[0]) pkt.stream_index = 0;
-    else if (pkt.stream_index == stream_map[1]) pkt.stream_index = 1;
+    if (pkt->stream_index == stream_map[0]) pkt->stream_index = 0;
+    else if (pkt->stream_index == stream_map[1]) pkt->stream_index = 1;
     else goto r2hloop_end;
-    ist = ic->streams[stream_map[pkt.stream_index]];
-    ost = oc->streams[pkt.stream_index];
-    int64_t dts_next = pkt.dts, dts_prev = prev_ts[pkt.stream_index];
-    if (oc->streams[pkt.stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+    ist = ic->streams[stream_map[pkt->stream_index]];
+    ost = oc->streams[pkt->stream_index];
+    int64_t dts_next = pkt->dts, dts_prev = prev_ts[pkt->stream_index];
+    if (oc->streams[pkt->stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
         AV_NOPTS_VALUE == dts_prev &&
-        (pkt.flags & AV_PKT_FLAG_KEY)) got_video_kf = 1;
+        (pkt->flags & AV_PKT_FLAG_KEY)) got_video_kf = 1;
     if (!got_video_kf) goto r2hloop_end; // skip everyting until first video KF
     if (AV_NOPTS_VALUE == dts_prev) dts_prev = dts_next;
     else if (dts_next <= dts_prev) goto r2hloop_end; // drop late packets
-    pkt.pts = av_rescale_q_rnd(pkt.pts, ist->time_base, ost->time_base,
+    pkt->pts = av_rescale_q_rnd(pkt->pts, ist->time_base, ost->time_base,
         AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
-    pkt.dts = av_rescale_q_rnd(pkt.dts, ist->time_base, ost->time_base,
+    pkt->dts = av_rescale_q_rnd(pkt->dts, ist->time_base, ost->time_base,
         AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
-    if (!pkt.duration) pkt.duration = dts_next - dts_prev;
-    pkt.duration = av_rescale_q(pkt.duration, ist->time_base, ost->time_base);
-    prev_ts[pkt.stream_index] = dts_next;
+    if (!pkt->duration) pkt->duration = dts_next - dts_prev;
+    pkt->duration = av_rescale_q(pkt->duration, ist->time_base, ost->time_base);
+    prev_ts[pkt->stream_index] = dts_next;
     // write the thing
-    ret = av_interleaved_write_frame(oc, &pkt);
+    ret = av_interleaved_write_frame(oc, pkt);
     if (ret < 0) r2h_err("segmenter: Unable to write output frame\n");
 r2hloop_end:
-    av_packet_unref(&pkt);
+    av_packet_unref(pkt);
   }
   ret = av_write_trailer(oc);
   if (ret < 0) r2h_err("segmenter: Unable to write trailer\n");
 
 handle_r2h_err:
   if (errstr) fprintf(stderr, "%s", errstr);
+  if (pkt) av_packet_free(&pkt);
   if (ic) avformat_close_input(&ic);
   if (oc) avformat_free_context(oc);
   if (md) av_dict_free(&md);

@@ -135,7 +135,7 @@ int transcode(struct transcode_thread *h,
   int reopen_decoders = !ictx->transmuxing;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
-  AVPacket ipkt = {0};
+  AVPacket *ipkt = NULL;
   AVFrame *dframe = NULL;
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
@@ -204,7 +204,8 @@ int transcode(struct transcode_thread *h,
       }
   }
 
-  av_init_packet(&ipkt);
+  ipkt = av_packet_alloc();
+  if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
   dframe = av_frame_alloc();
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
 
@@ -214,14 +215,14 @@ int transcode(struct transcode_thread *h,
     AVStream *ist = NULL;
     AVFrame *last_frame = NULL;
     av_frame_unref(dframe);
-    ret = process_in(ictx, dframe, &ipkt);
+    ret = process_in(ictx, dframe, ipkt);
     if (ret == AVERROR_EOF) break;
                             // Bail out on streams that appear to be broken
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
     else if (lpms_ERR_INPUT_NOKF == ret) {
       LPMS_ERR(transcode_cleanup, "Could not decode; No keyframes in input");
     } else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
-    ist = ictx->ic->streams[ipkt.stream_index];
+    ist = ictx->ic->streams[ipkt->stream_index];
     has_frame = lpms_ERR_PACKET_ONLY != ret;
 
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
@@ -250,23 +251,23 @@ int transcode(struct transcode_thread *h,
     }
     if (ictx->transmuxing) {
       // decoded_results->frames++;
-      ist = ictx->ic->streams[ipkt.stream_index];
+      ist = ictx->ic->streams[ipkt->stream_index];
       if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
         decoded_results->frames++;
       }
       if (ictx->discontinuity) {
         // calc dts diff
-        ictx->dts_diff = ictx->last_dts + ictx->last_duration - ipkt.dts;
+        ictx->dts_diff = ictx->last_dts + ictx->last_duration - ipkt->dts;
         ictx->discontinuity = 0;
       }
 
-      ipkt.pts += ictx->dts_diff;
-      ipkt.dts += ictx->dts_diff;
+      ipkt->pts += ictx->dts_diff;
+      ipkt->dts += ictx->dts_diff;
 
-      if (ipkt.stream_index == 0) {
-        ictx->last_dts = ipkt.dts;
-        if (ipkt.duration) {
-          ictx->last_duration = ipkt.duration;
+      if (ipkt->stream_index == 0) {
+        ictx->last_dts = ipkt->dts;
+        if (ipkt->duration) {
+          ictx->last_duration = ipkt->duration;
         }
       }
     }
@@ -280,7 +281,7 @@ int transcode(struct transcode_thread *h,
       ret = 0; // reset to avoid any carry-through
 
       if (ictx->transmuxing)
-        ost = octx->oc->streams[ipkt.stream_index];
+        ost = octx->oc->streams[ipkt->stream_index];
       else if (ist->index == ictx->vi) {
         if (octx->dv) continue; // drop video stream for this output
         ost = octx->oc->streams[0];
@@ -303,9 +304,9 @@ int transcode(struct transcode_thread *h,
 
         // we hit this case when decoder is flushing; will be no input packet
         // (we don't need decoded frames since this stream is doing a copy)
-        if (ipkt.pts == AV_NOPTS_VALUE) continue;
+        if (ipkt->pts == AV_NOPTS_VALUE) continue;
 
-        pkt = av_packet_clone(&ipkt);
+        pkt = av_packet_clone(ipkt);
         if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
         ret = mux(pkt, ist->time_base, octx, ost);
         av_packet_free(&pkt);
@@ -316,7 +317,7 @@ int transcode(struct transcode_thread *h,
       else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
     }
 whileloop_end:
-    av_packet_unref(&ipkt);
+    av_packet_unref(ipkt);
   }
 
   if (ictx->transmuxing) {
@@ -361,7 +362,7 @@ transcode_cleanup:
   ictx->flushing = 0;
   ictx->pkt_diff = 0;
   ictx->sentinel_count = 0;
-  av_packet_unref(&ipkt);  // needed for early exits
+  if (ipkt) av_packet_free(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
   if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);

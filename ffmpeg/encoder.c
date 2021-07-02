@@ -298,7 +298,7 @@ reopen_out_err:
 static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost)
 {
   int ret = 0;
-  AVPacket pkt = {0};
+  AVPacket *pkt = NULL;
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && frame) {
     if (!octx->res->frames) {
@@ -322,18 +322,22 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     avcodec_flush_buffers(encoder);
   }
 
+  pkt = av_packet_alloc();
+  if (!pkt) {
+      ret = AVERROR(ENOMEM);
+      LPMS_ERR(encode_cleanup, "Error allocating packet for encode");
+  }
   while (1) {
-    av_init_packet(&pkt);
-    ret = avcodec_receive_packet(encoder, &pkt);
+    av_packet_unref(pkt);
+    ret = avcodec_receive_packet(encoder, pkt);
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
     if (ret < 0) LPMS_ERR(encode_cleanup, "Error receiving packet from encoder");
-    ret = mux(&pkt, encoder->time_base, octx, ost);
+    ret = mux(pkt, encoder->time_base, octx, ost);
     if (ret < 0) goto encode_cleanup;
-    av_packet_unref(&pkt);
   }
 
 encode_cleanup:
-  av_packet_unref(&pkt);
+  if (pkt) av_packet_free(&pkt);
   return ret;
 }
 
