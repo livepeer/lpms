@@ -499,14 +499,14 @@ func TestNvidia_DrainFilters(t *testing.T) {
     # sanity check with ffmpeg itself
     ffmpeg -loglevel warning -i test.ts -c:a copy -c:v libx264 -vf fps=100 -vsync 0 ffmpeg-out.ts
 
-    ffprobe -loglevel warning -show_streams -select_streams v -count_frames ffmpeg-out.ts > ffmpeg,out
+    ffprobe -loglevel warning -show_streams -select_streams v -count_frames ffmpeg-out.ts > ffmpeg.out
     ffprobe -loglevel warning -show_streams -select_streams v -count_frames out.ts > probe.out
 
     # These used to be same, but aren't since we've diverged the flushing and PTS handling from ffmpeg
     grep nb_read_frames=100 probe.out
     grep duration=1.0000 probe.out
-    grep nb_read_frames=102 ffmpeg,out
-    grep duration=1.0200 ffmpeg,out
+    grep nb_read_frames=102 ffmpeg.out
+    grep duration=1.0200 ffmpeg.out
   `
 	run(cmd)
 

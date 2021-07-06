@@ -1453,7 +1453,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		cat <<- EOF > expected_mp4.out
 			[FORMAT]
 			format_name=mov,mp4,m4a,3gp,3g2,mj2
-			duration=8.011000
+			duration=8.033000
 			[/FORMAT]
 		EOF
 
