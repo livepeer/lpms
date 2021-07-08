@@ -103,19 +103,13 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
-	done := make(chan struct{})
 	go func() {
-		var err2 error
 		br := bytes.NewReader(data)
-		_, err2 = io.Copy(ow, br)
-		if err2 != nil {
-			glog.Errorf("Error sending data to lpms_is_bypass_needed function err=%v", err2)
-		}
+		io.Copy(ow, br)
 		ow.Close()
-		done <- struct{}{}
 	}()
 	bres := int(C.lpms_is_bypass_needed(cfname))
-	<-done
+	ow.Close()
 	return bres == 1, nil
 }
 

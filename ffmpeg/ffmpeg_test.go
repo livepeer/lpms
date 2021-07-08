@@ -1581,7 +1581,7 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	if res != true {
 		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
-	res, err = HasZeroVideoFrameBytes(nil)
+	_, err = HasZeroVideoFrameBytes(nil)
 	if err != ErrEmptyData {
 		t.Errorf("Unexpected error %v", err)
 	}
@@ -1589,5 +1589,16 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	res = HasZeroVideoFrame(fname)
 	if res != false {
 		t.Errorf("Expecting false, got %v fname=%s", res, fname)
+	}
+}
+
+func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {
+	badSegment := make([]byte, 16*1024*1024)
+	res, err := HasZeroVideoFrameBytes(badSegment)
+	if err != nil {
+		t.Error(err)
+	}
+	if res {
+		t.Errorf("Expecting false, got %v", res)
 	}
 }
