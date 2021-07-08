@@ -342,16 +342,18 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				"forced-idr": "1",
 			}
 			switch p.Profile.Profile {
-			case ProfileH264Baseline:
+			case ProfileH264Baseline, ProfileH264ConstrainedHigh:
 				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+				p.VideoEncoder.Opts["bf"] = "0"
 			case ProfileH264Main, ProfileH264High:
 				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
 				p.VideoEncoder.Opts["bf"] = "3"
-			case ProfileH264ConstrainedHigh:
-				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
-				p.VideoEncoder.Opts["bf"] = "0"
 			case ProfileNone:
-				// Do nothing, the encoder will use default profile
+				if p.Accel == Nvidia {
+					p.VideoEncoder.Opts["bf"] = "0"
+				} else {
+					p.VideoEncoder.Opts["bf"] = "3"
+				}
 			default:
 				return nil, ErrTranscoderPrf
 			}
