@@ -357,6 +357,15 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			default:
 				return nil, ErrTranscoderPrf
 			}
+			if p.Profile.Framerate == 0 && p.Accel == Nvidia {
+				// When the decoded video contains non-monotonic increases in PTS (common with OBS)
+				// & when B-frames are enabled nvenc struggles at calculating correct DTS
+				// XXX so we disable B-frames altogether to avoid PTS < DTS errors
+				if p.VideoEncoder.Opts["bf"] != "0" {
+					p.VideoEncoder.Opts["bf"] = "0"
+					glog.Warning("Forcing max_b_frames=0 for nvenc, as it can't handle those well with timestamp passthrough")
+				}
+			}
 		}
 		gopMs := 0
 		if param.GOP != 0 {
