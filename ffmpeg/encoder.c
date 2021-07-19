@@ -308,10 +308,9 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     octx->res->pixels += encoder->width * encoder->height;
   }
 
-
   // We don't want to send NULL frames for HW encoding
   // because that closes the encoder: not something we want
-  if (AV_HWDEVICE_TYPE_NONE == octx->hw_type || frame) {
+  if (AV_HWDEVICE_TYPE_NONE == octx->hw_type || AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type || frame) {
     ret = avcodec_send_frame(encoder, frame);
     if (AVERROR_EOF == ret) ; // continue ; drain encoder
     else if (ret < 0) LPMS_ERR(encode_cleanup, "Error sending frame to encoder");
