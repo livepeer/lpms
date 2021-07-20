@@ -70,6 +70,7 @@ type TranscodeOptions struct {
 	Detector DetectorProfile
 	Accel    Acceleration
 	Device   string
+	CalcSign bool
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -314,6 +315,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				}
 			}
 		}
+		//signfilter string
+		signfilter := fmt.Sprintf("signature=filename=%s.bin", p.Oname)
+		if p.Accel == Nvidia {
+			// needed for hw scale -> hwdownload -> sw signature -> sign.bin
+			signfilter = "hwdownload,format=nv12," + signfilter
+		}
 		var muxOpts C.component_opts
 		var muxName string
 		switch p.Profile.Format {
@@ -399,9 +406,11 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			opts: newAVOpts(p.AudioEncoder.Opts),
 		}
 		vfilt := C.CString(filters)
+		sfilt := C.CString(signfilter)
 		defer C.free(unsafe.Pointer(vidOpts.name))
 		defer C.free(unsafe.Pointer(audioOpts.name))
 		defer C.free(unsafe.Pointer(vfilt))
+		defer C.free(unsafe.Pointer(sfilt))
 		isDNN := C.int(0)
 		if p.Detector != nil {
 			isDNN = C.int(1)
@@ -410,7 +419,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs),
 			muxer:    muxOpts, audio: audioOpts, video: vidOpts,
-			vfilters: vfilt, is_dnn: isDNN}
+			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
+		if p.CalcSign {
+			params[i].sfilters = sfilt
+		}
 		defer func(param *C.output_params) {
 			// Work around the ownership rules:
 			// ffmpeg normally takes ownership of the following AVDictionary options

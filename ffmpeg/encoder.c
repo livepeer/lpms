@@ -150,6 +150,7 @@ void free_output(struct output_ctx *octx)
   if (octx->vc) avcodec_free_context(&octx->vc);
   free_filter(&octx->vf);
   free_filter(&octx->af);
+  free_filter(&octx->sf);
 }
 
 int open_remux_output(struct input_ctx *ictx, struct output_ctx *octx)
@@ -263,6 +264,11 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   ret = avformat_write_header(oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
 
+  if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
+    ret = init_signature_filters(octx, NULL);
+    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
+  }
+
   return 0;
 
 open_output_err:
@@ -295,6 +301,11 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
   }
   ret = avformat_write_header(octx->oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-writing header");
+
+  if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
+    ret = init_signature_filters(octx, NULL);
+    if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to open signature filter");
+  }
 
 reopen_out_err:
   return ret;
@@ -389,6 +400,22 @@ static int getmetadatainf(AVFrame *inf, struct output_ctx *octx)
   return 0;
 }
 
+static int calc_signature(AVFrame *inf, struct output_ctx *octx)
+{
+  int ret = 0;
+  if (inf->hw_frames_ctx && octx->sf.hwframes && inf->hw_frames_ctx->data != octx->sf.hwframes) {
+      free_filter(&octx->sf);
+      ret = init_signature_filters(octx, inf);
+      if (ret < 0) return lpms_ERR_FILTERS;
+  }
+  ret = av_buffersrc_write_frame(octx->sf.src_ctx, inf);
+  if (ret < 0) return ret;
+  AVFrame *signframe = octx->sf.frame;
+  av_frame_unref(signframe);
+  ret = av_buffersink_get_frame(octx->sf.sink_ctx, signframe);
+  return ret;
+}
+
 int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   struct filter_ctx *filter, AVFrame *inf)
 {
@@ -425,6 +452,10 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     if(octx->is_dnn_profile) {
       ret = getmetadatainf(frame, octx);
     } else {
+      if(is_video && frame != NULL && octx->sfilters != NULL) {
+         ret = calc_signature(frame, octx);
+         if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
+      }
       ret = encode(encoder, frame, octx, ost);
     }
     av_frame_unref(frame);
