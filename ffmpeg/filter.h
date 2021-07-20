@@ -39,6 +39,7 @@ struct filter_ctx {
 struct output_ctx {
   char *fname;         // required output file name
   char *vfilters;      // required output video filters
+  char *sfilters;      // required output signature filters
   int width, height, bitrate; // w, h, br required
   AVRational fps;
   AVFormatContext *oc; // muxer required
@@ -46,7 +47,7 @@ struct output_ctx {
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
   int dv, da; // flags whether to drop video or audio
-  struct filter_ctx vf, af;
+  struct filter_ctx vf, af, sf;
 
   // Optional hardware encoding support
   enum AVHWDeviceType hw_type;
@@ -68,6 +69,7 @@ struct output_ctx {
 
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx);
 int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx);
+int init_signature_filters(struct output_ctx *octx, AVFrame *inf);
 int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video);
 int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video);
 void free_filter(struct filter_ctx *filter);

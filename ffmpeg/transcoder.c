@@ -7,6 +7,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavfilter/avfilter.h>
+#include <libavfilter/buffersrc.h>
 #include <stdbool.h>
 
 // Not great to appropriate internal API like this...
@@ -174,6 +175,7 @@ int transcode(struct transcode_thread *h,
       octx->audio = &params[i].audio;
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
+      octx->sfilters = params[i].sfilters;
       octx->is_dnn_profile = (strncmp(octx->vfilters,LVPDNN_FILTER_NAME, strlen(LVPDNN_FILTER_NAME)) == 0 );      
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
@@ -335,6 +337,11 @@ whileloop_end:
     if(outputs[i].is_dnn_profile == 0) {
       ret = flush_outputs(ictx, &outputs[i]);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
+      //send EOF signal to signature filter
+      if(outputs[i].sfilters != NULL) {
+        av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
+        free_filter(&outputs[i].sf);
+      }
     }
     else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0) {
        for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
