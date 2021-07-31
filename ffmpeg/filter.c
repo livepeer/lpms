@@ -6,6 +6,8 @@
 
 #include <libavutil/opt.h>
 
+#include <assert.h>
+ 
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
     char args[512];
@@ -26,7 +28,9 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
     outputs = avfilter_inout_alloc();
     inputs = avfilter_inout_alloc();
-    vf->graph = avfilter_graph_alloc();
+    if (vf->graph == NULL) {
+      vf->graph = avfilter_graph_alloc();
+    }
     vf->pts_diff = INT64_MIN;
     if (!outputs || !inputs || !vf->graph) {
       ret = AVERROR(ENOMEM);
@@ -93,8 +97,25 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
                                     &inputs, &outputs, NULL);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable to parse video filters desc");
 
+    if (octx->is_dnn_profile && vf->graph == *octx->dnn_filtergraph) {
+        // Try to find DNN filter in the pre-initialized graph
+        AVFilterContext *dnn_filter = avfilter_graph_get_filter(vf->graph, "livepeer_dnn");
+        if (!dnn_filter) {
+            ret = AVERROR_FILTER_NOT_FOUND;
+            LPMS_ERR(vf_init_cleanup, "Unable to find DNN filter inside filtergraph");
+        }
+        // Place DNN filter in correct position, i.e. just before the sink
+        assert(vf->sink_ctx->nb_inputs == 1);
+        ret = avfilter_insert_filter(vf->sink_ctx->inputs[0], dnn_filter, 0, 0);
+        // Take ownership of the filtergraph from the thread/output_ctx
+        *octx->dnn_filtergraph = NULL;
+    }
+
     ret = avfilter_graph_config(vf->graph, NULL);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable configure video filtergraph");
+
+    LPMS_DEBUG("Initialized filtergraph: ");
+    LPMS_DEBUG(avfilter_graph_dump(vf->graph, NULL));
 
     vf->frame = av_frame_alloc();
     if (!vf->frame) LPMS_ERR(vf_init_cleanup, "Unable to allocate video frame");
@@ -204,12 +225,16 @@ af_init_cleanup:
 int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video)
 {
   int ret = 0;
-  // Sometimes we have to reset the filter if the HW context is updated
-  // because we initially set the filter before the decoder is fully ready
-  // and the decoder may change HW params
+  // We have to reset the filter because we initially set the filter
+  // before the decoder is fully ready, and the decoder may change HW params
+  // XXX: Unclear if this path is hit on all devices
   if (is_video && inf && inf->hw_frames_ctx && filter->hwframes &&
       inf->hw_frames_ctx->data != filter->hwframes) {
     free_filter(&octx->vf); // XXX really should flush filter first
+    if (octx->dnn_filtergraph) {
+      // swap filtergraph with the pre-initialized DNN filtergraph
+      octx->vf.graph = *octx->dnn_filtergraph;
+    }
     ret = init_video_filters(ictx, octx);
     if (ret < 0) return lpms_ERR_FILTERS;
   }

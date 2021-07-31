@@ -19,4 +19,8 @@ av_log(NULL, AV_LOG_WARNING, "WARNING: %s:%d] %s\n", __FILE__, __LINE__, msg); \
 av_log(NULL, AV_LOG_INFO, "%s:%d] %s\n", __FILE__, __LINE__, msg); \
 }
 
+#define LPMS_DEBUG(msg) {\
+av_log(NULL, AV_LOG_DEBUG, "%s:%d] %s\n", __FILE__, __LINE__, msg); \
+}
+
 #endif // _LPMS_LOGGING_H_

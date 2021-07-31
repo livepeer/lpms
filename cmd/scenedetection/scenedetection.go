@@ -20,7 +20,7 @@ func validRenditions() []string {
 func main() {
 	if len(os.Args) <= 4 {
 		//0,1 input.mp4 P720p25fps16x9,P720p30fps4x3 nv 0
-		panic("Usage:<dnn init deviceids,comma separated> <input file> <output renditions, comma separated> <sw/nv>")
+		panic("Usage:<dnn init deviceid> <input file> <output renditions, comma separated> <sw/nv>")
 	}
 	str2accel := func(inp string) (ffmpeg.Acceleration, string) {
 		if inp == "nv" {
@@ -40,10 +40,29 @@ func main() {
 		}
 		return profs
 	}
-	deviceids := os.Args[1]
+	deviceid := os.Args[1]
 	fname := os.Args[2]
 	profiles := str2profs(os.Args[3])
 	accel, lbl := str2accel(os.Args[4])
+
+	var dev string
+	if accel == ffmpeg.Nvidia {
+		if len(os.Args) <= 5 {
+			panic("Expected device number")
+		}
+		dev = os.Args[5]
+	}
+	ffmpeg.InitFFmpeg()
+
+	t := time.Now()
+	tc, err := ffmpeg.NewTranscoderWithDetector(&ffmpeg.DSceneAdultSoccer, deviceid)
+	defer tc.StopTranscoder()
+	end := time.Now()
+
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("InitFFmpegWithDetectorProfile time %0.4v\n", end.Sub(t).Seconds())
 
 	profs2opts := func(profs []ffmpeg.VideoProfile) []ffmpeg.TranscodeOptions {
 		opts := []ffmpeg.TranscodeOptions{}
@@ -56,10 +75,12 @@ func main() {
 			opts = append(opts, o)
 		}
 		//add detection profile
+		detectorProfile := ffmpeg.DSceneAdultSoccer
+		detectorProfile.SampleRate = 10
 		o := ffmpeg.TranscodeOptions{
-			Oname:    "out_null.mkv",
+			Oname:    fmt.Sprintf("out_dnn.mkv"),
 			Profile:  ffmpeg.P144p30fps16x9,
-			Detector: &ffmpeg.DSceneAdultSoccer,
+			Detector: &detectorProfile,
 			Accel:    accel,
 		}
 		opts = append(opts, o)
@@ -67,27 +88,9 @@ func main() {
 	}
 	options := profs2opts(profiles)
 
-	var dev string
-	if accel == ffmpeg.Nvidia {
-		if len(os.Args) <= 5 {
-			panic("Expected device number")
-		}
-		dev = os.Args[5]
-	}
-
-	t := time.Now()
-	err := ffmpeg.InitFFmpegWithDetectorProfile(&ffmpeg.DSceneAdultSoccer, deviceids)
-	defer ffmpeg.ReleaseFFmpegDetectorProfile()
-	end := time.Now()
-
-	if err != nil {
-		panic("Could not initializ DNN engine!")
-	}
-	fmt.Printf("InitFFmpegWithDetectorProfile time %0.4v\n", end.Sub(t).Seconds())
-
 	t = time.Now()
 	fmt.Printf("Setting fname %s encoding %d renditions with %v\n", fname, len(options), lbl)
-	res, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+	res, err := tc.Transcode(&ffmpeg.TranscodeOptionsIn{
 		Fname:  fname,
 		Accel:  accel,
 		Device: dev,

@@ -32,7 +32,7 @@ var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
 var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 var ErrEmptyData = errors.New("EmptyData")
-var ErrDNNInitialize = errors.New("TranscoderInvalidDNNProfile")
+var ErrDNNInitialize = errors.New("DetectorInitializationError")
 
 type Acceleration int
 
@@ -301,16 +301,14 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 		// if has a detector profile, ignore all video options
 		if p.Detector != nil {
-			deviceid := "0"
-			// FIXME: Hardcoded DNN filter device to 0 for now
-			//if input.Accel != Software && len(input.Device) > 0 {
-			//deviceid = input.Device
-			//}
 			switch p.Detector.Type() {
 			case SceneClassification:
 				detectorProfile := p.Detector.(*SceneClassificationProfile)
-				filters = fmt.Sprintf("lvpdnn=filter_type=lvpclassify:device=%s:model=%s:input=%s:output=%s:sample=%d",
-					deviceid, detectorProfile.ModelPath, detectorProfile.Input, detectorProfile.Output, detectorProfile.SampleRate)
+				// Set samplerate using select filter to prevent unnecessary HW->SW copying
+				filters = fmt.Sprintf("select='not(mod(n\\,%v))'", detectorProfile.SampleRate)
+				if input.Accel != Software {
+					filters += ",hwdownload,format=nv12"
+				}
 			}
 		}
 		var muxOpts C.component_opts
@@ -401,10 +399,15 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		defer C.free(unsafe.Pointer(vidOpts.name))
 		defer C.free(unsafe.Pointer(audioOpts.name))
 		defer C.free(unsafe.Pointer(vfilt))
+		isDNN := C.int(0)
+		if p.Detector != nil {
+			isDNN = C.int(1)
+		}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs),
-			muxer:    muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
+			muxer:    muxOpts, audio: audioOpts, video: vidOpts,
+			vfilters: vfilt, is_dnn: isDNN}
 		defer func(param *C.output_params) {
 			// Work around the ownership rules:
 			// ffmpeg normally takes ownership of the following AVDictionary options
@@ -517,32 +520,29 @@ func InitFFmpeg() {
 	InitFFmpegWithLogLevel(FFLogWarning)
 }
 
-func ReleaseFFmpegDetectorProfile() {
-	C.lpms_dnnrelease()
-}
-func InitFFmpegWithDetectorProfile(detector DetectorProfile, deviceids string) error {
-
+func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Transcoder, error) {
 	switch detector.Type() {
 	case SceneClassification:
 		detectorProfile := detector.(*SceneClassificationProfile)
+		// FIXME: Hardcoded DNN filter device to 0 for now
+		deviceid := "0"
 		dnnOpt := &C.lvpdnn_opts{
 			modelpath:  C.CString(detectorProfile.ModelPath),
 			inputname:  C.CString(detectorProfile.Input),
 			outputname: C.CString(detectorProfile.Output),
-			deviceids:  C.CString(deviceids),
+			deviceid:   C.CString(deviceid),
 		}
 		defer C.free(unsafe.Pointer(dnnOpt.modelpath))
 		defer C.free(unsafe.Pointer(dnnOpt.inputname))
 		defer C.free(unsafe.Pointer(dnnOpt.outputname))
-		defer C.free(unsafe.Pointer(dnnOpt.deviceids))
-
-		ret := int(C.lpms_dnninit(dnnOpt))
-		if 0 != ret {
-			glog.Error("lpms_dnninit Return : ", ErrorMap[ret])
-			return ErrDNNInitialize
+		defer C.free(unsafe.Pointer(dnnOpt.deviceid))
+		handle := C.lpms_transcode_new_with_dnn(dnnOpt)
+		if handle != nil {
+			return &Transcoder{
+				handle: handle,
+				mu:     &sync.Mutex{},
+			}, nil
 		}
 	}
-
-	InitFFmpegWithLogLevel(FFLogWarning)
-	return nil
+	return nil, ErrDNNInitialize
 }

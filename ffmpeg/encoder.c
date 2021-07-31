@@ -201,6 +201,11 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   // add video encoder if a decoder exists and this output requires one
   if (ictx->vc && needs_decoder(octx->video->name)) {
+    if (octx->dnn_filtergraph && !ictx->vc->hw_frames_ctx) {
+      // swap filtergraph with the pre-initialized DNN filtergraph for SW
+      // for HW we handle it later during filter re-init
+      octx->vf.graph = *octx->dnn_filtergraph;
+    }
     ret = init_video_filters(ictx, octx);
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
 

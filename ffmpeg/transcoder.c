@@ -76,26 +76,14 @@ struct transcode_thread {
   struct input_ctx ictx;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
 
-  int nb_outputs;
+  AVFilterGraph *dnn_filtergraph;
 
+  int nb_outputs;
 };
 
 void lpms_init(enum LPMSLogLevel max_level)
 {
   av_log_set_level(max_level);
-}
-
-int lpms_dnninit(lvpdnn_opts *dnn_opts) {
-
-    int res = avfilter_register_lvpdnn(dnn_opts->modelpath,dnn_opts->inputname,dnn_opts->outputname,dnn_opts->deviceids);
-    if(res != 0) {
-      LPMS_WARN("Could not initialize dnn module!");
-    }
-    return res;
-}
-
-void lpms_dnnrelease() {
-  avfilter_remove_lvpdnn();
 }
 
 //
@@ -174,7 +162,10 @@ int transcode(struct transcode_thread *h,
       octx->audio = &params[i].audio;
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
-      octx->is_dnn_profile = (strncmp(octx->vfilters,LVPDNN_FILTER_NAME, strlen(LVPDNN_FILTER_NAME)) == 0 );      
+      if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
+          octx->is_dnn_profile = params[i].is_dnn;
+          octx->dnn_filtergraph = &h->dnn_filtergraph;
+      }
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
       if (params[i].gop_time) octx->gop_time = params[i].gop_time;
@@ -444,7 +435,64 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
     free_output(&handle->outputs[i]);
   }
 
+  if (handle->dnn_filtergraph) avfilter_graph_free(&handle->dnn_filtergraph);
+
   free(handle);
+}
+
+static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
+{
+  const AVFilter *filter = NULL;
+  AVFilterContext *filter_ctx = NULL;
+  AVFilterGraph *graph_ctx = NULL;
+  int ret = 0;
+  char errstr[512];
+  char *filter_name = "livepeer_dnn";
+  char filter_args[512];
+  snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:device=%s",
+           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->deviceid);
+
+  /* allocate graph */
+  graph_ctx = avfilter_graph_alloc();
+  if (!graph_ctx)
+    LPMS_ERR(create_dnn_error, "Unable to open DNN filtergraph");
+
+  /* get a corresponding filter and open it */
+  if (!(filter = avfilter_get_by_name(filter_name))) {
+    snprintf(errstr, sizeof errstr, "Unrecognized filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  /* open filter and add it to the graph */
+  if (!(filter_ctx = avfilter_graph_alloc_filter(graph_ctx, filter, filter_name))) {
+    snprintf(errstr, sizeof errstr, "Impossible to open filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+  if (avfilter_init_str(filter_ctx, filter_args) < 0) {
+    snprintf(errstr, sizeof errstr, "Impossible to init filter '%s' with arguments '%s'\n", filter_name, filter_args);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  return graph_ctx;
+
+create_dnn_error:
+  avfilter_graph_free(&graph_ctx);
+  return NULL;
+}
+
+struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts)
+{
+  struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
+  if (!h) return NULL;
+  memset(h, 0, sizeof *h);
+  AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
+  if (!filtergraph) {
+      free(h);
+      h = NULL;
+  } else {
+      h->dnn_filtergraph = filtergraph;
+  }
+  return h;
 }
 
 void lpms_transcode_discontinuity(struct transcode_thread *handle) {
