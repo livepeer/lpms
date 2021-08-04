@@ -449,8 +449,8 @@ static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
   char errstr[512];
   char *filter_name = "livepeer_dnn";
   char filter_args[512];
-  snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:device=%s",
-           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->deviceid);
+  snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:backend_configs=%s",
+           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->sess_config);
 
   /* allocate graph */
   graph_ctx = avfilter_graph_alloc();

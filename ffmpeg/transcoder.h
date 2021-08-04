@@ -61,7 +61,7 @@ typedef struct {
     char *modelpath;
     char *inputname;
     char *outputname;
-    char *deviceid;
+    char *sess_config;
 } lvpdnn_opts;
 
 typedef struct {

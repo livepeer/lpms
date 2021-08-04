@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"unsafe"
 
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
+	pb "github.com/livepeer/lpms/ffmpeg/proto"
 )
 
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
@@ -524,18 +527,17 @@ func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Tran
 	switch detector.Type() {
 	case SceneClassification:
 		detectorProfile := detector.(*SceneClassificationProfile)
-		// FIXME: Hardcoded DNN filter device to 0 for now
-		deviceid := "0"
+		sessConfig := deviceidToConfigProto(deviceid)
 		dnnOpt := &C.lvpdnn_opts{
-			modelpath:  C.CString(detectorProfile.ModelPath),
-			inputname:  C.CString(detectorProfile.Input),
-			outputname: C.CString(detectorProfile.Output),
-			deviceid:   C.CString(deviceid),
+			modelpath:   C.CString(detectorProfile.ModelPath),
+			inputname:   C.CString(detectorProfile.Input),
+			outputname:  C.CString(detectorProfile.Output),
+			sess_config: C.CString(sessConfig),
 		}
 		defer C.free(unsafe.Pointer(dnnOpt.modelpath))
 		defer C.free(unsafe.Pointer(dnnOpt.inputname))
 		defer C.free(unsafe.Pointer(dnnOpt.outputname))
-		defer C.free(unsafe.Pointer(dnnOpt.deviceid))
+		defer C.free(unsafe.Pointer(dnnOpt.sess_config))
 		handle := C.lpms_transcode_new_with_dnn(dnnOpt)
 		if handle != nil {
 			return &Transcoder{
@@ -545,4 +547,20 @@ func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Tran
 		}
 	}
 	return nil, ErrDNNInitialize
+}
+
+func deviceidToConfigProto(deviceid string) string {
+	configProto := &pb.ConfigProto{GpuOptions: &pb.GPUOptions{AllowGrowth: true, VisibleDeviceList: deviceid}}
+	bytes, err := proto.Marshal(configProto)
+	if err != nil {
+		glog.Errorf("Unable to convert deviceid %v to Tensorflow config protobuf\n", err)
+		return ""
+	}
+	// ffmpeg tensorflow backend expects the bytes in reverse order
+	// so we build it manually
+	sessConfigOpt := "sess_config=0x"
+	for i := len(bytes) - 1; i >= 0; i-- {
+		sessConfigOpt += hex.EncodeToString(bytes[i : i+1])
+	}
+	return sessConfigOpt
 }
