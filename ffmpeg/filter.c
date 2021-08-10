@@ -263,8 +263,7 @@ int init_signature_filters(struct output_ctx *octx, AVFrame *inf)
     if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot create video buffer source");
 
     if (octx->vc && inf && inf->hw_frames_ctx) {
-      AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
-      //srcpar->hw_frames_ctx = av_buffer_ref(inf->hw_frames_ctx);
+      AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();      
       srcpar->hw_frames_ctx = inf->hw_frames_ctx;
       sf->hwframes = inf->hw_frames_ctx->data;
       av_buffersrc_parameters_set(sf->src_ctx, srcpar);
