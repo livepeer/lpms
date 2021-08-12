@@ -7,7 +7,44 @@
 #include <libavutil/opt.h>
 
 #include <assert.h>
- 
+
+int filtergraph_parser(struct filter_ctx *fctx, char* filters_descr, AVFilterInOut **inputs, AVFilterInOut **outputs)
+{
+  int ret = -1;
+  if(fctx == NULL || filters_descr == NULL || inputs == NULL || outputs == NULL)
+    return ret;
+  /*
+   * Set the endpoints for the filter graph. The filter_graph will
+   * be linked to the graph described by filters_descr.
+   */
+
+  /*
+   * The buffer source output must be connected to the input pad of
+   * the first filter described by filters_descr; since the first
+   * filter input label is not specified, it is set to "in" by
+   * default.
+   */
+  (*outputs)->name       = av_strdup("in");
+  (*outputs)->filter_ctx = fctx->src_ctx;
+  (*outputs)->pad_idx    = 0;
+  (*outputs)->next       = NULL;
+
+  /*
+   * The buffer sink input must be connected to the output pad of
+   * the last filter described by filters_descr; since the last
+   * filter output label is not specified, it is set to "out" by
+   * default.
+   */
+  (*inputs)->name       = av_strdup("out");
+  (*inputs)->filter_ctx = fctx->sink_ctx;
+  (*inputs)->pad_idx    = 0;
+  (*inputs)->next       = NULL;
+
+  ret = avfilter_graph_parse_ptr(fctx->graph, filters_descr,
+                                  inputs, outputs, NULL);
+  return ret;
+}
+
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
     char args[512];
@@ -66,35 +103,7 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
                               AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot set output pixel format");
 
-    /*
-     * Set the endpoints for the filter graph. The filter_graph will
-     * be linked to the graph described by filters_descr.
-     */
-
-    /*
-     * The buffer source output must be connected to the input pad of
-     * the first filter described by filters_descr; since the first
-     * filter input label is not specified, it is set to "in" by
-     * default.
-     */
-    outputs->name       = av_strdup("in");
-    outputs->filter_ctx = vf->src_ctx;
-    outputs->pad_idx    = 0;
-    outputs->next       = NULL;
-
-    /*
-     * The buffer sink input must be connected to the output pad of
-     * the last filter described by filters_descr; since the last
-     * filter output label is not specified, it is set to "out" by
-     * default.
-     */
-    inputs->name       = av_strdup("out");
-    inputs->filter_ctx = vf->sink_ctx;
-    inputs->pad_idx    = 0;
-    inputs->next       = NULL;
-
-    ret = avfilter_graph_parse_ptr(vf->graph, filters_descr,
-                                    &inputs, &outputs, NULL);
+    ret = filtergraph_parser(vf, filters_descr, &inputs, &outputs);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable to parse video filters desc");
 
     if (octx->is_dnn_profile && vf->graph == *octx->dnn_filtergraph) {
@@ -176,35 +185,7 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
                                      "out", NULL, NULL, af->graph);
   if (ret < 0) LPMS_ERR(af_init_cleanup, "Cannot create audio buffer sink");
 
-  /*
-   * Set the endpoints for the filter graph. The filter_graph will
-   * be linked to the graph described by filters_descr.
-   */
-
-  /*
-   * The buffer source output must be connected to the input pad of
-   * the first filter described by filters_descr; since the first
-   * filter input label is not specified, it is set to "in" by
-   * default.
-   */
-  outputs->name       = av_strdup("in");
-  outputs->filter_ctx = af->src_ctx;
-  outputs->pad_idx    = 0;
-  outputs->next       = NULL;
-
-  /*
-   * The buffer sink input must be connected to the output pad of
-   * the last filter described by filters_descr; since the last
-   * filter output label is not specified, it is set to "out" by
-   * default.
-   */
-  inputs->name       = av_strdup("out");
-  inputs->filter_ctx = af->sink_ctx;
-  inputs->pad_idx    = 0;
-  inputs->next       = NULL;
-
-  ret = avfilter_graph_parse_ptr(af->graph, filters_descr,
-                                &inputs, &outputs, NULL);
+  ret = filtergraph_parser(af, filters_descr, &inputs, &outputs);
   if (ret < 0) LPMS_ERR(af_init_cleanup, "Unable to parse audio filters desc");
 
   ret = avfilter_graph_config(af->graph, NULL);
@@ -285,35 +266,7 @@ int init_signature_filters(struct output_ctx *octx, AVFrame *inf)
                               AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
     if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot set output pixel format");
 
-    /*
-     * Set the endpoints for the filter graph. The filter_graph will
-     * be linked to the graph described by filters_descr.
-     */
-
-    /*
-     * The buffer source output must be connected to the input pad of
-     * the first filter described by filters_descr; since the first
-     * filter input label is not specified, it is set to "in" by
-     * default.
-     */
-    outputs->name       = av_strdup("in");
-    outputs->filter_ctx = sf->src_ctx;
-    outputs->pad_idx    = 0;
-    outputs->next       = NULL;
-
-    /*
-     * The buffer sink input must be connected to the output pad of
-     * the last filter described by filters_descr; since the last
-     * filter output label is not specified, it is set to "out" by
-     * default.
-     */
-    inputs->name       = av_strdup("out");
-    inputs->filter_ctx = sf->sink_ctx;
-    inputs->pad_idx    = 0;
-    inputs->next       = NULL;
-
-    ret = avfilter_graph_parse_ptr(sf->graph, filters_descr,
-                                    &inputs, &outputs, NULL);
+    ret = filtergraph_parser(sf, filters_descr, &inputs, &outputs);
     if (ret < 0) LPMS_ERR(sf_init_cleanup, "Unable to parse signature filters desc");
 
     ret = avfilter_graph_config(sf->graph, NULL);
