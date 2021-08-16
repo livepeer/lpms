@@ -7,7 +7,44 @@
 #include <libavutil/opt.h>
 
 #include <assert.h>
- 
+
+int filtergraph_parser(struct filter_ctx *fctx, char* filters_descr, AVFilterInOut **inputs, AVFilterInOut **outputs)
+{
+  int ret = -1;
+  if(fctx == NULL || filters_descr == NULL || inputs == NULL || outputs == NULL)
+    return ret;
+  /*
+   * Set the endpoints for the filter graph. The filter_graph will
+   * be linked to the graph described by filters_descr.
+   */
+
+  /*
+   * The buffer source output must be connected to the input pad of
+   * the first filter described by filters_descr; since the first
+   * filter input label is not specified, it is set to "in" by
+   * default.
+   */
+  (*outputs)->name       = av_strdup("in");
+  (*outputs)->filter_ctx = fctx->src_ctx;
+  (*outputs)->pad_idx    = 0;
+  (*outputs)->next       = NULL;
+
+  /*
+   * The buffer sink input must be connected to the output pad of
+   * the last filter described by filters_descr; since the last
+   * filter output label is not specified, it is set to "out" by
+   * default.
+   */
+  (*inputs)->name       = av_strdup("out");
+  (*inputs)->filter_ctx = fctx->sink_ctx;
+  (*inputs)->pad_idx    = 0;
+  (*inputs)->next       = NULL;
+
+  ret = avfilter_graph_parse_ptr(fctx->graph, filters_descr,
+                                  inputs, outputs, NULL);
+  return ret;
+}
+
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
     char args[512];
@@ -66,35 +103,7 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
                               AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot set output pixel format");
 
-    /*
-     * Set the endpoints for the filter graph. The filter_graph will
-     * be linked to the graph described by filters_descr.
-     */
-
-    /*
-     * The buffer source output must be connected to the input pad of
-     * the first filter described by filters_descr; since the first
-     * filter input label is not specified, it is set to "in" by
-     * default.
-     */
-    outputs->name       = av_strdup("in");
-    outputs->filter_ctx = vf->src_ctx;
-    outputs->pad_idx    = 0;
-    outputs->next       = NULL;
-
-    /*
-     * The buffer sink input must be connected to the output pad of
-     * the last filter described by filters_descr; since the last
-     * filter output label is not specified, it is set to "out" by
-     * default.
-     */
-    inputs->name       = av_strdup("out");
-    inputs->filter_ctx = vf->sink_ctx;
-    inputs->pad_idx    = 0;
-    inputs->next       = NULL;
-
-    ret = avfilter_graph_parse_ptr(vf->graph, filters_descr,
-                                    &inputs, &outputs, NULL);
+    ret = filtergraph_parser(vf, filters_descr, &inputs, &outputs);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable to parse video filters desc");
 
     if (octx->is_dnn_profile && vf->graph == *octx->dnn_filtergraph) {
@@ -176,35 +185,7 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
                                      "out", NULL, NULL, af->graph);
   if (ret < 0) LPMS_ERR(af_init_cleanup, "Cannot create audio buffer sink");
 
-  /*
-   * Set the endpoints for the filter graph. The filter_graph will
-   * be linked to the graph described by filters_descr.
-   */
-
-  /*
-   * The buffer source output must be connected to the input pad of
-   * the first filter described by filters_descr; since the first
-   * filter input label is not specified, it is set to "in" by
-   * default.
-   */
-  outputs->name       = av_strdup("in");
-  outputs->filter_ctx = af->src_ctx;
-  outputs->pad_idx    = 0;
-  outputs->next       = NULL;
-
-  /*
-   * The buffer sink input must be connected to the output pad of
-   * the last filter described by filters_descr; since the last
-   * filter output label is not specified, it is set to "out" by
-   * default.
-   */
-  inputs->name       = av_strdup("out");
-  inputs->filter_ctx = af->sink_ctx;
-  inputs->pad_idx    = 0;
-  inputs->next       = NULL;
-
-  ret = avfilter_graph_parse_ptr(af->graph, filters_descr,
-                                &inputs, &outputs, NULL);
+  ret = filtergraph_parser(af, filters_descr, &inputs, &outputs);
   if (ret < 0) LPMS_ERR(af_init_cleanup, "Unable to parse audio filters desc");
 
   ret = avfilter_graph_config(af->graph, NULL);
@@ -220,6 +201,87 @@ af_init_cleanup:
   avfilter_inout_free(&outputs);
 
   return ret;
+}
+
+int init_signature_filters(struct output_ctx *octx, AVFrame *inf)
+{
+    char args[512];
+    int ret = 0;
+    const AVFilter *buffersrc  = avfilter_get_by_name("buffer");
+    const AVFilter *buffersink = avfilter_get_by_name("buffersink");
+    AVFilterInOut *outputs = NULL;
+    AVFilterInOut *inputs  = NULL;
+    AVRational time_base = octx->oc->streams[0]->time_base;
+    enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
+    struct filter_ctx *sf = &octx->sf;
+    char *filters_descr = octx->sfilters;
+    enum AVPixelFormat in_pix_fmt = octx->vc->pix_fmt;
+    if(octx->sfilters == NULL || strlen(octx->sfilters) <= 0) goto sf_init_cleanup;
+
+    // no need for filters with the following conditions
+    if (sf->active) goto sf_init_cleanup; // already initialized
+    if (!needs_decoder(octx->video->name)) goto sf_init_cleanup;
+
+    outputs = avfilter_inout_alloc();
+    inputs = avfilter_inout_alloc();
+    sf->graph = avfilter_graph_alloc();
+    sf->pts_diff = INT64_MIN;
+    if (!outputs || !inputs || !sf->graph) {
+      ret = AVERROR(ENOMEM);
+      LPMS_ERR(sf_init_cleanup, "Unable to allocate filters");
+    }
+    if (octx->vc->hw_device_ctx) in_pix_fmt = hw2pixfmt(octx->vc);
+
+    /* buffer video source: the scaled frames from the decoder will be inserted here. */
+    snprintf(args, sizeof args,
+		  "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+		  octx->vc->width, octx->vc->height, in_pix_fmt,
+		  time_base.num, time_base.den,
+		  octx->vc->sample_aspect_ratio.num, octx->vc->sample_aspect_ratio.den);
+
+    ret = avfilter_graph_create_filter(&sf->src_ctx, buffersrc,
+                                       "in", args, NULL, sf->graph);
+    if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot create video buffer source");
+
+    if (octx->vc && inf && inf->hw_frames_ctx) {
+      AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();      
+      srcpar->hw_frames_ctx = inf->hw_frames_ctx;
+      sf->hwframes = inf->hw_frames_ctx->data;
+      av_buffersrc_parameters_set(sf->src_ctx, srcpar);
+      av_freep(&srcpar);
+    } else if (octx->vc && octx->vc->hw_frames_ctx) {
+      AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
+      srcpar->hw_frames_ctx = octx->vc->hw_frames_ctx;
+      sf->hwframes = octx->vc->hw_frames_ctx->data;
+      av_buffersrc_parameters_set(sf->src_ctx, srcpar);
+      av_freep(&srcpar);
+    }
+
+    /* buffer video sink: to terminate the filter chain. */
+    ret = avfilter_graph_create_filter(&sf->sink_ctx, buffersink,
+                                       "out", NULL, NULL, sf->graph);
+    if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot create video buffer sink");
+
+    ret = av_opt_set_int_list(sf->sink_ctx, "pix_fmts", pix_fmts,
+                              AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot set output pixel format");
+
+    ret = filtergraph_parser(sf, filters_descr, &inputs, &outputs);
+    if (ret < 0) LPMS_ERR(sf_init_cleanup, "Unable to parse signature filters desc");
+
+    ret = avfilter_graph_config(sf->graph, NULL);
+    if (ret < 0) LPMS_ERR(sf_init_cleanup, "Unable configure signature filtergraph");
+
+    sf->frame = av_frame_alloc();
+    if (!sf->frame) LPMS_ERR(sf_init_cleanup, "Unable to allocate video frame");
+
+    sf->active = 1;
+
+sf_init_cleanup:
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+
+    return ret;
 }
 
 int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video)

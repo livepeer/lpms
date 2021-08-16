@@ -36,6 +36,7 @@ var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 var ErrEmptyData = errors.New("EmptyData")
 var ErrDNNInitialize = errors.New("DetectorInitializationError")
+var ErrSignCompare = errors.New("InvalidSignData")
 
 type Acceleration int
 
@@ -70,6 +71,7 @@ type TranscodeOptions struct {
 	Detector DetectorProfile
 	Accel    Acceleration
 	Device   string
+	CalcSign bool
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -114,6 +116,44 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	bres := int(C.lpms_is_bypass_needed(cfname))
 	ow.Close()
 	return bres == 1, nil
+}
+
+// compare two signature files whether those matches or not
+func CompareSignatureByPath(fname1 string, fname2 string) (bool, error) {
+	if len(fname1) <= 0 || len(fname2) <= 0 {
+		return false, nil
+	}
+	cfpath1 := C.CString(fname1)
+	defer C.free(unsafe.Pointer(cfpath1))
+	cfpath2 := C.CString(fname2)
+	defer C.free(unsafe.Pointer(cfpath2))
+
+	res := int(C.lpms_compare_sign_bypath(cfpath1, cfpath2))
+
+	if res > 0 {
+		return true, nil
+	} else if res == 0 {
+		return false, nil
+	} else {
+		return false, ErrSignCompare
+	}
+}
+
+// compare two signature buffers whether those matches or not
+func CompareSignatureByBuffer(data1 []byte, data2 []byte) (bool, error) {
+
+	pdata1 := unsafe.Pointer(&data1[0])
+	pdata2 := unsafe.Pointer(&data2[0])
+
+	res := int(C.lpms_compare_sign_bybuffer(pdata1, C.int(len(data1)), pdata2, C.int(len(data2))))
+
+	if res > 0 {
+		return true, nil
+	} else if res == 0 {
+		return false, nil
+	} else {
+		return false, ErrSignCompare
+	}
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
@@ -410,7 +450,18 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs),
 			muxer:    muxOpts, audio: audioOpts, video: vidOpts,
-			vfilters: vfilt, is_dnn: isDNN}
+			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
+		if p.CalcSign {
+			//signfilter string
+			signfilter := fmt.Sprintf("signature=filename=%s.bin", p.Oname)
+			if p.Accel == Nvidia {
+				// needed for hw scale -> hwdownload -> sw signature -> sign.bin
+				signfilter = "hwdownload,format=nv12," + signfilter
+			}
+			sfilt := C.CString(signfilter)
+			params[i].sfilters = sfilt
+			defer C.free(unsafe.Pointer(sfilt))
+		}
 		defer func(param *C.output_params) {
 			// Work around the ownership rules:
 			// ffmpeg normally takes ownership of the following AVDictionary options

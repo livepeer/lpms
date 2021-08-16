@@ -8,4 +8,5 @@ require (
 	github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded
 	github.com/livepeer/m3u8 v0.11.1
 	google.golang.org/protobuf v1.26.0
+	github.com/olekukonko/tablewriter v0.0.5 // indirect
 )
