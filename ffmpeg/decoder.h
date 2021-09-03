@@ -57,7 +57,7 @@ int open_audio_decoder(input_params *params, struct input_ctx *ctx);
 void free_input(struct input_ctx *inctx);
 
 // Utility functions
-inline int is_flush_frame(AVFrame *frame)
+static inline int is_flush_frame(AVFrame *frame)
 {
   return -1 == frame->pts;
 }
