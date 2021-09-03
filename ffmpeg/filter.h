@@ -76,15 +76,15 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
 void free_filter(struct filter_ctx *filter);
 
 // UTILS
-inline int is_copy(char *encoder) {
+static inline int is_copy(char *encoder) {
   return encoder && !strcmp("copy", encoder);
 }
 
-inline int is_drop(char *encoder) {
+static inline int is_drop(char *encoder) {
   return !encoder || !strcmp("drop", encoder) || !strcmp("", encoder);
 }
 
-inline int needs_decoder(char *encoder) {
+static inline int needs_decoder(char *encoder) {
   // Checks whether the given "encoder" depends on having a decoder.
   // Do this by enumerating special cases that do *not* need encoding
   return !(is_copy(encoder) || is_drop(encoder));
