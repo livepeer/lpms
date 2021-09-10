@@ -167,3 +167,13 @@ go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30f
 ```
 
 You can follow the development of LPMS and Livepeer @ our [forum](http://forum.livepeer.org)
+
+### Contribute
+
+Thank you for your interest in contributing to LPMS!
+
+To get started:
+
+- Read the [contribution guide](doc/contributing.md)
+- Check out the [open issues](https://github.com/livepeer/lpms/issues)
+- Join the #dev channel in the [Discord](https://discord.gg/uaPhtyrWsF)
