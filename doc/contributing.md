@@ -1,5 +1,5 @@
 # Contributing
-Thank you for interest in contributing to LivePeer ecosystem.
+Thank you for your interest in contributing to Livepeer Media Server.
 
 # Working on Go code
 If your goal is making changes solely to Go part of the codebase, just follow [Requirements](https://github.com/livepeer/lpms/#requirements) section and make sure you have all dependencies to build Go scripts successfully. Debugging with Delve, GDB, or, visually, with IDE (e.g. JetBrains GoLand, Microsoft VS Code) should work fine.
