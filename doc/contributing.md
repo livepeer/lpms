@@ -5,9 +5,9 @@ Thank you for your interest in contributing to Livepeer Media Server.
 If your goal is making changes solely to Go part of the codebase, just follow [Requirements](https://github.com/livepeer/lpms/#requirements) section and make sure you have all dependencies to build Go scripts successfully. Debugging with Delve, GDB, or, visually, with IDE (e.g. JetBrains GoLand, Microsoft VS Code) should work fine.
 
 # Working on CGO interface and FFMpeg code
-When working on CGO interface, or [FFmpeg](https://github.com/livepeer/FFmpeg/) fork, chances are you might want to create a separate debug build of all components. 
+When working on CGO interface, or [FFmpeg](https://github.com/livepeer/FFmpeg/) fork, chances are you might want to create a separate debug build of all components. While production build links with static libraries of Ffmpeg, it's more convenient to use shared libraries for debugging, because this way there's no need to re-build GO executable after every change in Ffmpeg code.
 
-To do it:
+## Preparing debug build
 1. Copy `~/compiled` dir created by `install_ffmpeg.sh` to `compiled_debug`
 2. If you want to keep system-wide Ffmpeg installation, remove/rename system `pkg-config` (.pc) files of Ffmpeg libs (located in `/usr/local/lib/pkgconfig/` on most Linux distros). Otherwise, `pkg-config` will prioritize system libs without debug information.
 3. [FFmpeg](https://github.com/livepeer/FFmpeg/) should be already cloned after running `install_ffmpeg.sh`. Navigate to FFmpeg dir and run `configure` as below, making sure all paths are correct.
@@ -33,22 +33,31 @@ To do it:
         --enable-debug=3                \
         --disable-optimizations \
         --disable-stripping
+        --disable-static
+        --enable-shared
     ```
 4. Run `make install`
-5. Make sure there are debug symbols in newly built static libs:
-    ```
-    objdump --syms compiled_debug/lib/libavcodec.a
-    ```
-6. Now you can build Go apps with debug information. Use absolute path in `PKG_CONFIG_PATH` to point to `compiled_debug` dir:
+5. Build Go apps with debug information. Use absolute path in `PKG_CONFIG_PATH` to point to `compiled_debug` dir:
     ```
     PKG_CONFIG_PATH=/projects/livepeer/src/compiled_debug/lib/pkgconfig go build -a -gcflags all="-N -l" cmd/scenedetection/scenedetection.go
     ```
-7. Check that Go executable linked correctly. You shouldn't see any FFmpeg's dynamic libraries in LDD output for newly built binary (e.g. `libavcodec.so`).
-    ```
-    ldd ./scenedetection
-    ```
-7. Finally, run the binary with GDB. If linking with dynamic libraries, `LD_LIBRARY_PATH` should point to `compiled_debug` dir:
+6. Finally, run the binary with GDB. `LD_LIBRARY_PATH` should point to `compiled_debug` dir:
     ```
     LD_LIBRARY_PATH="../compiled_debug/lib/" gdb --args scenedetection 0 ../bbb/source.m3u P144p30fps16x9 nv 0
     ```
-8. Optionally, you can install `gdbgui` with `pip install gdbgui` and use it in place of `gdb` for visual debugging.  
+7. Optionally, you can install `gdbgui` with `pip install gdbgui` and use it in place of `gdb` for visual debugging.  
+
+## Potential issues
+### 1. No source file named X when setting breakpoint with GDB
+Make sure that:
+* Your executable is linked against (can find) correct libraries
+    ```
+    LD_LIBRARY_PATH="../compiled_debug/lib/" ldd ./scenedetection
+    ```
+* Your executable / libraries has debug information
+    ```
+    objdump --syms compiled_debug/lib/libavcodec.so
+    ```
+
+### 2. Cannot cross GO->CGO->LIB boundary when stepping with GDB
+Unfortunately, this is a limitation of GDB when debugging GO code. A workaround is to set separate breakpoints and navigate between them with `continue`.
