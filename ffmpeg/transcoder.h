@@ -62,7 +62,7 @@ typedef struct {
     char *modelpath;
     char *inputname;
     char *outputname;
-    char *sess_config;
+    char *backend_configs;
 } lvpdnn_opts;
 
 typedef struct {

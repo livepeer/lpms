@@ -578,17 +578,17 @@ func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Tran
 	switch detector.Type() {
 	case SceneClassification:
 		detectorProfile := detector.(*SceneClassificationProfile)
-		sessConfig := deviceidToConfigProto(deviceid)
+		backendConfigs := createBackendConfig(deviceid)
 		dnnOpt := &C.lvpdnn_opts{
 			modelpath:   C.CString(detectorProfile.ModelPath),
 			inputname:   C.CString(detectorProfile.Input),
 			outputname:  C.CString(detectorProfile.Output),
-			sess_config: C.CString(sessConfig),
+			backend_configs: C.CString(backendConfigs),
 		}
 		defer C.free(unsafe.Pointer(dnnOpt.modelpath))
 		defer C.free(unsafe.Pointer(dnnOpt.inputname))
 		defer C.free(unsafe.Pointer(dnnOpt.outputname))
-		defer C.free(unsafe.Pointer(dnnOpt.sess_config))
+		defer C.free(unsafe.Pointer(dnnOpt.backend_configs))
 		handle := C.lpms_transcode_new_with_dnn(dnnOpt)
 		if handle != nil {
 			return &Transcoder{
@@ -600,16 +600,15 @@ func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Tran
 	return nil, ErrDNNInitialize
 }
 
-func deviceidToConfigProto(deviceid string) string {
-	configProto := &pb.ConfigProto{GpuOptions: &pb.GPUOptions{AllowGrowth: true, VisibleDeviceList: deviceid}}
+func createBackendConfig(deviceid string) string {
+	configProto := &pb.ConfigProto{GpuOptions: &pb.GPUOptions{AllowGrowth: true}}
 	bytes, err := proto.Marshal(configProto)
 	if err != nil {
 		glog.Errorf("Unable to convert deviceid %v to Tensorflow config protobuf\n", err)
 		return ""
 	}
-	// ffmpeg tensorflow backend expects the bytes in reverse order
-	// so we build it manually
-	sessConfigOpt := "sess_config=0x"
+	sessConfigOpt := fmt.Sprintf("device_id=%s&sess_config=0x", deviceid)
+	// serialize TF config proto as hex
 	for i := len(bytes) - 1; i >= 0; i-- {
 		sessConfigOpt += hex.EncodeToString(bytes[i : i+1])
 	}
