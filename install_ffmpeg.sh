@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 set -ex
 
 export PATH="$HOME/compiled/bin":$PATH
@@ -33,7 +35,7 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/livepeer/FFmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
 
-  git checkout 86997f6261671327ee05d598f38acabf8ebfd088
+  git checkout a62d116dd038e9cfabbc5f1c4f44f713210445d8
 
   ./configure --prefix="$HOME/compiled" --enable-libx264 --enable-gnutls --enable-gpl --enable-static
   make
