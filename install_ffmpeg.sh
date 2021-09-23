@@ -35,7 +35,7 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/livepeer/FFmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
 
-  git checkout a62d116dd038e9cfabbc5f1c4f44f713210445d8
+  git checkout 247a511f8c5efac6c4f1cc5ee4675e3a0b039fad
 
   ./configure --prefix="$HOME/compiled" --enable-libx264 --enable-gnutls --enable-gpl --enable-static
   make
