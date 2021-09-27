@@ -459,7 +459,7 @@ static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
   char *filter_name = "livepeer_dnn";
   char filter_args[512];
   snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:backend_configs=%s",
-           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->sess_config);
+           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->backend_configs);
 
   /* allocate graph */
   graph_ctx = avfilter_graph_alloc();
