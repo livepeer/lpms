@@ -455,8 +455,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			//signfilter string
 			signfilter := fmt.Sprintf("signature=filename=%s.bin", p.Oname)
 			if p.Accel == Nvidia {
-				// needed for hw scale -> hwdownload -> sw signature -> sign.bin
-				signfilter = "hwdownload,format=nv12," + signfilter
+				//hw frame -> cuda signature -> sign.bin
+				signfilter = fmt.Sprintf("signature_cuda=filename=%s.bin", p.Oname)
 			}
 			sfilt := C.CString(signfilter)
 			params[i].sfilters = sfilt
