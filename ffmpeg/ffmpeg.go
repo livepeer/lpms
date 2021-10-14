@@ -500,6 +500,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		glog.Error("Transcoder Return : ", ErrorMap[ret])
+		if ret == int(C.lpms_ERR_UNRECOVERABLE) {
+			panic(ErrorMap[ret])
+		}
 		return nil, ErrorMap[ret]
 	}
 	tr := make([]MediaInfo, len(ps))
@@ -580,9 +583,9 @@ func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Tran
 		detectorProfile := detector.(*SceneClassificationProfile)
 		backendConfigs := createBackendConfig(deviceid)
 		dnnOpt := &C.lvpdnn_opts{
-			modelpath:   C.CString(detectorProfile.ModelPath),
-			inputname:   C.CString(detectorProfile.Input),
-			outputname:  C.CString(detectorProfile.Output),
+			modelpath:       C.CString(detectorProfile.ModelPath),
+			inputname:       C.CString(detectorProfile.Input),
+			outputname:      C.CString(detectorProfile.Output),
 			backend_configs: C.CString(backendConfigs),
 		}
 		defer C.free(unsafe.Pointer(dnnOpt.modelpath))

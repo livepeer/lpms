@@ -262,6 +262,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
 
 open_decoder_err:
   free_input(ctx);
+  if (ret == AVERROR_UNKNOWN) ret = lpms_ERR_UNRECOVERABLE;
   return ret;
 }
 
