@@ -453,10 +453,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
 		if p.CalcSign {
 			//signfilter string
-			signfilter := fmt.Sprintf("signature=filename=%s.bin", p.Oname)
+			signfilter := fmt.Sprintf("signature=filename='%s.bin'", p.Oname)
 			if p.Accel == Nvidia {
 				//hw frame -> cuda signature -> sign.bin
-				signfilter = fmt.Sprintf("signature_cuda=filename=%s.bin", p.Oname)
+				signfilter = fmt.Sprintf("signature_cuda=filename='%s.bin'", p.Oname)
 			}
 			sfilt := C.CString(signfilter)
 			params[i].sfilters = sfilt
