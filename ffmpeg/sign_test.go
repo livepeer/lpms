@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -42,8 +43,57 @@ func Test_SignDataCreate(t *testing.T) {
 	if os.IsNotExist(err) == false {
 		t.Error(err)
 	}
-
 }
+
+func Test_SignUnescapedFilepath(t *testing.T) {
+	_, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Test an output file name that contains special chars
+	// like ":" and "\" that FFmpeg treats differently in AVOption
+	oname, err := filepath.Abs(dir + "/out:720p\\test.ts")
+	if err != nil {
+		t.Error(err)
+	}
+	in := &TranscodeOptionsIn{Fname: "../transcoder/test.ts"}
+	out := []TranscodeOptions{{
+		Oname:        oname,
+		Profile:      P720p60fps16x9,
+		AudioEncoder: ComponentOptions{Name: "copy"},
+		CalcSign:     true,
+	}}
+	_, err = Transcode3(in, out)
+
+	// Our transcoder module should correctly escape those characters
+	// before passing them onto the signature filter
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = os.Stat(oname + ".bin")
+	if os.IsNotExist(err) {
+		t.Error(err)
+	}
+
+	// Test same output file, but with a windows style absolute path
+	// need to prefix it like /tmp/<dir>/ on unix systems, because without it
+	// ffmpeg thinks it's a protocol called "C"
+	out = []TranscodeOptions{{
+		Oname:        dir + "/" + "C:\\Users\\test\\.lpData\\out720ptest.ts",
+		Profile:      P720p60fps16x9,
+		AudioEncoder: ComponentOptions{Name: "copy"},
+		CalcSign:     true,
+	}}
+	_, err = Transcode3(in, out)
+
+	if err != nil {
+		t.Error(err)
+	}
+	_, err = os.Stat(oname + ".bin")
+	if os.IsNotExist(err) {
+		t.Error(err)
+	}
+}
+
 func Test_SignDataCompare(t *testing.T) {
 
 	res, err := CompareSignatureByPath("../data/sign_sw1.bin", "../data/sign_nv1.bin")
