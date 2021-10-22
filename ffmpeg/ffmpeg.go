@@ -453,10 +453,11 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
 		if p.CalcSign {
 			//signfilter string
-			signfilter := fmt.Sprintf("signature=filename='%s.bin'", p.Oname)
+			escapedOname := ffmpegStrEscape(p.Oname)
+			signfilter := fmt.Sprintf("signature=filename='%s.bin'", escapedOname)
 			if p.Accel == Nvidia {
 				//hw frame -> cuda signature -> sign.bin
-				signfilter = fmt.Sprintf("signature_cuda=filename='%s.bin'", p.Oname)
+				signfilter = fmt.Sprintf("signature_cuda=filename='%s.bin'", escapedOname)
 			}
 			sfilt := C.CString(signfilter)
 			params[i].sfilters = sfilt
@@ -616,4 +617,10 @@ func createBackendConfig(deviceid string) string {
 		sessConfigOpt += hex.EncodeToString(bytes[i : i+1])
 	}
 	return sessConfigOpt
+}
+
+func ffmpegStrEscape(origStr string) string {
+	tmpStr := strings.ReplaceAll(origStr, "\\", "\\\\")
+	outStr := strings.ReplaceAll(tmpStr, ":", "\\:")
+	return outStr
 }
