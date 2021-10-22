@@ -362,7 +362,7 @@ transcode_cleanup:
   if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
   for (i = 0; i < nb_outputs; i++) {
     //send EOF signal to signature filter
-    if(outputs[i].sfilters != NULL) {
+    if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
       av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
       free_filter(&outputs[i].sf);
     }
