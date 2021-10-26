@@ -34,7 +34,7 @@ var (
 		SampleRate: 30,
 		ModelPath:  "tasmodel.pb",
 		Input:      "input_1",
-		Output:     "reshape_3/Reshape",
+		Output:     "Identity",
 		Classes:    []DetectorClass{{ID: 0, Name: "adult"}, {ID: 1, Name: "soccer"}},
 	}
 	DSceneViolence = SceneClassificationProfile{
