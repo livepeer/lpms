@@ -456,7 +456,7 @@ static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
   AVFilterContext *filter_ctx = NULL;
   AVFilterGraph *graph_ctx = NULL;
   int ret = 0;
-  char errstr[512];
+  char errstr[1024];
   char *filter_name = "livepeer_dnn";
   char filter_args[512];
   snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:backend_configs=%s",
