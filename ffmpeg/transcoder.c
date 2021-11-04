@@ -203,6 +203,13 @@ int transcode(struct transcode_thread *h,
   dframe = av_frame_alloc();
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
 
+
+  // keep track of last dts in each stream.
+  // used while transmuxing, to skip packets with invalid dts.
+  int64_t last_dts[MAX_OUTPUT_SIZE];
+  for (i = 0; i < MAX_OUTPUT_SIZE; i++) {
+    last_dts[i] = -1;
+  }
   while (1) {
     // DEMUXING & DECODING
     int has_frame = 0;
@@ -257,12 +264,17 @@ int transcode(struct transcode_thread *h,
 
       ipkt->pts += ictx->dts_diff;
       ipkt->dts += ictx->dts_diff;
-
-      if (ipkt->stream_index == 0) {
-        ictx->last_dts = ipkt->dts;
-        if (ipkt->duration) {
-          ictx->last_duration = ipkt->duration;
+      if (ipkt->stream_index < MAX_OUTPUT_SIZE) {
+        if (last_dts[ipkt->stream_index] > -1 && ipkt->dts <= last_dts[ipkt->stream_index])  {
+          // skip packet if dts is equal or lesst than previous one
+          goto whileloop_end;
         }
+        last_dts[ipkt->stream_index] = ipkt->dts;
+      }
+
+      ictx->last_dts = ipkt->dts > ictx->last_dts ? ipkt->dts : ictx->last_dts;
+      if (ipkt->duration) {
+        ictx->last_duration = ipkt->duration;
       }
     }
 
