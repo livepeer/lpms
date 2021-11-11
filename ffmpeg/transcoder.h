@@ -58,6 +58,7 @@ typedef struct {
 #define MAX_CLASSIFY_SIZE 10
 #define LVPDNN_FILTER_NAME "lvpdnn"
 #define LVPDNN_FILTER_META "lavfi.lvpdnn.text"
+#define MAX_OUTPUT_SIZE 10
 
 typedef struct {
     char *modelpath;
