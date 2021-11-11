@@ -36,13 +36,14 @@ struct input_ctx {
 
   // transmuxing specific fields:
   // last non-zero duration
-  int64_t last_duration;
+  int64_t last_duration[MAX_OUTPUT_SIZE];
+  // keep track of last dts in each stream.
+  // used while transmuxing, to skip packets with invalid dts.
+  int64_t last_dts[MAX_OUTPUT_SIZE];
   //
-  int64_t last_dts;
+  int64_t dts_diff[MAX_OUTPUT_SIZE];
   //
-  int64_t dts_diff;
-  //
-  int discontinuity;
+  int discontinuity[MAX_OUTPUT_SIZE];
   // Transmuxing mode. Close output in lpms_transcode_stop instead of
   // at the end of lpms_transcode call.
   int transmuxing;

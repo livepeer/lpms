@@ -70,8 +70,6 @@ const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 //           avcodec_flush_buffers to flush the encoder.
 //
 
-#define MAX_OUTPUT_SIZE 10
-
 struct transcode_thread {
   int initialized;
 
@@ -204,12 +202,6 @@ int transcode(struct transcode_thread *h,
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
 
 
-  // keep track of last dts in each stream.
-  // used while transmuxing, to skip packets with invalid dts.
-  int64_t last_dts[MAX_OUTPUT_SIZE];
-  for (i = 0; i < MAX_OUTPUT_SIZE; i++) {
-    last_dts[i] = -1;
-  }
   while (1) {
     // DEMUXING & DECODING
     int has_frame = 0;
@@ -251,30 +243,26 @@ int transcode(struct transcode_thread *h,
       av_frame_ref(last_frame, dframe);
     }
     if (ictx->transmuxing) {
-      // decoded_results->frames++;
       ist = ictx->ic->streams[ipkt->stream_index];
       if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
         decoded_results->frames++;
       }
-      if (ictx->discontinuity) {
-        // calc dts diff
-        ictx->dts_diff = ictx->last_dts + ictx->last_duration - ipkt->dts;
-        ictx->discontinuity = 0;
-      }
-
-      ipkt->pts += ictx->dts_diff;
-      ipkt->dts += ictx->dts_diff;
       if (ipkt->stream_index < MAX_OUTPUT_SIZE) {
-        if (last_dts[ipkt->stream_index] > -1 && ipkt->dts <= last_dts[ipkt->stream_index])  {
-          // skip packet if dts is equal or lesst than previous one
+        if (ictx->discontinuity[ipkt->stream_index]) {
+          // calc dts diff
+          ictx->dts_diff[ipkt->stream_index] = ictx->last_dts[ipkt->stream_index] + ictx->last_duration[ipkt->stream_index] - ipkt->dts;
+          ictx->discontinuity[ipkt->stream_index] = 0;
+        }
+        ipkt->pts += ictx->dts_diff[ipkt->stream_index];
+        ipkt->dts += ictx->dts_diff[ipkt->stream_index];
+        if (ictx->last_dts[ipkt->stream_index] > -1 && ipkt->dts <= ictx->last_dts[ipkt->stream_index])  {
+          // skip packet if dts is equal or less than previous one
           goto whileloop_end;
         }
-        last_dts[ipkt->stream_index] = ipkt->dts;
-      }
-
-      ictx->last_dts = ipkt->dts > ictx->last_dts ? ipkt->dts : ictx->last_dts;
-      if (ipkt->duration) {
-        ictx->last_duration = ipkt->duration;
+        ictx->last_dts[ipkt->stream_index] = ipkt->dts;
+        if (ipkt->duration) {
+          ictx->last_duration[ipkt->stream_index] = ipkt->duration;
+        }
       }
     }
 
@@ -439,6 +427,11 @@ struct transcode_thread* lpms_transcode_new() {
   struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
   if (!h) return NULL;
   memset(h, 0, sizeof *h);
+  // keep track of last dts in each stream.
+  // used while transmuxing, to skip packets with invalid dts.
+  for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
+    h->ictx.last_dts[i] = -1;
+  }
   return h;
 }
 
@@ -520,5 +513,7 @@ struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts)
 void lpms_transcode_discontinuity(struct transcode_thread *handle) {
   if (!handle)
     return;
-  handle->ictx.discontinuity = 1;
+  for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
+    handle->ictx.discontinuity[i] = 1;
+  }
 }
