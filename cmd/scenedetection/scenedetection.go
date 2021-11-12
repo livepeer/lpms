@@ -76,7 +76,7 @@ func main() {
 		}
 		//add detection profile
 		detectorProfile := ffmpeg.DSceneAdultSoccer
-		detectorProfile.SampleRate = 10
+		detectorProfile.SampleRate = 100
 		o := ffmpeg.TranscodeOptions{
 			Oname:    fmt.Sprintf("out_dnn.mkv"),
 			Profile:  ffmpeg.P144p30fps16x9,
