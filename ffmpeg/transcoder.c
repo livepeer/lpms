@@ -143,11 +143,11 @@ int transcode(struct transcode_thread *h,
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen file");
   } else reopen_decoders = 0;
   if (reopen_decoders) {
-    // XXX check to see if we can also reuse decoder for sw decoding
-    if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
+    // XXX Forcing reuse of decoder for sw/hw/netint
+    /*if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
       ret = open_video_decoder(inp, ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video decoder");
-    }
+    }*/
     ret = open_audio_decoder(inp, ictx);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen audio decoder")
   }
@@ -359,7 +359,8 @@ transcode_cleanup:
   if (ipkt) av_packet_free(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
-  if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
+  // XXX no longer closing decoder between segments for sw/hw/netint
+  // if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
   for (i = 0; i < nb_outputs; i++) {
     //send EOF signal to signature filter
     if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
