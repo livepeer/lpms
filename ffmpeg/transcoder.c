@@ -170,6 +170,8 @@ int transcode(struct transcode_thread *h,
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
       if (params[i].gop_time) octx->gop_time = params[i].gop_time;
+      if (params[i].from) octx->clip_from = params[i].from;
+      if (params[i].to) octx->clip_to = params[i].to;
       octx->dv = ictx->vi < 0 || is_drop(octx->video->name);
       octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
       octx->res = &results[i];

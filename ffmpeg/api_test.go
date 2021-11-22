@@ -1288,6 +1288,40 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 	outputFPS(t, Software)
 }
 
+func TestTranscoderAPI_ClipInvalidConfig(t *testing.T) {
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	in := &TranscodeOptionsIn{}
+	out := []TranscodeOptions{{
+		Oname:        "-",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+		From:         time.Second,
+	}}
+
+	_, err := tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+	out[0].VideoEncoder.Name = "copy"
+	_, err = tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+	out[0].From = 0
+	out[0].To = time.Second
+	_, err = tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+	out[0].VideoEncoder.Name = ""
+	out[0].From = 10 * time.Second
+	out[0].To = time.Second
+	_, err = tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+}
+
 /*
 func detectionFreq(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)

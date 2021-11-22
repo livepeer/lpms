@@ -61,6 +61,8 @@ struct output_ctx {
 
   int64_t gop_time, gop_pts_len, next_kf_pts; // for gop reset
 
+  int64_t clip_from, clip_to, clip_from_pts, clip_to_pts, clip_started, clip_start_pts, clip_start_pts_found; // for clipping
+
   AVFilterGraph **dnn_filtergraph;
   int is_dnn_profile; //if not dnn profile: 0
 

@@ -18,8 +18,9 @@ func validRenditions() []string {
 }
 
 func main() {
+	var err error
 	if len(os.Args) <= 3 {
-		panic("Usage: <input file> <output renditions, comma separated> <sw/nv>")
+		panic("Usage: <input file> <output renditions, comma separated> <sw/nv> <from> <to>")
 	}
 	str2accel := func(inp string) (ffmpeg.Acceleration, string) {
 		if inp == "nv" {
@@ -42,17 +43,32 @@ func main() {
 	fname := os.Args[1]
 	profiles := str2profs(os.Args[2])
 	accel, lbl := str2accel(os.Args[3])
+	var from, to time.Duration
+	if len(os.Args) > 4 {
+		from, err = time.ParseDuration(os.Args[4])
+		if err != nil {
+			panic(err)
+		}
+	}
+	if len(os.Args) > 5 {
+		to, err = time.ParseDuration(os.Args[5])
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	profs2opts := func(profs []ffmpeg.VideoProfile) []ffmpeg.TranscodeOptions {
 		opts := []ffmpeg.TranscodeOptions{}
 		for i := range profs {
 			o := ffmpeg.TranscodeOptions{
-				Oname:   fmt.Sprintf("out_%s_%d_out.mkv", lbl, i),
+				Oname:   fmt.Sprintf("out_%s_%d_out.mp4", lbl, i),
 				Profile: profs[i],
 				// Uncomment the following to test scene classifier
 				// Detector: &ffmpeg.DSceneAdultSoccer,
 				Accel: accel,
 			}
+			o.From = from
+			o.To = to
 			opts = append(opts, o)
 		}
 		return opts

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/golang/glog"
@@ -28,6 +29,7 @@ import "C"
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
 var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
 var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
+var ErrTranscoderClipConfig = errors.New("TranscoderInvalidClipConfig")
 var ErrTranscoderVid = errors.New("TranscoderInvalidVideo")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
 var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
@@ -72,6 +74,8 @@ type TranscodeOptions struct {
 	Accel    Acceleration
 	Device   string
 	CalcSign bool
+	From     time.Duration
+	To       time.Duration
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -269,6 +273,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if err != nil {
 		return nil, err
 	}
+	for _, p := range ps {
+		if (p.From > 0 || p.To > 0) && (p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy") {
+			glog.Warning("Could clip only when transcoding video")
+			return nil, ErrTranscoderClipConfig
+		}
+		if p.From > 0 && p.To > 0 && p.To < p.From {
+			glog.Warning("'To' should be after 'From'")
+			return nil, ErrTranscoderClipConfig
+		}
+	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
 	if input.Transmuxing {
@@ -438,6 +452,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			name: C.CString(audioEncoder),
 			opts: newAVOpts(p.AudioEncoder.Opts),
 		}
+		fromMs := int(p.From.Milliseconds())
+		toMs := int(p.To.Milliseconds())
 		vfilt := C.CString(filters)
 		defer C.free(unsafe.Pointer(vidOpts.name))
 		defer C.free(unsafe.Pointer(audioOpts.name))
@@ -448,8 +464,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			gop_time: C.int(gopMs),
-			muxer:    muxOpts, audio: audioOpts, video: vidOpts,
+			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
+			muxer: muxOpts, audio: audioOpts, video: vidOpts,
 			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
 		if p.CalcSign {
 			//signfilter string
