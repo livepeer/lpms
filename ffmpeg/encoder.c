@@ -26,16 +26,22 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
   } else if (octx->vc) {
     st->time_base = octx->vc->time_base;
     ret = avcodec_parameters_from_context(st->codecpar, octx->vc);
+    // Rescale the gop/clip time to the expected timebase after filtering.
+    // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
+    // while non-fps will retain the input timebase.
+    AVRational ms_tb = {1, 1000};
+    AVRational dest_tb;
+    if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
+    else dest_tb = ictx->ic->streams[ictx->vi]->time_base;
     if (octx->gop_time) {
-      // Rescale the gop time to the expected timebase after filtering.
-      // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
-      // while non-fps will retain the input timebase.
-      AVRational gop_tb = {1, 1000};
-      AVRational dest_tb;
-      if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
-      else dest_tb = ictx->ic->streams[ictx->vi]->time_base;
-      octx->gop_pts_len = av_rescale_q(octx->gop_time, gop_tb, dest_tb);
+      octx->gop_pts_len = av_rescale_q(octx->gop_time, ms_tb, dest_tb);
       octx->next_kf_pts = 0; // force for first frame
+    }
+    if (octx->clip_from) {
+      octx->clip_from_pts = av_rescale_q(octx->clip_from, ms_tb, dest_tb);
+    }
+    if (octx->clip_to) {
+      octx->clip_to_pts = av_rescale_q(octx->clip_to, ms_tb, dest_tb);
     }
     if (ret < 0) LPMS_ERR(add_video_err, "Error setting video params from encoder");
   } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
@@ -444,6 +450,29 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       frame = NULL;
     } else if (ret < 0) goto proc_cleanup;
 
+    if (is_video && !octx->clip_start_pts_found && frame) {
+      octx->clip_start_pts = frame->pts;
+      octx->clip_start_pts_found = 1;
+    }
+
+    if (octx->clip_to && octx->clip_start_pts_found && frame && frame->pts > octx->clip_to_pts + octx->clip_start_pts) goto skip;
+
+    if (is_video) {
+      if (octx->clip_from && frame) {
+        if (frame->pts < octx->clip_from_pts + octx->clip_start_pts) goto skip;
+        if (!octx->clip_started) {
+          octx->clip_started = 1;
+          frame->pict_type = AV_PICTURE_TYPE_I;
+          if (octx->gop_pts_len) {
+            octx->next_kf_pts = frame->pts + octx->gop_pts_len;
+          }
+        }
+      }
+    } else if (octx->clip_from_pts && !octx->clip_started) {
+      // we want first frame to be video frame
+      goto skip;
+    }
+
     // Set GOP interval if necessary
     if (is_video && octx->gop_pts_len && frame && frame->pts >= octx->next_kf_pts) {
         frame->pict_type = AV_PICTURE_TYPE_I;
@@ -458,6 +487,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       }
       ret = encode(encoder, frame, octx, ost);
     }
+skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush

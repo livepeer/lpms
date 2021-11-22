@@ -8,6 +8,10 @@ import (
 	"os/exec"
 	"path"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupTest(t *testing.T) (func(cmd string), string) {
@@ -1601,4 +1605,84 @@ func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {
 	if res {
 		t.Errorf("Expecting false, got %v", res)
 	}
+}
+
+func TestTranscoder_Clip(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// If no format and no mux opts specified, should be based on file extension
+	in := &TranscodeOptionsIn{Fname: "../transcoder/test.ts"}
+	P144p30fps16x9 := P144p30fps16x9
+	P144p30fps16x9.Framerate = 0
+	out := []TranscodeOptions{{
+		Profile: P144p30fps16x9,
+		Oname:   dir + "/test_0.mp4",
+		// Oname: "./test_0.mp4",
+		From: time.Second,
+		To:   3 * time.Second,
+	}}
+	res, err := Transcode3(in, out)
+	require.NoError(t, err)
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, 480, res.Decoded.Frames)
+	assert.Equal(t, int64(442368000), res.Decoded.Pixels)
+	assert.Equal(t, 120, res.Encoded[0].Frames)
+	assert.Equal(t, int64(4423680), res.Encoded[0].Pixels)
+
+	cmd := `
+		# hardcode some checks for now. TODO make relative to source.
+		ffprobe -loglevel warning -select_streams v -show_streams -count_frames test_0.mp4 > test.out
+		grep start_pts=94410 test.out
+		grep start_time=1.049000 test.out
+		grep duration=2.000667 test.out
+		grep duration_ts=180060 test.out
+		grep nb_read_frames=120 test.out
+	`
+	run(cmd)
+}
+
+func TestTranscoder_Clip2(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// If no format and no mux opts specified, should be based on file extension
+	in := &TranscodeOptionsIn{Fname: "../transcoder/test.ts"}
+	P144p30fps16x9 := P144p30fps16x9
+	P144p30fps16x9.GOP = 5 * time.Second
+	P144p30fps16x9.Framerate = 120
+	out := []TranscodeOptions{{
+		Profile: P144p30fps16x9,
+		Oname:   dir + "/test_0.mp4",
+		// Oname: "./test_1.mp4",
+		From: time.Second,
+		To:   6 * time.Second,
+	}}
+	res, err := Transcode3(in, out)
+	require.NoError(t, err)
+	if err != nil {
+		t.Error(err)
+	}
+	assert.Equal(t, 480, res.Decoded.Frames)
+	assert.Equal(t, int64(442368000), res.Decoded.Pixels)
+	assert.Equal(t, 601, res.Encoded[0].Frames)
+	assert.Equal(t, int64(22155264), res.Encoded[0].Pixels)
+
+	cmd := `
+		# hardcode some checks for now. TODO make relative to source.
+		ffprobe -loglevel warning -select_streams v -show_streams -count_frames test_0.mp4 > test.out
+		grep start_pts=15867 test.out
+		grep start_time=1.033008 test.out
+		grep duration=5.008333 test.out
+		grep duration_ts=76928 test.out
+		grep nb_read_frames=601 test.out
+
+		# check that we have two keyframes
+		ffprobe -loglevel warning -hide_banner -show_frames test_0.mp4 | grep pict_type=I -c | grep 2
+		# check indexes of keyframes
+		ffprobe -loglevel warning -hide_banner -show_frames -show_entries frame=pict_type -of csv test_0.mp4 | grep -n "frame,I" | cut -d ':' -f 1 | awk 'BEGIN{ORS=":"} {print}' | grep '1:602:'
+	`
+	run(cmd)
 }
