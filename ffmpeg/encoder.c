@@ -329,6 +329,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     octx->res->frames++;
     octx->res->pixels += encoder->width * encoder->height;
   }
+  octx->has_output = 1;
 
   // We don't want to send NULL frames for HW encoding
   // because that closes the encoder: not something we want
