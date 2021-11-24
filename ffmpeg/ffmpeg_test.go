@@ -1436,7 +1436,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 	// If format *and* mux opts specified, should prefer format opts
 	tsFmt := out[0]
 	mp4Fmt := out[0]
-	if "hls" != tsFmt.Muxer.Name || "hls" != mp4Fmt.Muxer.Name {
+	if tsFmt.Muxer.Name != "hls" || mp4Fmt.Muxer.Name != "hls" {
 		t.Error("Sanity check failed; expected non-empty muxer format names")
 	}
 	tsFmt.Oname = dir + "/actually_mpegts.flv"
