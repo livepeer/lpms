@@ -304,6 +304,7 @@ int transcode(struct transcode_thread *h,
 
         pkt = av_packet_clone(ipkt);
         if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
+        octx->has_output = 1;
         ret = mux(pkt, ist->time_base, octx, ost);
         av_packet_free(&pkt);
       } else if (has_frame) {
@@ -329,7 +330,7 @@ whileloop_end:
 
   // flush outputs
   for (i = 0; i < nb_outputs; i++) {
-    if(outputs[i].is_dnn_profile == 0) {
+    if(outputs[i].is_dnn_profile == 0 && outputs[i].has_output > 0) {
       ret = flush_outputs(ictx, &outputs[i]);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
     }
