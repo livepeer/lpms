@@ -513,7 +513,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		if fc != res.Decoded.Frames {
 			t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
 		}
-		if 0 == res.Encoded[0].Frames {
+		if res.Encoded[0].Frames == 0 {
 			// TODO not sure what should be a reasonable number here
 			t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
 		}
@@ -625,7 +625,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	if fc != res.Decoded.Frames {
 		t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
 	}
-	if 0 == res.Encoded[0].Frames {
+	if res.Encoded[0].Frames == 0 {
 		t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
 	}
 
@@ -664,7 +664,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		}
 		if res.Encoded[0].Frames == 0 || res.Encoded[1].Frames != 0 || res.Encoded[2].Frames != fc {
 			t.Error("Unexpected frame counts from short segment copy-drop-passthrough case")
-			t.Error(res)
+			t.Errorf("res: %+v", *res)
 		}
 	}
 
