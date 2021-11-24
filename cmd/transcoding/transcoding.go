@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -11,16 +12,20 @@ import (
 
 func validRenditions() []string {
 	valids := make([]string, len(ffmpeg.VideoProfileLookup))
-	for p, _ := range ffmpeg.VideoProfileLookup {
+	for p := range ffmpeg.VideoProfileLookup {
 		valids = append(valids, p)
 	}
 	return valids
 }
 
 func main() {
+	from := flag.Duration("from", 0, "Skip all frames before that timestamp, from start of the file")
+	to := flag.Duration("to", 0, "Skip all frames after that timestamp, from start of the file")
+	flag.Parse()
 	var err error
-	if len(os.Args) <= 3 {
-		panic("Usage: <input file> <output renditions, comma separated> <sw/nv> <from> <to>")
+	args := append([]string{os.Args[0]}, flag.Args()...)
+	if len(args) <= 3 {
+		panic("Usage: [-from dur] [-to dur] <input file> <output renditions, comma separated> <sw/nv>")
 	}
 	str2accel := func(inp string) (ffmpeg.Acceleration, string) {
 		if inp == "nv" {
@@ -40,22 +45,9 @@ func main() {
 		}
 		return profs
 	}
-	fname := os.Args[1]
-	profiles := str2profs(os.Args[2])
-	accel, lbl := str2accel(os.Args[3])
-	var from, to time.Duration
-	if len(os.Args) > 4 {
-		from, err = time.ParseDuration(os.Args[4])
-		if err != nil {
-			panic(err)
-		}
-	}
-	if len(os.Args) > 5 {
-		to, err = time.ParseDuration(os.Args[5])
-		if err != nil {
-			panic(err)
-		}
-	}
+	fname := args[1]
+	profiles := str2profs(args[2])
+	accel, lbl := str2accel(args[3])
 
 	profs2opts := func(profs []ffmpeg.VideoProfile) []ffmpeg.TranscodeOptions {
 		opts := []ffmpeg.TranscodeOptions{}
@@ -67,8 +59,8 @@ func main() {
 				// Detector: &ffmpeg.DSceneAdultSoccer,
 				Accel: accel,
 			}
-			o.From = from
-			o.To = to
+			o.From = *from
+			o.To = *to
 			opts = append(opts, o)
 		}
 		return opts
@@ -77,16 +69,16 @@ func main() {
 
 	var dev string
 	if accel == ffmpeg.Nvidia {
-		if len(os.Args) <= 4 {
+		if len(args) <= 4 {
 			panic("Expected device number")
 		}
-		dev = os.Args[4]
+		dev = args[4]
 	}
 
 	ffmpeg.InitFFmpeg()
 
 	t := time.Now()
-	fmt.Printf("Setting fname %s encoding %d renditions with %v\n", fname, len(options), lbl)
+	fmt.Printf("Setting fname %s encoding %d renditions with %v from %s to %s\n", fname, len(options), lbl, *from, *to)
 	res, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 		Fname:  fname,
 		Accel:  accel,
