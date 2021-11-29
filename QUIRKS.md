@@ -1,7 +1,6 @@
 # FFmpeg Quirks in LPMS
 This document outlines how LPMS tweaks FFmpeg transcoding pipeline to address some specific problems.
 
-
 ## Handle zero frame (audio-only) segments at the start of a session
 
 ### Problem
@@ -26,8 +25,6 @@ To solve the flushing problem while still reusing the session, we introduced so 
 ### Problem
 
 LPMS transcoder used to fail when segments or frames come in messed order. This issue is caused when one segment failed to get uploaded to Transcoder due to poor network and gets delivered later in its retry attempts or when some frames get dropped due to poor network. The FPS filter expects the timestamps to increase monotonically and uniformly. If this requirement is not met, transcoding pipeline fails.
-
-
 
 ### Solution
 
