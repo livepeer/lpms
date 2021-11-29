@@ -13,8 +13,6 @@ Instead of erroring on such segments, let's accept them and send back audio-only
 ### Our Solution
 We bypass the usual transcoding process for audio-only segments and just return them back. To do this, we check if video frame is present, and if not present just copy the frames to the output as it is. The bypassing is done by forcing the copy transcoder https://github.com/livepeer/lpms/commit/8bc28e3f702049a17c24ab2041857a47d8af51bf for such segments.
 
-
-
 ## Very-few-video-frame segment handling by introducing sentinel frames
 
 ### Problem
@@ -32,6 +30,8 @@ LPMS transcoder used to fail when segments or frames come in messed order. This 
 
 
 ### Solution
+
+```
                                                FILTERGRAPH
                          +------------------------------------------------------+
                          |                                                      |
@@ -54,13 +54,14 @@ LPMS transcoder used to fail when segments or frames come in messed order. This 
                                                     +
                                            (1) dummy monotonic
                                                    pts
-
+```
 
 FPS filter expects monotonic increase in input frame's PTS. We cannot rely on the input to be monotonic thus:
 i. Set a dummy PTS before the frame is sent into filtergraph, that we manually increase monotonically.
 ii. OR use SETPTS filter in the filtergraph before FPS filter, which would do the same thing.
 
 If the input had missing frames (jumps in PTS) or if we had used dummy PTS before for the fps filter - we would need to set the encoded frame's PTS manually to ensure correct order and timescaling after change in FPS. 
+
 https://github.com/livepeer/lpms/blob/e0a6002c849649d80a470c2d19130b279291051b/ffmpeg/filter.c#L308
 https://github.com/livepeer/lpms/blob/e0a6002c849649d80a470c2d19130b279291051b/ffmpeg/filter.c#L356
 
