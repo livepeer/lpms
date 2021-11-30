@@ -274,13 +274,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		return nil, err
 	}
 	for _, p := range ps {
-		if (p.From > 0 || p.To > 0) && (p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy") {
-			glog.Warning("Could clip only when transcoding video")
-			return nil, ErrTranscoderClipConfig
-		}
-		if p.From > 0 && p.To > 0 && p.To < p.From {
-			glog.Warning("'To' should be after 'From'")
-			return nil, ErrTranscoderClipConfig
+		if p.From != 0 || p.To != 0 {
+			if p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy" {
+				glog.Warning("Could clip only when transcoding video")
+				return nil, ErrTranscoderClipConfig
+			}
+			if p.From < 0 || p.To < p.From {
+				glog.Warning("'To' should be after 'From'")
+				return nil, ErrTranscoderClipConfig
+
+			}
 		}
 	}
 	fname := C.CString(input.Fname)
