@@ -1,0 +1,25 @@
+diff --git a/ffmpeg/ffmpeg.go b/ffmpeg/ffmpeg.go
+index 659f37c..37a07ec 100644
+--- a/ffmpeg/ffmpeg.go
++++ b/ffmpeg/ffmpeg.go
+@@ -160,7 +160,7 @@ func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, stri
+ 		case Netint:
+ 			// Use software scale filter
+ 			// TODO replace with actual netint encoder name
+-			return "h264netintencoder", "scale", nil
++			return "h264_ni_enc", "scale", nil
+ 		}
+ 	}
+ 	return "", "", ErrTranscoderHw
+@@ -181,9 +181,9 @@ func decoderOpts(accel Acceleration) (string, map[string]string, error) {
+ 	switch accel {
+ 	case Netint:
+ 		opts := map[string]string{}
+-		// TODO add any netint decoder opts
++		// TODO add any netint decoder opts  NI decoder options
+ 		// opts["ffmpegflagkey"] = "flagvalue"
+-		return "h264netintdecoder", opts, nil // TODO replace with actual netint decoder name
++		return "h264_ni_dec", opts, nil // TODO replace with actual netint decoder name
+ 	default:
+ 		return "", map[string]string{}, ErrTranscoderInp
+ 	}

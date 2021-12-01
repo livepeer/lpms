@@ -16,6 +16,7 @@ struct input_ctx {
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;
   char *device;
+  char *xcoderParams;
 
   // Decoder flush
   AVPacket *first_pkt;

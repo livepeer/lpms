@@ -54,7 +54,6 @@ type TranscodeOptionsIn struct {
 	Fname       string
 	Accel       Acceleration
 	Device      string
-	XcoderParams      string
 	Transmuxing bool
 }
 
@@ -63,7 +62,6 @@ type TranscodeOptions struct {
 	Profile VideoProfile
 	Accel   Acceleration
 	Device  string
-	XcoderParams  string
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -170,12 +168,10 @@ func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, stri
 func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 	switch accel {
 	// Netint and Software don't use HW accel API of libavcodec
-	case Software:
+	case Software, Netint:
 		return C.AV_HWDEVICE_TYPE_NONE, nil
 	case Nvidia:
 		return C.AV_HWDEVICE_TYPE_CUDA, nil
-	case Netint:
-	    return C.AV_HWDEVICE_TYPE_MEDIACODEC, nil
 
 	}
 	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw
@@ -218,12 +214,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("fname %s\n", input.Fname)
 	fname := C.CString(input.Fname)
-	
-	xcoderParams := C.CString(input.XcoderParams)
 	defer C.free(unsafe.Pointer(fname))
-	defer C.free(unsafe.Pointer(xcoderParams))
 	if input.Transmuxing {
 		t.started = true
 	}
@@ -240,9 +232,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	params := make([]C.output_params, len(ps))
 	for i, p := range ps {
 		oname := C.CString(p.Oname)
-		xcoderParams := C.CString(p.XcoderParams)
 		defer C.free(unsafe.Pointer(oname))
-		defer C.free(unsafe.Pointer(xcoderParams))
 
 		param := p.Profile
 		w, h, err := VideoProfileResolution(param)
@@ -392,9 +382,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		device = C.CString(input.Device)
 		defer C.free(unsafe.Pointer(device))
 	}
-	fmt.Println("hw_type: ", hw_type)
-	fmt.Println("input.Device %s: ", input.Device)
-	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
+	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
 		handle: t.handle}
 	if input.Accel == Netint {
 		// Set decoder and AVOpts for NETINT
@@ -485,12 +473,6 @@ const (
 
 func InitFFmpegWithLogLevel(level LogLevel) {
 	C.lpms_init(C.enum_LPMSLogLevel(level))
-}
-
-func InitFFmpegWithXcoderParams(param string) {
-	fmt.Println("InitFFmpegWithXcoderParams: ", param)
-    ts_param := C.CString(param)
-	C.lpms_init_xcoder_params(ts_param)
 }
 
 func InitFFmpeg() {

@@ -88,29 +88,8 @@ dec_flush:
   // video frames, so continue on to audio.
 
   // Flush video decoder
-    // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
-  // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
-  // buffered frames with no success.
-  // TODO this is unnecessary for SW decoding! SW process should match audio
-  if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
-    ictx->flushing = 1;
-    ret = send_first_pkt(ictx);
-    if (ret < 0) {
-      ictx->flushed = 1;
-      return ret;
-    }
-    ret = lpms_receive_frame(ictx, ictx->vc, frame);
-    pkt->stream_index = ictx->vi;
-    // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-      return 0; // ignore actual return value and keep flushing
-    } else {
-      ictx->flushed = 1;
-    }
-  }
-#if  0
   if (ictx->vc) {
-    if (ictx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC) {
+    if (ictx->hw_type == AV_HWDEVICE_TYPE_NONE) {
       // Flushing for software decoder is straightforward
       avcodec_send_packet(ictx->vc, NULL);
       ret = avcodec_receive_frame(ictx->vc, frame);
@@ -137,7 +116,6 @@ dec_flush:
       }
     }
   }
-#endif  
   // Flush audio decoder.
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
@@ -271,7 +249,6 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       }
     } else if (params->video.name && strlen(params->video.name) != 0) {
       // Try to find user specified decoder by name
-	  printf("params->video.name %s, params->device %s, params->xcoderParams %s\n", params->video.name, params->device, params->xcoderParams);
       AVCodec *c = avcodec_find_decoder_by_name(params->video.name);
       if (c) codec = c;
       if (params->video.opts) opts = &params->video.opts;
@@ -283,7 +260,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to assign video params");
     vc->opaque = (void*)ctx;
     // XXX Could this break if the original device falls out of scope in golang?
-    if (params->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
+    if (params->hw_type != AV_HWDEVICE_TYPE_NONE) {
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
@@ -292,7 +269,6 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       vc->get_format = get_hw_pixfmt;
     }
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
-	av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
     ret = avcodec_open2(vc, codec, opts);
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open video decoder");
   }

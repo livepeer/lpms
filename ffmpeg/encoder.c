@@ -130,6 +130,7 @@ audio_output_err:
 
 void close_output(struct output_ctx *octx)
 {
+   printf("close_output octx->fname %s\n", octx->fname);
   if (octx->oc) {
     if (!(octx->oc->oformat->flags & AVFMT_NOFILE) && octx->oc->pb) {
       avio_closep(&octx->oc->pb);
@@ -137,7 +138,7 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && AV_HWDEVICE_TYPE_NONE == octx->hw_type) avcodec_free_context(&octx->vc);
+  if (octx->vc && AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
@@ -191,6 +192,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   AVFormatContext *oc = NULL;
   AVCodecContext *vc  = NULL;
   AVCodec *codec      = NULL;
+  
+  printf("open_output octx->fname %s\n", octx->fname);
 
   // open muxer
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
@@ -228,6 +231,11 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+	if(strcmp(ictx->xcoderParams,"")!=0){
+	    av_opt_set(vc->priv_data, "xcoder-params", ictx->xcoderParams, 0);
+		//printf("xcoder-params %s\n", ictx->xcoderParams);
+	}
+	
     ret = avcodec_open2(vc, codec, &octx->video->opts);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
     octx->hw_type = ictx->hw_type;
@@ -311,14 +319,14 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
 
   // We don't want to send NULL frames for HW encoding
   // because that closes the encoder: not something we want
-  if (AV_HWDEVICE_TYPE_NONE == octx->hw_type || frame) {
+  if (AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type || frame) {
     ret = avcodec_send_frame(encoder, frame);
     if (AVERROR_EOF == ret) ; // continue ; drain encoder
     else if (ret < 0) LPMS_ERR(encode_cleanup, "Error sending frame to encoder");
   }
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
-      AV_HWDEVICE_TYPE_CUDA == octx->hw_type && !frame) {
+      AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type && !frame) {
     avcodec_flush_buffers(encoder);
   }
 
@@ -392,7 +400,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush
-    if (frame == NULL && AV_HWDEVICE_TYPE_NONE != octx->hw_type &&
+    if (frame == NULL && AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type &&
         AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
     if (frame == NULL) return ret;
   }
