@@ -792,15 +792,13 @@ func TestNvidia_OutputFPS(t *testing.T) {
 	outputFPS(t, Nvidia)
 }
 
+func TestNvidia_NoKeyframe(t *testing.T) {
+	noKeyframeSegment(t, Nvidia)
+}
+
 /*
 func TestNvidia_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Nvidia)
-}
-*/
-
-/*
-func TestNvidia_NoKeyframe(t *testing.T) {
-	noKeyframeSegment(t, Nvidia)
 }
 */
 
