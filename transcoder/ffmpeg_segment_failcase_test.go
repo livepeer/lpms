@@ -257,10 +257,10 @@ func TestNvidia_CheckFailCase(t *testing.T) {
 	}
 	fmt.Println("Start transcoding from failed source files.")
 
-	failenum, lasterr := checkTranscodingFailCase(t, inTparams, accel, outdir, outcsv)
+	failcount, lasterr := checkTranscodingFailCase(t, inTparams, accel, outdir, outcsv)
 
 	if lasterr != nil {
 		t.Error("Failed in checking fail case files.")
 	}
-	fmt.Println("Succeed in fail check- real failed:", failenum, " / totoal:", len(inTparams))
+	fmt.Println("Succeed in fail check- real failed:", failcount, " / totoal:", len(inTparams))
 }
