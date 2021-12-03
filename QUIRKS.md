@@ -65,6 +65,20 @@ If the input had missing frames (jumps in PTS) or if we had used dummy PTS befor
 https://github.com/livepeer/lpms/blob/e0a6002c849649d80a470c2d19130b279291051b/ffmpeg/filter.c#L308
 https://github.com/livepeer/lpms/blob/e0a6002c849649d80a470c2d19130b279291051b/ffmpeg/filter.c#L356
 
+## Reusing transcoding session with HW codecs
+
+### Problem
+
+Transcoder initialization is slow when using Nvidia hardware codecs, because of CUDA runtime startup. It makes transcoding impractical with small (few seconds) segments, because initialization time becomes comparable with time spent transcoding.
+
+### Solution
+
+The solution is to re-use transcoding session, in the form of keeping Ffmpeg objects alive between segments. To support this, the pipeline code needs to:
+1. Use the same thread for each subsequent video segment
+2. Properly flush decoder buffers after each segment using sentinel frames, as detailed in tiny segment handling section
+
+When software (CPU) codecs are selected for transcoding, as well as for audio codecs, the logic above is not required, because initialization is fast and feasible per-segment.
+
 ## References
 
 1. Zero-Frame segments: 
