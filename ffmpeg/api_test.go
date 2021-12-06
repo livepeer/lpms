@@ -1331,7 +1331,7 @@ func noKeyframeSegment(t *testing.T, accel Acceleration) {
 		cp "$1"/../transcoder/kryp-*.ts .
 
     # verify no keyframes in kryp-2.ts but there in kryp-1.ts
-    ffprobe -select_streams v -show_streams -show_packets kryp-1.ts | grep flags=K | wc -l | grep 4
+    ffprobe -select_streams v -show_streams -show_packets kryp-1.ts | grep flags=K | wc -l | grep 1
     ffprobe -select_streams v -show_streams -show_packets kryp-2.ts | grep flags=K | wc -l | grep 0
   `
 	run(cmd)
