@@ -262,5 +262,5 @@ func TestNvidia_CheckFailCase(t *testing.T) {
 	if lasterr != nil {
 		t.Error("Failed in checking fail case files.")
 	}
-	fmt.Println("Succeed in fail check- real failed:", failcount, " / totoal:", len(inTparams))
+	fmt.Println("Succeed in fail check- real failed:", failcount, " / total:", len(inTparams))
 }
