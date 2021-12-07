@@ -1322,6 +1322,46 @@ func TestTranscoderAPI_ClipInvalidConfig(t *testing.T) {
 	}
 }
 
+func noKeyframeSegment(t *testing.T, accel Acceleration) {
+	// Reproducing #219
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+		cp "$1"/../data/kryp-*.ts .
+
+    # verify no keyframes in kryp-2.ts but there in kryp-1.ts
+    ffprobe -select_streams v -show_streams -show_packets kryp-1.ts | grep flags=K | wc -l | grep 1
+    ffprobe -select_streams v -show_streams -show_packets kryp-2.ts | grep flags=K | wc -l | grep 0
+  `
+	run(cmd)
+
+	prof := P144p30fps16x9
+	for i := 1; i <= 2; i++ {
+		tc := NewTranscoder()
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/kryp-%d.ts", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
+			Profile: prof,
+			Accel:   accel,
+		}}
+		_, err := tc.Transcode(in, out)
+		if i == 2 && (err == nil || err.Error() != "No keyframes in input") {
+			t.Error("Expected to fail for no keyframe segment but did not")
+		} else if i != 2 && err != nil {
+			t.Error(err)
+		}
+		tc.StopTranscoder()
+	}
+}
+
+func TestTranscoder_NoKeyframe(t *testing.T) {
+	noKeyframeSegment(t, Software)
+}
+
 /*
 func detectionFreq(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)
@@ -1375,48 +1415,5 @@ func detectionFreq(t *testing.T, accel Acceleration) {
 
 func TestTranscoder_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Software)
-}
-*/
-
-/*
-func noKeyframeSegment(t *testing.T, accel Acceleration) {
-	// Reproducing #219
-	run, dir := setupTest(t)
-	defer os.RemoveAll(dir)
-
-	cmd := `
-		cp "$1"/../transcoder/kryp-*.ts .
-
-    # verify no keyframes in kryp-2.ts but there in kryp-1.ts
-    ffprobe -select_streams v -show_streams -show_packets kryp-1.ts | grep flags=K | wc -l | grep 1
-    ffprobe -select_streams v -show_streams -show_packets kryp-2.ts | grep flags=K | wc -l | grep 0
-  `
-	run(cmd)
-
-	tc := NewTranscoder()
-	prof := P144p30fps16x9
-	for i := 1; i <= 2; i++ {
-		in := &TranscodeOptionsIn{
-			Fname: fmt.Sprintf("%s/kryp-%d.ts", dir, i),
-			Accel: accel,
-		}
-		out := []TranscodeOptions{{
-			Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
-			Profile: prof,
-			Accel:   accel,
-		}}
-		_, err := tc.Transcode(in, out)
-		if i == 2 && (err == nil || err.Error() != "No keyframes in input") {
-			t.Error("Expected to fail for no keyframe segment but did not")
-		} else if i != 2 && err != nil {
-			t.Error(err)
-		}
-	}
-	tc.StopTranscoder()
-
-}
-
-func TestTranscoder_NoKeyframe(t *testing.T) {
-	noKeyframeSegment(t, Software)
 }
 */
