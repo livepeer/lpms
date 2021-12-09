@@ -20,12 +20,13 @@ func validRenditions() []string {
 
 func main() {
 	from := flag.Duration("from", 0, "Skip all frames before that timestamp, from start of the file")
+	hevc := flag.Bool("hevc", false, "Use H.265/HEVC for encoding")
 	to := flag.Duration("to", 0, "Skip all frames after that timestamp, from start of the file")
 	flag.Parse()
 	var err error
 	args := append([]string{os.Args[0]}, flag.Args()...)
 	if len(args) <= 3 {
-		panic("Usage: [-from dur] [-to dur] <input file> <output renditions, comma separated> <sw/nv>")
+		panic("Usage: [-hevc] [-from dur] [-to dur] <input file> <output renditions, comma separated> <sw/nv>")
 	}
 	str2accel := func(inp string) (ffmpeg.Acceleration, string) {
 		if inp == "nv" {
@@ -40,6 +41,9 @@ func main() {
 			p, ok := ffmpeg.VideoProfileLookup[k]
 			if !ok {
 				panic(fmt.Sprintf("Invalid rendition %s. Valid renditions are:\n%s", k, validRenditions()))
+			}
+			if *hevc {
+				p.Encoder = ffmpeg.H265
 			}
 			profs = append(profs, p)
 		}
