@@ -14,6 +14,12 @@ jobs:
           key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
 
       - run:
+          name: "Get latest install_ffmpeg.sh from go-livepeer"
+          command: |
+            rm install_ffmpeg.sh || true
+            wget https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
+
+      - run:
           name: "Tweak PATH"
           command: |
             echo 'export PATH=/home/circleci/compiled/bin:$PATH' >> $BASH_ENV
@@ -30,6 +36,8 @@ jobs:
           paths:
             - "/home/circleci/nasm"
             - "/home/circleci/x264"
+            - "/home/circleci/x265"
+            - "/home/circleci/libvpx"
             - "/home/circleci/ffmpeg"
             - "/home/circleci/compiled"
           key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
