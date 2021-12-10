@@ -7,6 +7,8 @@ jobs:
         environment:
           GOROOT: /usr/local/go
           PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
+          # compile ffmpeg with tools required for tests
+          BUILD_TAGS: "debug-video"
     steps:
       - checkout
 
