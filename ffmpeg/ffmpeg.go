@@ -20,7 +20,7 @@ import (
 	pb "github.com/livepeer/lpms/ffmpeg/proto"
 )
 
-// #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
+// #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale
 // #include <stdlib.h>
 // #include "transcoder.h"
 // #include "extras.h"
