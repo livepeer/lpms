@@ -241,7 +241,7 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, 
 	case Nvidia:
 		switch outOpts.Accel {
 		case Software:
-			return "libx264", "scale_cuda", nil
+			return encoder, "scale_cuda", nil
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
