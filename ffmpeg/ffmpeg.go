@@ -42,6 +42,8 @@ var ErrSignCompare = errors.New("InvalidSignData")
 
 type Acceleration int
 
+const MaxHwDeviceNum = int(64)
+
 const (
 	Software Acceleration = iota
 	Nvidia
@@ -210,8 +212,23 @@ func newAVOpts(opts map[string]string) *C.AVDictionary {
 	return dict
 }
 
+// check if device number is valid or not.
+func checkDevNum(devNum string) bool {
+	if len(devNum) > 0 {
+		devId, err := strconv.Atoi(devNum)
+		if err != nil || devId > MaxHwDeviceNum {
+			return false
+		}
+	}
+	return true
+}
+
 // return encoding specific options for the given accel
 func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, string, error) {
+	if !checkDevNum(inDev) || !checkDevNum(outDev) {
+		return "", "", ErrTranscoderHw
+	}
+
 	switch inAcc {
 	case Software:
 		switch outAcc {

@@ -419,7 +419,7 @@ func TestNvidia_Devices(t *testing.T) {
 			Device:  "1",
 		},
 	})
-	if err != ErrTranscoderInp {
+	if err != ErrTranscoderDev {
 		t.Error(err)
 	}
 
@@ -435,7 +435,7 @@ func TestNvidia_Devices(t *testing.T) {
 			Accel:   Software,
 		},
 	})
-	if err == nil || err.Error() != "Unknown error occurred" {
+	if err == nil || err.Error() != "TranscoderInvalidHardware" {
 		t.Error(fmt.Errorf(fmt.Sprintf("\nError being: '%v'\n", err)))
 	}
 
@@ -451,7 +451,7 @@ func TestNvidia_Devices(t *testing.T) {
 			Device:  "9999",
 		},
 	})
-	if err == nil || err.Error() != "Unknown error occurred" {
+	if err == nil || err.Error() != "TranscoderInvalidHardware" {
 		t.Error(fmt.Errorf(fmt.Sprintf("\nError being: '%v'\n", err)))
 	}
 }
