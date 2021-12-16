@@ -5,6 +5,17 @@ set -ex
 export PATH="$HOME/compiled/bin":$PATH
 export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
 
+# NVENC only works on Windows/Linux
+if [ $(uname) != "Darwin" ]; then
+  if [ ! -e "$HOME/nv-codec-headers" ]; then
+    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
+    cd $HOME/nv-codec-headers
+    git checkout 250292dd20af60edc6e0d07f1d6e489a2f8e1c44
+    make -e PREFIX="$HOME/compiled"
+    make install -e PREFIX="$HOME/compiled"
+  fi
+fi
+
 if [ ! -e "$HOME/nasm/nasm" ]; then
   # sudo apt-get -y install asciidoc xmlto # this fails :(
   git clone -b nasm-2.14.02 https://repo.or.cz/nasm.git "$HOME/nasm"
