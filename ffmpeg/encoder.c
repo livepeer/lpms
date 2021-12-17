@@ -386,7 +386,10 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
                      - FFMAX3(pkt->pts, pkt->dts, octx->last_audio_dts + 1);
       }
       if (pkt->dts != AV_NOPTS_VALUE && octx->last_audio_dts != AV_NOPTS_VALUE) {
+        /*If the out video format does not require strictly increasing timestamps,
+        but they must still be monotonic, then let set max timestamp as octx->last_audio_dts+1.*/
         int64_t max = octx->last_audio_dts + !(octx->oc->oformat->flags & AVFMT_TS_NONSTRICT);
+        // check if dts is bigger than previous last dts or not, not then that's non-monotonic
         if (pkt->dts < max) {
           if (pkt->pts >= pkt->dts) pkt->pts = FFMAX(pkt->pts, max);
           pkt->dts = max;
