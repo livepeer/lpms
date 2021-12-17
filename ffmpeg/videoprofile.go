@@ -47,7 +47,7 @@ const (
 
 var VideoCodecName = map[VideoCodec]string{
 	H264:   "H.264",
-	H265: 	"H.265/HEVC",
+	H265: 	"HEVC",
 	VP8:    "VP8",
 	VP9:    "VP9",
 }
