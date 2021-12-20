@@ -65,6 +65,7 @@ type TranscodeOptionsIn struct {
 	Accel       Acceleration
 	Device      string
 	Transmuxing bool
+	LogCtx      string
 }
 
 type TranscodeOptions struct {
@@ -93,15 +94,40 @@ type TranscodeResults struct {
 	Encoded []MediaInfo
 }
 
+func init() {
+	// initialse contextual logging
+	// passing zero means output to stderr
+	log_init(0)
+}
+
+// needed to close fd that was passed to log_init
+// used in unit tests only
+func log_deinit() {
+	C.lpms_log_deinit()
+}
+
+func log_init(fd uintptr) {
+	C.lpms_log_init(C.int(fd))
+}
+
+// used in unit-test
+func log_test(logCtx string) {
+	clogCtx := C.CString(logCtx)
+	defer C.free(unsafe.Pointer(clogCtx))
+	C.lpms_log_test(clogCtx)
+}
+
 // HasZeroVideoFrame opens video file and returns true if it has video stream with 0-frame
-func HasZeroVideoFrame(fname string) bool {
+func HasZeroVideoFrame(logCtx, fname string) bool {
 	cfname := C.CString(fname)
+	clogCtx := C.CString(logCtx)
 	defer C.free(unsafe.Pointer(cfname))
-	return int(C.lpms_is_bypass_needed(cfname)) == 1
+	defer C.free(unsafe.Pointer(clogCtx))
+	return int(C.lpms_is_bypass_needed(clogCtx, cfname)) == 1
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
-func HasZeroVideoFrameBytes(data []byte) (bool, error) {
+func HasZeroVideoFrameBytes(logCtx string, data []byte) (bool, error) {
 	if len(data) == 0 {
 		return false, ErrEmptyData
 	}
@@ -112,12 +138,14 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
+	clogCtx := C.CString(logCtx)
+	defer C.free(unsafe.Pointer(clogCtx))
 	go func() {
 		br := bytes.NewReader(data)
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	bres := int(C.lpms_is_bypass_needed(cfname))
+	bres := int(C.lpms_is_bypass_needed(clogCtx, cfname))
 	ow.Close()
 	return bres == 1, nil
 }
@@ -288,11 +316,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
+	var clogCtx *C.char
+	if input.LogCtx != "" {
+		clogCtx = C.CString(input.LogCtx)
+		defer C.free(unsafe.Pointer(clogCtx))
+	}
 	if input.Transmuxing {
 		t.started = true
 	}
 	if !t.started {
-		ret := int(C.lpms_is_bypass_needed(fname))
+		ret := int(C.lpms_is_bypass_needed(clogCtx, fname))
 		if ret != 1 {
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
@@ -517,7 +550,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		paramsPointer = (*C.output_params)(&params[0])
 		resultsPointer = (*C.output_results)(&results[0])
 	}
-	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
+	ret := int(C.lpms_transcode(clogCtx, inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		glog.Error("Transcoder Return : ", ErrorMap[ret])
 		if ret == int(C.lpms_ERR_UNRECOVERABLE) {

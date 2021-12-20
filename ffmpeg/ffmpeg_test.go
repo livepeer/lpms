@@ -1570,7 +1570,7 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
-	res := HasZeroVideoFrame(fname)
+	res := HasZeroVideoFrame("", fname)
 	if res != true {
 		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
@@ -1578,19 +1578,19 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	res, err = HasZeroVideoFrameBytes(data)
+	res, err = HasZeroVideoFrameBytes("", data)
 	if err != nil {
 		t.Error(err)
 	}
 	if res != true {
 		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
-	_, err = HasZeroVideoFrameBytes(nil)
+	_, err = HasZeroVideoFrameBytes("", nil)
 	if err != ErrEmptyData {
 		t.Errorf("Unexpected error %v", err)
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
-	res = HasZeroVideoFrame(fname)
+	res = HasZeroVideoFrame("", fname)
 	if res != false {
 		t.Errorf("Expecting false, got %v fname=%s", res, fname)
 	}
@@ -1598,7 +1598,7 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 
 func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {
 	badSegment := make([]byte, 16*1024*1024)
-	res, err := HasZeroVideoFrameBytes(badSegment)
+	res, err := HasZeroVideoFrameBytes("", badSegment)
 	if err != nil {
 		t.Error(err)
 	}

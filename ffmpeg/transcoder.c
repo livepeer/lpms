@@ -374,16 +374,20 @@ transcode_cleanup:
   return ret == AVERROR_EOF ? 0 : ret;
 }
 
-int lpms_transcode(input_params *inp, output_params *params,
+extern __thread char *log_ctx_local;
+
+int lpms_transcode(char *log_ctx, input_params *inp, output_params *params,
   output_results *results, int nb_outputs, output_results *decoded_results)
 {
   int ret = 0;
   struct transcode_thread *h = inp->handle;
 
+  log_ctx_local = log_ctx;
   if (!h->initialized) {
     int i = 0;
     int decode_a = 0, decode_v = 0;
     if (nb_outputs > MAX_OUTPUT_SIZE) {
+      log_ctx_local = NULL;
       return lpms_ERR_OUTPUTS;
     }
 
@@ -398,6 +402,7 @@ int lpms_transcode(input_params *inp, output_params *params,
     // populate input context
     ret = open_input(inp, &h->ictx);
     if (ret < 0) {
+      log_ctx_local = NULL;
       return ret;
     }
   }
@@ -414,6 +419,7 @@ int lpms_transcode(input_params *inp, output_params *params,
     if (only_detector_diff) {
       h->nb_outputs = nb_outputs;
     } else {
+      log_ctx_local = NULL;
       return lpms_ERR_OUTPUTS;
     }
 #undef MAX
@@ -423,6 +429,7 @@ int lpms_transcode(input_params *inp, output_params *params,
   ret = transcode(h, inp, params, results, decoded_results);
   h->initialized = 1;
 
+  log_ctx_local = NULL;
   return ret;
 }
 

@@ -2,6 +2,10 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavfilter/avfilter.h>
+#include <unistd.h>
+#include <time.h>
+#include <pthread.h>
+
 
 //
 // Segmenter
@@ -106,6 +110,78 @@ handle_r2h_err:
   return ret == AVERROR_EOF ? 0 : ret;
 }
 
+__thread char *log_ctx_local = NULL;
+
+static void replace_new_lines(char *str) {
+  char c;
+  while ((c = *str)) {
+    if (c == '\n' && *(str+1)) {
+      *str = ' ';
+    }
+    str++;
+  }
+}
+
+static FILE* log_out = NULL;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void log_callback_report(void *ptr, int level, const char *fmt, va_list vl)
+{
+    va_list vl2;
+    char line1[1024];
+    char line2[2048];
+    static int print_prefix = 1;
+
+    if (level > av_log_get_level())
+        return;
+
+    va_copy(vl2, vl);
+
+    pthread_mutex_lock(&mutex);
+
+    av_log_format_line(ptr, level, fmt, vl2, line1, sizeof(line1), &print_prefix);
+    va_end(vl2);
+    if (log_ctx_local) {
+      replace_new_lines(line1);
+      snprintf(line2, sizeof line2, "%s %s", log_ctx_local, line1);
+      fputs(line2, log_out);
+    } else {
+      fputs(line1, log_out);
+    }
+    pthread_mutex_unlock(&mutex);
+}
+
+void lpms_log_deinit() {
+  fclose(log_out);
+}
+
+// installs custom log callback
+void lpms_log_init(int log_out_fd) {
+  if (log_out_fd) {
+    // use for testing only
+    log_out = fdopen(log_out_fd, "wr");
+    if (log_out == NULL) {
+      log_out = stderr;
+    }
+  } else {
+    log_out = stderr;
+  }
+  av_log_set_callback(log_callback_report);
+}
+
+// used in tests
+void lpms_log_test(char *log_ctx) {
+  log_ctx_local = log_ctx;
+  av_log(NULL, AV_LOG_INFO, "context logging test second=%d\n", 0);
+  usleep(100000);
+  av_log(NULL, AV_LOG_INFO, "context logging test second=%d\n", 1);
+  usleep(100000);
+  av_log(NULL, AV_LOG_INFO, "context logging test second=%d\n", 2);
+  usleep(100000);
+  av_log(NULL, AV_LOG_INFO, "context logging test second=%d\n", 3);
+  log_ctx_local = NULL;
+}
+
 //
 // Bypass Check
 // this is needed to handle streams that have first few segments that are
@@ -114,8 +190,10 @@ handle_r2h_err:
 //          1 for video with 0-frame, that needs bypass
 //          <0 invalid stream(s) or internal error
 //
-int lpms_is_bypass_needed(char *fname)
+int lpms_is_bypass_needed(char *log_ctx, char *fname)
 {
+  log_ctx_local = log_ctx;
+
   AVFormatContext *ic = NULL;
   int ret = 0, vstream = 0, astream = 0;
 
@@ -141,6 +219,7 @@ int lpms_is_bypass_needed(char *fname)
   }
 close_format_context:
   if (ic) avformat_close_input(&ic);
+  log_ctx_local = NULL;
   return ret;
 }
 
