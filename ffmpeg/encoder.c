@@ -385,6 +385,7 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
                      - FFMIN3(pkt->pts, pkt->dts, octx->last_audio_dts + 1)
                      - FFMAX3(pkt->pts, pkt->dts, octx->last_audio_dts + 1);
       }
+      /*https://github.com/livepeer/FFmpeg/blob/682c4189d8364867bcc49f9749e04b27dc37cded/fftools/ffmpeg.c#L824*/
       if (pkt->dts != AV_NOPTS_VALUE && octx->last_audio_dts != AV_NOPTS_VALUE) {
         /*If the out video format does not require strictly increasing timestamps,
         but they must still be monotonic, then let set max timestamp as octx->last_audio_dts+1.*/
