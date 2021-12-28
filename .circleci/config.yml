@@ -23,7 +23,7 @@ jobs:
           name: "Build FFMpeg"
           command: |
             sudo apt-get update
-            sudo apt-get install -y autoconf build-essential pkg-config autoconf gnutls-dev zlib1g-dev netcat-openbsd xxd
+            sudo apt-get install -y autoconf build-essential pkg-config autoconf gnutls-dev zlib1g-dev netcat-openbsd xxd clang
             bash ./install_ffmpeg.sh
 
       - save_cache:
