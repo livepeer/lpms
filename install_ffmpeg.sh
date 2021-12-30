@@ -30,7 +30,7 @@ if [ ! -e "$HOME/x264/x264" ]; then
   git clone http://git.videolan.org/git/x264.git "$HOME/x264"
   cd "$HOME/x264"
   # git master as of this writing
-  git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
+  git checkout e0eebeeeddf863f72da0232f9dddc05200340560
   ./configure --prefix="$HOME/compiled" --enable-pic --enable-static
   make
   make install-lib-static
