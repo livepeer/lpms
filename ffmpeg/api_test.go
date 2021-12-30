@@ -1362,6 +1362,41 @@ func TestTranscoder_NoKeyframe(t *testing.T) {
 	noKeyframeSegment(t, Software)
 }
 
+func nonMonotonicAudioSegment(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+    cp "$1"/../data/duplicate-audio-dts.ts .
+
+    # verify dts non-monotonic audio frame in duplicate-audio-dts.ts
+    ffprobe -select_streams a -show_streams -show_packets duplicate-audio-dts.ts | grep dts_time=98.127522 | wc -l | grep 2
+  `
+	run(cmd)
+
+	tc := NewTranscoder()
+	prof := P144p30fps16x9
+
+	in := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("%s/duplicate-audio-dts.ts", dir),
+		Accel: accel,
+	}
+	out := []TranscodeOptions{{
+		Oname:   fmt.Sprintf("%s/out-dts.ts", dir),
+		Profile: prof,
+		Accel:   accel,
+	}}
+	_, err := tc.Transcode(in, out)
+	if err != nil {
+		t.Error("Expected to succeed for a segment with non-monotonic audio frame but did not")
+	}
+
+	tc.StopTranscoder()
+}
+func TestTranscoder_NonMonotonicAudioSegment(t *testing.T) {
+	nonMonotonicAudioSegment(t, Software)
+}
+
 /*
 func detectionFreq(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)
