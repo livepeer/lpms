@@ -152,6 +152,7 @@ int transcode(struct transcode_thread *h,
       free_input(&h->ictx);
       ret = open_input(inp, &h->ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video demuxer for HW decoding");
+      reopen_decoders = 0;
     }
   }
 
