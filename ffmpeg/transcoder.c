@@ -148,7 +148,10 @@ int transcode(struct transcode_thread *h,
     else if (ictx->ic->streams[ictx->vi]->codecpar->format != ictx->last_format) {
       LPMS_WARN("Input pixel format has been changed in the middle.");
       ictx->last_format = ictx->ic->streams[ictx->vi]->codecpar->format;
-      // free and reopen demuxer
+      // if the decoder is not re-opened when the video pixel format is changed,
+      // the decoder tries HW decoding with the video context initialized to a pixel format different from the input one.
+      // to handle a change in the input pixel format,
+      // we close the demuxer and re-open the decoder by calling open_input().
       free_input(&h->ictx);
       ret = open_input(inp, &h->ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video demuxer for HW decoding");
