@@ -800,6 +800,10 @@ func TestNvidia_NonMonotonicAudioSegment(t *testing.T) {
 	nonMonotonicAudioSegment(t, Nvidia)
 }
 
+func TestNvidia_DiscontinuityPixelFormat(t *testing.T) {
+	discontinuityPixelFormatSegment(t, Nvidia)
+}
+
 /*
 func TestNvidia_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Nvidia)

@@ -1397,6 +1397,48 @@ func TestTranscoder_NonMonotonicAudioSegment(t *testing.T) {
 	nonMonotonicAudioSegment(t, Software)
 }
 
+func discontinuityPixelFormatSegment(t *testing.T, accel Acceleration) {
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+	cp "$1/../transcoder/test.ts" test.ts
+
+	# generate yuv420p segments
+    ffmpeg -loglevel warning -i test.ts -an -c:v copy -t 1 inyuv420p-1.mp4
+	ffmpeg -loglevel warning -i test.ts -an -c:v copy -t 1 inyuv420p-3.mp4
+    ffprobe -loglevel warning inyuv420p-1.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
+
+	# generate yuvj420p type
+    ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuvj420p -t 1 inyuv420p-2.mp4
+    ffprobe -loglevel warning inyuv420p-2.mp4  -show_streams -select_streams v | grep pix_fmt=yuvj420p
+	`
+	run(cmd)
+
+	tc := NewTranscoder()
+	prof := P144p30fps16x9
+	for i := 1; i <= 3; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/inyuv420p-%d.mp4", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
+			Profile: prof,
+			Accel:   accel,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	tc.StopTranscoder()
+}
+
+func TestTranscoder_DiscontinuityPixelFormat(t *testing.T) {
+	discontinuityPixelFormatSegment(t, Software)
+}
 /*
 func detectionFreq(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)

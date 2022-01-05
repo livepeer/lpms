@@ -142,6 +142,23 @@ int transcode(struct transcode_thread *h,
     ret = avio_open(&ictx->ic->pb, inp->fname, AVIO_FLAG_READ);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen file");
   } else reopen_decoders = 0;
+
+  if (AV_HWDEVICE_TYPE_CUDA == ictx->hw_type && ictx->vi >= 0) {
+    if (ictx->last_format == AV_PIX_FMT_NONE) ictx->last_format = ictx->ic->streams[ictx->vi]->codecpar->format;
+    else if (ictx->ic->streams[ictx->vi]->codecpar->format != ictx->last_format) {
+      LPMS_WARN("Input pixel format has been changed in the middle.");
+      ictx->last_format = ictx->ic->streams[ictx->vi]->codecpar->format;
+      // if the decoder is not re-opened when the video pixel format is changed,
+      // the decoder tries HW decoding with the video context initialized to a pixel format different from the input one.
+      // to handle a change in the input pixel format,
+      // we close the demuxer and re-open the decoder by calling open_input().
+      free_input(&h->ictx);
+      ret = open_input(inp, &h->ictx);
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video demuxer for HW decoding");
+      reopen_decoders = 0;
+    }
+  }
+
   if (reopen_decoders) {
     // XXX check to see if we can also reuse decoder for sw decoding
     if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
@@ -430,6 +447,8 @@ struct transcode_thread* lpms_transcode_new() {
   struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
   if (!h) return NULL;
   memset(h, 0, sizeof *h);
+  // initialize video stream pixel format.
+  h->ictx.last_format = AV_PIX_FMT_NONE;
   // keep track of last dts in each stream.
   // used while transmuxing, to skip packets with invalid dts.
   for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
