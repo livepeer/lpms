@@ -610,7 +610,6 @@ type TranscodeOptionsTest struct {
 	InputAccel   Acceleration
 	OutputAccel  Acceleration
 	Profile      VideoProfile
-	QualityCheck bool
 }
 
 func TestSW_Transcoding(t *testing.T) {
@@ -640,7 +639,6 @@ func supportedCodecsCombinations(accels []Acceleration) []TranscodeOptionsTest {
 						InputAccel:   inAccel,
 						OutputAccel:  outAccel,
 						Profile:      prof,
-						QualityCheck: true,
 					})
 				}
 			}
@@ -718,7 +716,7 @@ func codecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
 			}
 		}
 		quality := transcode
-		if transcode && curOptions.QualityCheck {
+		if transcode {
 			// software transcode for image quality check
 			err = Transcode2(&TranscodeOptionsIn{
 				Fname: inName,
