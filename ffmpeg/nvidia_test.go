@@ -9,7 +9,7 @@ import (
 )
 
 func TestNvidia_Transcoding(t *testing.T) {
-	CodecsComboTest(t, supportedCodecsCombinations([]Acceleration{Nvidia}))
+	codecsComboTest(t, supportedCodecsCombinations([]Acceleration{Nvidia}))
 }
 
 func TestNvidia_BadCodecs(t *testing.T) {

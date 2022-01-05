@@ -614,7 +614,7 @@ type TranscodeOptionsTest struct {
 }
 
 func TestSW_Transcoding(t *testing.T) {
-	CodecsComboTest(t, supportedCodecsCombinations([]Acceleration{Software}))
+	codecsComboTest(t, supportedCodecsCombinations([]Acceleration{Software}))
 }
 
 func supportedCodecsCombinations(accels []Acceleration) []TranscodeOptionsTest {
@@ -649,7 +649,7 @@ func supportedCodecsCombinations(accels []Acceleration) []TranscodeOptionsTest {
 	return opts
 }
 
-func CodecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
+func codecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 	sampleName := dir + "/test.ts"
@@ -693,32 +693,32 @@ func CodecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
 			})
 			if err != nil {
 				t.Error(err)
-				t.Fail()
 				prepare = false
 			}
 		} else {
 			inName = sampleName
 		}
-		transcode := true
 		targetProfile := curOptions.Profile
 		targetProfile.Encoder = curOptions.OutputCodec
-		err = Transcode2(&TranscodeOptionsIn{
-			Fname: inName,
-			Accel: curOptions.InputAccel,
-		}, []TranscodeOptions{
-			{
-				Oname:   outName,
-				Profile: targetProfile,
-				Accel:   curOptions.OutputAccel,
-			},
-		})
-		if err != nil {
-			t.Error(err)
-			t.Fail()
-			transcode = false
+		transcode := prepare
+		if prepare {
+			err = Transcode2(&TranscodeOptionsIn{
+				Fname: inName,
+				Accel: curOptions.InputAccel,
+			}, []TranscodeOptions{
+				{
+					Oname:   outName,
+					Profile: targetProfile,
+					Accel:   curOptions.OutputAccel,
+				},
+			})
+			if err != nil {
+				t.Error(err)
+				transcode = false
+			}
 		}
-		quality := prepare && transcode
-		if quality && curOptions.QualityCheck {
+		quality := transcode
+		if transcode && curOptions.QualityCheck {
 			// software transcode for image quality check
 			err = Transcode2(&TranscodeOptionsIn{
 				Fname: inName,
@@ -732,7 +732,6 @@ func CodecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
 			})
 			if err != nil {
 				t.Error(err)
-				t.Fail()
 				quality = false
 			}
 			cmd = fmt.Sprintf(`
