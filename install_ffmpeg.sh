@@ -48,7 +48,7 @@ else
     echo "clang detected, building with GPU support"
 
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda,signature_cuda --enable-encoder=h264_nvenc"
-    LIBTENSORFLOW_SUPPORT="gpu"
+    # LIBTENSORFLOW_SUPPORT="gpu"
 
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
         echo "experimental tag detected, building with Tensorflow support"
