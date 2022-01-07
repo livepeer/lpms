@@ -796,10 +796,8 @@ func TestNvidia_NoKeyframe(t *testing.T) {
 	noKeyframeSegment(t, Nvidia)
 }
 
-/*
 func TestNvidia_DetectionFreq(t *testing.T) {
-	detectionFreq(t, Nvidia)
+	detectionFreq(t, Nvidia, "0")
 }
-*/
 
 // XXX test bframes or delayed frames
