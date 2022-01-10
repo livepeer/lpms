@@ -9,6 +9,8 @@ jobs:
           PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
           # compile ffmpeg with tools required for tests
           BUILD_TAGS: "debug-video"
+          # required for libx265 support (software) for running tests on CI
+          LD_LIBRARY_PATH: "/home/circleci/compiled/lib"
     steps:
       - checkout
 
