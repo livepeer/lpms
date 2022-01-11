@@ -21,7 +21,7 @@ jobs:
           name: "Get latest install_ffmpeg.sh from go-livepeer"
           command: |
             rm install_ffmpeg.sh || true
-            wget https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
+            wget https://raw.githubusercontent.com/livepeer/go-livepeer/ip/hevc/install_ffmpeg.sh
 
       - run:
           name: "Tweak PATH"
