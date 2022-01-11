@@ -58,6 +58,7 @@ enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx);
 int open_input(input_params *params, struct input_ctx *ctx);
 int open_video_decoder(input_params *params, struct input_ctx *ctx);
 int open_audio_decoder(input_params *params, struct input_ctx *ctx);
+char* get_hw_decoder(int ff_codec_id);
 void free_input(struct input_ctx *inctx);
 
 // Utility functions

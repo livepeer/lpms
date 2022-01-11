@@ -48,6 +48,19 @@ const (
 	Amd
 )
 
+var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
+	Software: {
+		H264: "libx264",
+		H265: "libx265",
+		VP8: "libvpx",
+		VP9: "libvpx-vp9",
+	},
+	Nvidia: {
+		H264: "h264_nvenc",
+		H265: "hevc_nvenc",
+	},
+}
+
 type ComponentOptions struct {
 	Name string
 	Opts map[string]string
@@ -211,29 +224,30 @@ func newAVOpts(opts map[string]string) *C.AVDictionary {
 }
 
 // return encoding specific options for the given accel
-func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, string, error) {
-	switch inAcc {
+func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, outDev string) (string, string, error) {
+	encoder := FfEncoderLookup[outOpts.Accel][outOpts.Profile.Encoder]
+	switch inOpts.Accel {
 	case Software:
-		switch outAcc {
+		switch outOpts.Accel {
 		case Software:
-			return "libx264", "scale", nil
+			return encoder, "scale", nil
 		case Nvidia:
 			upload := "hwupload_cuda"
 			if outDev != "" {
 				upload = upload + "=device=" + outDev
 			}
-			return "h264_nvenc", upload + ",scale_cuda", nil
+			return encoder, upload + ",scale_cuda", nil
 		}
 	case Nvidia:
-		switch outAcc {
+		switch outOpts.Accel {
 		case Software:
-			return "libx264", "scale_cuda", nil
+			return encoder, "scale_cuda", nil
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
 				return "", "", ErrTranscoderDev // XXX not allowed
 			}
-			return "h264_nvenc", "scale_cuda", nil
+			return encoder, "scale_cuda", nil
 		}
 	}
 	return "", "", ErrTranscoderHw
@@ -329,7 +343,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 		encoder, scale_filter := p.VideoEncoder.Name, "scale"
 		if encoder == "" {
-			encoder, scale_filter, err = configAccel(input.Accel, p.Accel, input.Device, p.Device)
+			encoder, scale_filter, err = configEncoder(input, p, input.Device, p.Device)
 			if err != nil {
 				return nil, err
 			}
