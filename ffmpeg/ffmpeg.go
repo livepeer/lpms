@@ -106,11 +106,41 @@ type TranscodeResults struct {
 	Encoded []MediaInfo
 }
 
-// HasZeroVideoFrame opens video file and returns true if it has video stream with 0-frame
-func HasZeroVideoFrame(fname string) bool {
+func GetCodecInfo(fname string) (bool, string, string, error) {
+	var acodec, vcodec string
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
-	return int(C.lpms_is_bypass_needed(cfname)) == 1
+	acodec_c := C.CString(strings.Repeat("0", 255))
+	vcodec_c := C.CString(strings.Repeat("0", 255))
+	defer C.free(unsafe.Pointer(acodec_c))
+	defer C.free(unsafe.Pointer(vcodec_c))
+	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
+	acodec = C.GoString(acodec_c)
+	vcodec = C.GoString(vcodec_c)
+	return bres == 1, acodec, vcodec, nil
+}
+
+// GetCodecInfo opens the segment and attempts to get video and audio codec names. Additionally, first return value
+// indicates whether the segment has zero video frames
+func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
+	var acodec, vcodec string
+	res := false
+	if len(data) == 0 {
+		return false, acodec, vcodec, ErrEmptyData
+	}
+	or, ow, err := os.Pipe()
+	go func() {
+		br := bytes.NewReader(data)
+		io.Copy(ow, br)
+		ow.Close()
+	}()
+	if err != nil {
+		return false, acodec, vcodec, ErrEmptyData
+	}
+	fname := fmt.Sprintf("pipe:%d", or.Fd())
+	res, acodec, vcodec, err = GetCodecInfo(fname)
+	ow.Close()
+	return res, acodec, vcodec, nil
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -130,7 +160,16 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	bres := int(C.lpms_is_bypass_needed(cfname))
+	acodec_c := C.CString(strings.Repeat("0", 255))
+	vcodec_c := C.CString(strings.Repeat("0", 255))
+	defer C.free(unsafe.Pointer(acodec_c))
+	defer C.free(unsafe.Pointer(vcodec_c))
+	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
+	//acodec := C.GoString(acodec_c)
+	//vcodec := C.GoString(vcodec_c)
+	//fmt.Print(acodec)
+	//fmt.Print(vcodec)
+
 	ow.Close()
 	return bres == 1, nil
 }

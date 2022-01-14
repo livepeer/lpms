@@ -1713,13 +1713,13 @@ func TestTranscoder_IgnoreUnknown(t *testing.T) {
 	run(cmd)
 }
 
-func TestTranscoder_ZeroFrame(t *testing.T) {
+func TestTranscoder_GetCodecInfo(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
-	res := HasZeroVideoFrame(fname)
+	res, acodec, vcodec, err := GetCodecInfo(fname)
 	if res != true {
 		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
@@ -1727,7 +1727,7 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	res, err = HasZeroVideoFrameBytes(data)
+	res, acodec, vcodec, err = GetCodecInfoBytes(data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1739,10 +1739,12 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 		t.Errorf("Unexpected error %v", err)
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
-	res = HasZeroVideoFrame(fname)
+	res, acodec, vcodec, err = GetCodecInfo(fname)
 	if res != false {
 		t.Errorf("Expecting false, got %v fname=%s", res, fname)
 	}
+	assert.Equal(t, "h264", vcodec)
+	assert.Equal(t, "aac", acodec)
 }
 
 func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {
