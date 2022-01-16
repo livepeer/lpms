@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_SignDataCreate(t *testing.T) {
@@ -138,4 +140,12 @@ func Test_SignDataCompare(t *testing.T) {
 	if err != nil || res != false {
 		t.Error(err)
 	}
+	datax0 := data0[:289] // one FineSignature in file
+	res, err = CompareSignatureByBuffer(datax0, data2)
+	assert.False(t, res)
+	assert.NoError(t, err)
+	datax0 = data0[:279] // zero FineSignature in file
+	res, err = CompareSignatureByBuffer(datax0, data2)
+	assert.False(t, res)
+	assert.Equal(t, ErrSignCompare, err)
 }
