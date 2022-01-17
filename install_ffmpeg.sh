@@ -38,7 +38,6 @@ fi
 
 EXTRA_FFMPEG_FLAGS=""
 EXTRA_LDFLAGS=""
-LIBTENSORFLOW_SUPPORT="cpu"
 
 if [ $(uname) == "Darwin" ]; then
   EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
@@ -48,7 +47,6 @@ else
     echo "clang detected, building with GPU support"
 
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda,signature_cuda --enable-encoder=h264_nvenc"
-    # LIBTENSORFLOW_SUPPORT="gpu"
 
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
         echo "experimental tag detected, building with Tensorflow support"
@@ -60,8 +58,8 @@ fi
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   # download TensorFlow C library
   LIBTENSORFLOW_VERSION=2.5.0 \
-  && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-${LIBTENSORFLOW_SUPPORT}-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-  && sudo tar -C /usr/local -xzf libtensorflow-${LIBTENSORFLOW_SUPPORT}-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
   && sudo ldconfig
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
   
