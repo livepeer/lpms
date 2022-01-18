@@ -9,96 +9,11 @@ import (
 )
 
 func TestNvidia_Transcoding(t *testing.T) {
-	// Various Nvidia GPU tests for encoding + decoding
-	// XXX what is missing is a way to verify these are *actually* running on GPU!
-
-	run, dir := setupTest(t)
-	defer os.RemoveAll(dir)
-
-	cmd := `
-    # set up initial input; truncate test.ts file
-    ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -t 1 test.ts
-  `
-	run(cmd)
-
-	var err error
-	fname := dir + "/test.ts"
-	oname := dir + "/out.ts"
-	prof := P240p30fps16x9
-
-	// hw dec, sw enc
-	err = Transcode2(&TranscodeOptionsIn{
-		Fname: fname,
-		Accel: Nvidia,
-	}, []TranscodeOptions{
-		{
-			Oname:   oname,
-			Profile: prof,
-			Accel:   Software,
-		},
-	})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// sw dec, hw enc
-	err = Transcode2(&TranscodeOptionsIn{
-		Fname: fname,
-		Accel: Software,
-	}, []TranscodeOptions{
-		{
-			Oname:   oname,
-			Profile: prof,
-			Accel:   Nvidia,
-		},
-	})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// hw enc + dec
-	err = Transcode2(&TranscodeOptionsIn{
-		Fname: fname,
-		Accel: Nvidia,
-	}, []TranscodeOptions{
-		{
-			Oname:   oname,
-			Profile: prof,
-			Accel:   Nvidia,
-		},
-	})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// software transcode for image quality check
-	err = Transcode2(&TranscodeOptionsIn{
-		Fname: fname,
-		Accel: Software,
-	}, []TranscodeOptions{
-		{
-			Oname:   dir + "/sw.ts",
-			Profile: prof,
-			Accel:   Software,
-		},
-	})
-	if err != nil {
-		t.Error(err)
-	}
-
-	cmd = `
-    # compare using ssim and generate stats file
-    ffmpeg -loglevel warning -i out.ts -i sw.ts -lavfi '[0:v][1:v]ssim=stats.log' -f null -
-    # check image quality; ensure that no more than 5 frames have ssim < 0.95
-    grep -Po 'All:\K\d+.\d+' stats.log | awk '{ if ($1 < 0.95) count=count+1 } END{ exit count > 5 }'
-  `
-	run(cmd)
-
+	codecsComboTest(t, supportedCodecsCombinations([]Acceleration{Nvidia}))
 }
 
 func TestNvidia_BadCodecs(t *testing.T) {
 	// Following test case validates that the transcoder throws correct errors for unsupported codecs
-	// Currently only H264 is supported
 
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
@@ -109,7 +24,7 @@ func TestNvidia_BadCodecs(t *testing.T) {
 
 	cmd := `
 	cp "$1/../transcoder/test.ts" test.ts
-		# Generate an input file that is not H264 (mpeg2) and sanity check
+		# Generate an input file that uses unsupported codec MPEG2 and sanity check
 		ffmpeg -loglevel warning -i test.ts -an -c:v mpeg2video -t 1 mpeg2.ts
 		ffprobe -loglevel warning mpeg2.ts -show_streams | grep codec_name=mpeg2video
 	`

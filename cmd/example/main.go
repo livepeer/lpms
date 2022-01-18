@@ -7,7 +7,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/url"
 	"os"
@@ -15,11 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livepeer/lpms/transcoder"
-
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/core"
-	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
@@ -190,58 +186,4 @@ func main() {
 		})
 
 	lpms.Start(context.Background())
-}
-
-func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool), error) {
-	//Create Transcoder
-	profiles := []ffmpeg.VideoProfile{
-		ffmpeg.P144p30fps16x9,
-		ffmpeg.P240p30fps16x9,
-		ffmpeg.P576p30fps16x9,
-	}
-	workDir := "./tmp"
-	t := transcoder.NewFFMpegSegmentTranscoder(profiles, workDir)
-
-	//Create variants in the stream
-	strmIDs := make([]string, len(profiles), len(profiles))
-	// for i, p := range profiles {
-	// 	strmID := randString(10)
-	// 	strmIDs[i] = strmID
-	// 	pl, _ := m3u8.NewMediaPlaylist(100, 100)
-	// 	// hlsStream.AddVariant(strmID, &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: transcoder.TranscodeProfileToVariantParams(p)})
-	// }
-
-	subscriber := func(seg *stream.HLSSegment, eof bool) {
-		//If we get a new video segment for the original HLS stream, do the transcoding.
-		// glog.Infof("Got seg: %v", seg.Name)
-		// if strmID == hlsStream.GetStreamID() {
-		file, err := ioutil.TempFile(workDir, "example")
-		if err != nil {
-			glog.Errorf("Unable to get tempdir, %v", err)
-		}
-		defer os.Remove(file.Name())
-		if _, err = file.Write(seg.Data); err != nil {
-			glog.Errorf("Unable to write temp file %v", err)
-		}
-		if err = file.Close(); err != nil {
-			glog.Errorf("Unable to close file: %v", err)
-		}
-
-		//Transcode stream
-		tData, err := t.Transcode(file.Name())
-		if err != nil {
-			glog.Errorf("Error transcoding: %v", err)
-		}
-
-		//Insert into HLS stream
-		for i, strmID := range strmIDs {
-			glog.Infof("Inserting transcoded seg %v into strm: %v", len(tData[i]), strmID)
-			if err := hlsStream.AddHLSSegment(&stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%v.ts", strmID, seg.SeqNo), Data: tData[i], Duration: 8}); err != nil {
-				glog.Errorf("Error writing transcoded seg: %v", err)
-			}
-		}
-		// }
-	}
-
-	return subscriber, nil
 }
