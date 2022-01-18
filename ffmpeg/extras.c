@@ -283,16 +283,16 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
   ifmt_ctx->flags = AVFMT_FLAG_CUSTOM_IO;
   
   if ((ret = avformat_open_input(&ifmt_ctx, "", NULL, NULL)) < 0) {
-		LPMS_ERR(clean, "Cannot open input video file\n");
-	}
+		    LPMS_ERR(clean, "Cannot open input video file\n");
+  }
   
   if ((ret = avformat_find_stream_info(ifmt_ctx, NULL)) < 0) {
-    LPMS_ERR(clean, "Cannot find stream information\n");		
-	}
+        LPMS_ERR(clean, "Cannot find stream information\n");
+  }
   
   for (int i = 0; i < ifmt_ctx->nb_streams; i++) {
-		AVStream *stream;
-		stream = ifmt_ctx->streams[i];
+    AVStream *stream;
+    stream = ifmt_ctx->streams[i];
     AVCodecParameters *in_codecpar = stream->codecpar;
     if (in_codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
       info->width = in_codecpar->width;
