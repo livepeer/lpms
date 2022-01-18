@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -1439,6 +1440,78 @@ func discontinuityPixelFormatSegment(t *testing.T, accel Acceleration) {
 func TestTranscoder_DiscontinuityPixelFormat(t *testing.T) {
 	discontinuityPixelFormatSegment(t, Software)
 }
+
+func compareVideo(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+	cp "$1/../transcoder/test.ts" test.ts
+	`
+	run(cmd)
+
+	prof := P720p60fps16x9
+	for i := 1; i <= 3; i++ {
+		tc := NewTranscoder()
+		if i == 3 {
+			prof = P144p30fps16x9
+		}
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/test.ts", dir),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out-%d.ts", dir, i),
+			Profile: prof,
+			Accel:   accel,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		tc.StopTranscoder()
+	}
+
+	res, err := CompareVideoByPath(dir+"/out-1.ts", dir+"/out-2.ts")
+	if err != nil || res != true {
+		t.Error(err)
+	}
+	res, err = CompareVideoByPath(dir+"/out-1.ts", dir+"/out-3.ts")
+	if err != nil || res != false {
+		t.Error(err)
+	}
+	res, err = CompareVideoByPath(dir+"/out-1.ts", dir+"/out-4.ts")
+	if err == nil || res != false {
+		t.Error(err)
+	}
+
+	//test ByBuffer function
+	data1, err := ioutil.ReadFile(dir + "/out-1.ts")
+	if err != nil {
+		t.Error(err)
+	}
+	data2, err := ioutil.ReadFile(dir + "/out-2.ts")
+	if err != nil {
+		t.Error(err)
+	}
+	data3, err := ioutil.ReadFile(dir + "/out-3.ts")
+	if err != nil {
+		t.Error(err)
+	}
+
+	res, err = CompareVideoByBuffer(data1, data2)
+	if err != nil || res != true {
+		t.Error(err)
+	}
+	res, err = CompareVideoByBuffer(data1, data3)
+	if err != nil || res != false {
+		t.Error(err)
+	}
+}
+func TestTranscoder_CompareVideo(t *testing.T) {
+	compareVideo(t, Software)
+}
+
 /*
 func detectionFreq(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)

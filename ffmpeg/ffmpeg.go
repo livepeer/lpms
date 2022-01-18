@@ -39,6 +39,7 @@ var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 var ErrEmptyData = errors.New("EmptyData")
 var ErrDNNInitialize = errors.New("DetectorInitializationError")
 var ErrSignCompare = errors.New("InvalidSignData")
+var ErrVideoCompare = errors.New("InvalidVideoData")
 
 type Acceleration int
 
@@ -52,8 +53,8 @@ var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
 	Software: {
 		H264: "libx264",
 		H265: "libx265",
-		VP8: "libvpx",
-		VP9: "libvpx-vp9",
+		VP8:  "libvpx",
+		VP9:  "libvpx-vp9",
 	},
 	Nvidia: {
 		H264: "h264_nvenc",
@@ -170,6 +171,44 @@ func CompareSignatureByBuffer(data1 []byte, data2 []byte) (bool, error) {
 		return false, nil
 	} else {
 		return false, ErrSignCompare
+	}
+}
+
+// compare two vidoe files whether those matches or not
+func CompareVideoByPath(fname1 string, fname2 string) (bool, error) {
+	if len(fname1) <= 0 || len(fname2) <= 0 {
+		return false, nil
+	}
+	cfpath1 := C.CString(fname1)
+	defer C.free(unsafe.Pointer(cfpath1))
+	cfpath2 := C.CString(fname2)
+	defer C.free(unsafe.Pointer(cfpath2))
+
+	res := int(C.lpms_compare_video_bypath(cfpath1, cfpath2))
+
+	if res == 0 {
+		return true, nil
+	} else if res == 1 {
+		return false, nil
+	} else {
+		return false, ErrVideoCompare
+	}
+}
+
+// compare two video buffers whether those matches or not
+func CompareVideoByBuffer(data1 []byte, data2 []byte) (bool, error) {
+
+	pdata1 := unsafe.Pointer(&data1[0])
+	pdata2 := unsafe.Pointer(&data2[0])
+
+	res := int(C.lpms_compare_video_bybuffer(pdata1, C.int(len(data1)), pdata2, C.int(len(data2))))
+
+	if res == 0 {
+		return true, nil
+	} else if res == 1 {
+		return false, nil
+	} else {
+		return false, ErrVideoCompare
 	}
 }
 
