@@ -10,7 +10,7 @@ struct match_info {
   int       height;
   uint64_t  bit_rate;
   int       packetcount; //video total packet count
-  uint64_t  timetamp;    //XOR sum of avpacket pts  
+  uint64_t  timestamp;    //XOR sum of avpacket pts  
   int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
 };
 
@@ -283,7 +283,7 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
   ifmt_ctx->flags = AVFMT_FLAG_CUSTOM_IO;
   
   if ((ret = avformat_open_input(&ifmt_ctx, "", NULL, NULL)) < 0) {
-		    LPMS_ERR(clean, "Cannot open input video file\n");
+        LPMS_ERR(clean, "Cannot open input video file\n");
   }
   
   if ((ret = avformat_find_stream_info(ifmt_ctx, NULL)) < 0) {
@@ -315,7 +315,7 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
       LPMS_ERR(clean, "Unable to read input");
     }
     info->packetcount++;
-    info->timetamp ^= packet->pts;
+    info->timestamp ^= packet->pts;
     if(packet->stream_index == audioid && packet->size > 0) {
       av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
       for (int i=0; i<4; i++) info->audiosum[i] ^= md5tmp[i];
@@ -352,8 +352,8 @@ int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2
   if(ret < 0) return ret;
   //compare two matching information
   if (info1.width != info2.width || info1.height != info2.height || 
-      info1.bit_rate != info2.bit_rate  || info1.packetcount != info2.packetcount ||
-      info1.timetamp != info2.timetamp || memcmp(info1.audiosum ,info2.audiosum, 16)) {
+      info1.bit_rate != info2.bit_rate || info1.packetcount != info2.packetcount ||
+      info1.timestamp != info2.timestamp || memcmp(info1.audiosum, info2.audiosum, 16)) {
       ret = 1;
   }
 
