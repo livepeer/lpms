@@ -115,8 +115,12 @@ func GetCodecInfo(fname string) (bool, string, string, error) {
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
 	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
-	acodec = C.GoString(acodec_c)
-	vcodec = C.GoString(vcodec_c)
+	if C.strlen(acodec_c)<255 {
+		acodec = C.GoString(acodec_c)
+	}
+	if C.strlen(vcodec_c)<255 {
+		vcodec = C.GoString(vcodec_c)
+	}
 	return bres == 1, acodec, vcodec, nil
 }
 
@@ -125,9 +129,6 @@ func GetCodecInfo(fname string) (bool, string, string, error) {
 func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
 	var acodec, vcodec string
 	res := false
-	if len(data) == 0 {
-		return false, acodec, vcodec, ErrEmptyData
-	}
 	or, ow, err := os.Pipe()
 	go func() {
 		br := bytes.NewReader(data)
@@ -139,7 +140,6 @@ func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	res, acodec, vcodec, err = GetCodecInfo(fname)
-	ow.Close()
 	return res, acodec, vcodec, nil
 }
 
@@ -345,8 +345,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		t.started = true
 	}
 	if !t.started {
-		ret := int(C.lpms_is_bypass_needed(fname))
-		if ret != 1 {
+		ret, _, _, _ := GetCodecInfo(input.Fname)
+		if !ret {
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
 		} else {

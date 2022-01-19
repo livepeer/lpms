@@ -46,13 +46,18 @@ const (
 )
 
 var VideoCodecName = map[VideoCodec]string{
-	H264:   "H.264",
-	H265: 	"HEVC",
-	VP8:    "VP8",
-	VP9:    "VP9",
+	H264: "H.264",
+	H265: "HEVC",
+	VP8:  "VP8",
+	VP9:  "VP9",
 }
 
-
+var FfmpegNameToVideoCodec = map[string]VideoCodec{
+	"h264": H264,
+	"hevc": H265,
+	"vp8":  VP8,
+	"vp9":  VP9,
+}
 
 //Standard Profiles:
 //1080p60fps: 9000kbps
