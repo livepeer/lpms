@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupTest(t *testing.T) (func(cmd string), string) {
+func setupTest(t *testing.T) (func(cmd string) bool, string) {
 	dir, err := ioutil.TempDir("", t.Name())
 	if err != nil {
 		t.Fatal(err)
@@ -28,12 +28,14 @@ func setupTest(t *testing.T) (func(cmd string), string) {
 	// Executes the given bash script and checks the results.
 	// The script is passed two arguments:
 	// a tempdir and the current working directory.
-	cmdFunc := func(cmd string) {
+	cmdFunc := func(cmd string) bool {
 		cmd = "cd $0 && set -eux;\n" + cmd
 		out, err := exec.Command("bash", "-c", cmd, dir, wd).CombinedOutput()
 		if err != nil {
 			t.Error(string(out[:]))
+			return false
 		}
+		return true
 	}
 	return cmdFunc, dir
 }
@@ -600,6 +602,153 @@ func TestTranscoder_MuxerOpts(t *testing.T) {
         ffprobe -show_streams -select_streams a audio.m4s | grep codec_name=aac
     `
 	run(cmd)
+}
+
+type TranscodeOptionsTest struct {
+	InputCodec   VideoCodec
+	OutputCodec  VideoCodec
+	InputAccel   Acceleration
+	OutputAccel  Acceleration
+	Profile      VideoProfile
+}
+
+func TestSW_Transcoding(t *testing.T) {
+	codecsComboTest(t, supportedCodecsCombinations([]Acceleration{Software}))
+}
+
+func supportedCodecsCombinations(accels []Acceleration) []TranscodeOptionsTest {
+	prof := P240p30fps16x9
+	var opts []TranscodeOptionsTest
+	inCodecs := []VideoCodec{H264, H265, VP8, VP9}
+	outCodecs := []VideoCodec{H264, H265, VP8, VP9}
+	for _, inAccel := range accels {
+		for _, outAccel := range accels {
+			for _, inCodec := range inCodecs {
+				for _, outCodec := range outCodecs {
+					// skip unsupported combinations
+					switch outAccel {
+						case Nvidia:
+							switch outCodec {
+								case VP8, VP9:
+									continue
+								}
+					}
+					opts = append(opts, TranscodeOptionsTest{
+						InputCodec:   inCodec,
+						OutputCodec:  outCodec,
+						InputAccel:   inAccel,
+						OutputAccel:  outAccel,
+						Profile:      prof,
+					})
+				}
+			}
+		}
+	}
+	return opts
+}
+
+func codecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	sampleName := dir + "/test.ts"
+	var inName, outName, qName string
+	cmd := `
+    # set up initial input; truncate test.ts file
+    ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -t 1 test.ts
+  `
+	run(cmd)
+	var err error
+	for i := range options {
+		curOptions := options[i]
+		switch curOptions.InputCodec {
+			case VP8, VP9:
+				inName = dir + "/test_in.mkv"
+			case H264, H265:
+				inName = dir + "/test_in.ts"
+		}
+		switch curOptions.OutputCodec {
+			case VP8, VP9:
+				outName = dir + "/out.mkv"
+				qName = dir + "/sw.mkv"
+			case H264, H265:
+				outName = dir + "/out.ts"
+				qName = dir + "/sw.ts"
+		}
+		// if non-h264 test requested, transcode to target input codec first
+		prepare := true
+		if curOptions.InputCodec != H264 {
+			profile := P720p60fps16x9
+			profile.Encoder = curOptions.InputCodec
+			err = Transcode2(&TranscodeOptionsIn{
+				Fname: sampleName,
+				Accel: Software,
+			}, []TranscodeOptions{
+				{
+					Oname:   inName,
+					Profile: profile,
+					Accel:   Software,
+				},
+			})
+			if err != nil {
+				t.Error(err)
+				prepare = false
+			}
+		} else {
+			inName = sampleName
+		}
+		targetProfile := curOptions.Profile
+		targetProfile.Encoder = curOptions.OutputCodec
+		transcode := prepare
+		if prepare {
+			err = Transcode2(&TranscodeOptionsIn{
+				Fname: inName,
+				Accel: curOptions.InputAccel,
+			}, []TranscodeOptions{
+				{
+					Oname:   outName,
+					Profile: targetProfile,
+					Accel:   curOptions.OutputAccel,
+				},
+			})
+			if err != nil {
+				t.Error(err)
+				transcode = false
+			}
+		}
+		quality := transcode
+		if transcode {
+			// software transcode for image quality check
+			err = Transcode2(&TranscodeOptionsIn{
+				Fname: inName,
+				Accel: Software,
+			}, []TranscodeOptions{
+				{
+					Oname:   qName,
+					Profile: targetProfile,
+					Accel:   Software,
+				},
+			})
+			if err != nil {
+				t.Error(err)
+				quality = false
+			}
+			cmd = fmt.Sprintf(`
+    # compare using ssim and generate stats file
+    ffmpeg -loglevel warning -i %s -i %s -lavfi '[0:v][1:v]ssim=stats.log' -f null -
+    # check image quality; ensure that no more than 5 frames have ssim < 0.95
+    grep -Po 'All:\K\d+.\d+' stats.log | awk '{ if ($1 < 0.95) count=count+1 } END{ exit count > 5 }'
+  `, outName, qName)
+			if quality {
+				quality = run(cmd)
+			}
+		}
+		t.Logf("Transcode %s (Accel: %d) -> %s (Accel: %d) Prepare: %t Transcode: %t Quality: %t\n",
+			VideoCodecName[curOptions.InputCodec],
+			curOptions.InputAccel,
+			VideoCodecName[curOptions.OutputCodec],
+			curOptions.OutputAccel,
+			prepare, transcode, quality)
+	}
 }
 
 func TestTranscoder_EncoderOpts(t *testing.T) {

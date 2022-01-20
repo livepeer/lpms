@@ -7,8 +7,18 @@ jobs:
         environment:
           GOROOT: /usr/local/go
           PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
+          # compile ffmpeg with tools required for tests
+          BUILD_TAGS: "debug-video"
+          # required for libx265 support (software) for running tests on CI
+          LD_LIBRARY_PATH: "/home/circleci/compiled/lib"
     steps:
       - checkout
+
+      - run:
+          name: "Get latest install_ffmpeg.sh from go-livepeer"
+          command: |
+            rm install_ffmpeg.sh || true
+            wget https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
 
       - restore_cache:
           key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
@@ -30,6 +40,8 @@ jobs:
           paths:
             - "/home/circleci/nasm"
             - "/home/circleci/x264"
+            - "/home/circleci/x265"
+            - "/home/circleci/libvpx"
             - "/home/circleci/ffmpeg"
             - "/home/circleci/compiled"
           key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
