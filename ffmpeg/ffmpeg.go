@@ -251,7 +251,7 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, 
 			return encoder, "scale_cuda", nil
 		}
 	case Netint:
-		switch outAcc {
+		switch outOpts.Accel {
 		case Software, Nvidia:
 			return "", "", ErrTranscoderDev // XXX don't allow mix-match between NETINT and sw/nv
 		case Netint:
