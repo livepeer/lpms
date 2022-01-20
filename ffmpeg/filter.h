@@ -39,6 +39,7 @@ struct filter_ctx {
 struct output_ctx {
   char *fname;         // required output file name
   char *vfilters;      // required output video filters
+  char *sfilters;      // required output signature filters
   int width, height, bitrate; // w, h, br required
   AVRational fps;
   AVFormatContext *oc; // muxer required
@@ -46,7 +47,7 @@ struct output_ctx {
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
   int dv, da; // flags whether to drop video or audio
-  struct filter_ctx vf, af;
+  struct filter_ctx vf, af, sf;
 
   // Optional hardware encoding support
   enum AVHWDeviceType hw_type;
@@ -58,7 +59,15 @@ struct output_ctx {
 
   int64_t drop_ts;     // preroll audio ts to drop
 
+  int64_t last_audio_dts;     //dts of the last audio packet sent to the muxer
+
   int64_t gop_time, gop_pts_len, next_kf_pts; // for gop reset
+
+  int64_t clip_from, clip_to, clip_from_pts, clip_to_pts, clip_started, clip_start_pts, clip_start_pts_found; // for clipping
+  int64_t has_output;
+
+  AVFilterGraph **dnn_filtergraph;
+  int is_dnn_profile; //if not dnn profile: 0
 
   output_results  *res; // data to return for this output
 
@@ -66,20 +75,21 @@ struct output_ctx {
 
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx);
 int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx);
+int init_signature_filters(struct output_ctx *octx, AVFrame *inf);
 int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video);
 int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video);
 void free_filter(struct filter_ctx *filter);
 
 // UTILS
-inline int is_copy(char *encoder) {
+static inline int is_copy(char *encoder) {
   return encoder && !strcmp("copy", encoder);
 }
 
-inline int is_drop(char *encoder) {
+static inline int is_drop(char *encoder) {
   return !encoder || !strcmp("drop", encoder) || !strcmp("", encoder);
 }
 
-inline int needs_decoder(char *encoder) {
+static inline int needs_decoder(char *encoder) {
   // Checks whether the given "encoder" depends on having a decoder.
   // Do this by enumerating special cases that do *not* need encoding
   return !(is_copy(encoder) || is_drop(encoder));

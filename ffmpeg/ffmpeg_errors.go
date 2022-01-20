@@ -19,6 +19,7 @@ var lpmsErrors = []struct {
 	{Code: C.lpms_ERR_OUTPUTS, Desc: "Too many outputs"},
 	{Code: C.lpms_ERR_INPUT_CODEC, Desc: "Unsupported input codec"},
 	{Code: C.lpms_ERR_INPUT_NOKF, Desc: "No keyframes in input"},
+	{Code: C.lpms_ERR_UNRECOVERABLE, Desc: "Unrecoverable state, restart process"},
 }
 
 func error_map() map[int]error {
@@ -34,7 +35,7 @@ func error_map() map[int]error {
 	}
 	for i := -255; i < 0; i++ {
 		v := Strerror(i)
-		if "UNKNOWN_ERROR" != v {
+		if v != "UNKNOWN_ERROR" {
 			m[i] = errors.New(v)
 		}
 	}
@@ -61,9 +62,7 @@ func non_retryable_errs() []string {
 		"Decoder not found", "Demuxer not found", "Encoder not found",
 		"Muxer not found", "Option not found", "Invalid argument",
 	}
-	for _, v := range ffmpegErrors {
-		errs = append(errs, v)
-	}
+	errs = append(errs, ffmpegErrors...)
 	// Add in ffmpeg.go transcoder specific errors
 	transcoderErrors := []error{
 		ErrTranscoderRes, ErrTranscoderVid, ErrTranscoderFmt,
