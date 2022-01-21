@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package proto;
+
+import "google/protobuf/any.proto";
+
+// Derived from https://github.com/tensorflow/tensorflow/blob/v2.5.0/tensorflow/core/protobuf/config.proto
+
+message GPUOptions {
+  // Fraction of the available GPU memory to allocate for each process.
+  // 1 means to allocate all of the GPU memory, 0.5 means the process
+  // allocates up to ~50% of the available GPU memory.
+  //
+  // GPU memory is pre-allocated unless the allow_growth option is enabled.
+  //
+  // If greater than 1.0, uses CUDA unified memory to potentially oversubscribe
+  // the amount of memory available on the GPU device by using host memory as a
+  // swap space. Accessing memory not available on the device will be
+  // significantly slower as that would require memory transfer between the host
+  // and the device. Options to reduce the memory requirement should be
+  // considered before enabling this option as this may come with a negative
+  // performance impact. Oversubscription using the unified memory requires
+  // Pascal class or newer GPUs and it is currently only supported on the Linux
+  // operating system. See
+  // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#um-requirements
+  // for the detailed requirements.
+  double per_process_gpu_memory_fraction = 1;
+
+  // If true, the allocator does not pre-allocate the entire specified
+  // GPU memory region, instead starting small and growing as needed.
+  bool allow_growth = 4;
+
+  // The type of GPU allocation strategy to use.
+  //
+  // Allowed values:
+  // "": The empty string (default) uses a system-chosen default
+  //     which may change over time.
+  //
+  // "BFC": A "Best-fit with coalescing" algorithm, simplified from a
+  //        version of dlmalloc.
+  string allocator_type = 2;
+
+  // Delay deletion of up to this many bytes to reduce the number of
+  // interactions with gpu driver code.  If 0, the system chooses
+  // a reasonable default (several MBs).
+  int64 deferred_deletion_bytes = 3;
+
+  // A comma-separated list of GPU ids that determines the 'visible'
+  // to 'virtual' mapping of GPU devices.  For example, if TensorFlow
+  // can see 8 GPU devices in the process, and one wanted to map
+  // visible GPU devices 5 and 3 as "/device:GPU:0", and "/device:GPU:1",
+  // then one would specify this field as "5,3".  This field is similar in
+  // spirit to the CUDA_VISIBLE_DEVICES environment variable, except
+  // it applies to the visible GPU devices in the process.
+  //
+  // NOTE:
+  // 1. The GPU driver provides the process with the visible GPUs
+  //    in an order which is not guaranteed to have any correlation to
+  //    the *physical* GPU id in the machine.  This field is used for
+  //    remapping "visible" to "virtual", which means this operates only
+  //    after the process starts.  Users are required to use vendor
+  //    specific mechanisms (e.g., CUDA_VISIBLE_DEVICES) to control the
+  //    physical to visible device mapping prior to invoking TensorFlow.
+  // 2. In the code, the ids in this list are also called "platform GPU id"s,
+  //    and the 'virtual' ids of GPU devices (i.e. the ids in the device
+  //    name "/device:GPU:<id>") are also called "TF GPU id"s. Please
+  //    refer to third_party/tensorflow/core/common_runtime/gpu/gpu_id.h
+  //    for more information.
+  string visible_device_list = 5;
+
+  // In the event polling loop sleep this many microseconds between
+  // PollEvents calls, when the queue is not empty.  If value is not
+  // set or set to 0, gets set to a non-zero default.
+  int32 polling_active_delay_usecs = 6;
+
+  // This field is deprecated and ignored.
+  int32 polling_inactive_delay_msecs = 7;
+
+  // Force all tensors to be gpu_compatible. On a GPU-enabled TensorFlow,
+  // enabling this option forces all CPU tensors to be allocated with Cuda
+  // pinned memory. Normally, TensorFlow will infer which tensors should be
+  // allocated as the pinned memory. But in case where the inference is
+  // incomplete, this option can significantly speed up the cross-device memory
+  // copy performance as long as it fits the memory.
+  // Note that this option is not something that should be
+  // enabled by default for unknown or very large models, since all Cuda pinned
+  // memory is unpageable, having too much pinned memory might negatively impact
+  // the overall host system performance.
+  bool force_gpu_compatible = 8;
+
+  // Unused
+  google.protobuf.Any experimental = 9;
+}
+
+// Session configuration parameters.
+// The system picks appropriate values for fields that are not set.
+message ConfigProto {
+  // Map from device type name (e.g., "CPU" or "GPU" ) to maximum
+  // number of devices of that type to use.  If a particular device
+  // type is not found in the map, the system picks an appropriate
+  // number.
+  map<string, int32> device_count = 1;
+
+  // Options that apply to all GPUs.
+  GPUOptions gpu_options = 6;
+}

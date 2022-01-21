@@ -513,7 +513,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		if fc != res.Decoded.Frames {
 			t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
 		}
-		if 0 == res.Encoded[0].Frames {
+		if res.Encoded[0].Frames == 0 {
 			// TODO not sure what should be a reasonable number here
 			t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
 		}
@@ -625,7 +625,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	if fc != res.Decoded.Frames {
 		t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
 	}
-	if 0 == res.Encoded[0].Frames {
+	if res.Encoded[0].Frames == 0 {
 		t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
 	}
 
@@ -664,7 +664,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		}
 		if res.Encoded[0].Frames == 0 || res.Encoded[1].Frames != 0 || res.Encoded[2].Frames != fc {
 			t.Error("Unexpected frame counts from short segment copy-drop-passthrough case")
-			t.Error(res)
+			t.Errorf("res: %+v", *res)
 		}
 	}
 
@@ -950,11 +950,6 @@ func encodingProfiles(t *testing.T, accel Acceleration) {
 		ffprobe -loglevel warning -show_streams out_main.mp4 | grep has_b_frames=2
 		ffprobe -loglevel warning -show_streams out_high.mp4 | grep has_b_frames=2
 	`
-	// TODO: Only CPU encoder seems to use B frames by default, check if we can enable them for NVIDIA
-	if accel == Software {
-		run(cmd)
-	}
-
 	// Interlaced Input with Constrained Profiles
 	cmd = `
 		ffmpeg -i test.ts -vf "tinterlace=5" -c:v libx264 -flags +ilme+ildct -x264opts bff=1 -c:a copy test_interlaced.ts
@@ -1293,14 +1288,47 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 	outputFPS(t, Software)
 }
 
-/*
+func TestTranscoderAPI_ClipInvalidConfig(t *testing.T) {
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	in := &TranscodeOptionsIn{}
+	out := []TranscodeOptions{{
+		Oname:        "-",
+		VideoEncoder: ComponentOptions{Name: "drop"},
+		From:         time.Second,
+	}}
+
+	_, err := tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+	out[0].VideoEncoder.Name = "copy"
+	_, err = tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+	out[0].From = 0
+	out[0].To = time.Second
+	_, err = tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+	out[0].VideoEncoder.Name = ""
+	out[0].From = 10 * time.Second
+	out[0].To = time.Second
+	_, err = tc.Transcode(in, out)
+	if err == nil || err != ErrTranscoderClipConfig {
+		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
+	}
+}
+
 func noKeyframeSegment(t *testing.T, accel Acceleration) {
 	// Reproducing #219
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
 	cmd := `
-		cp "$1"/../transcoder/kryp-*.ts .
+		cp "$1"/../data/kryp-*.ts .
 
     # verify no keyframes in kryp-2.ts but there in kryp-1.ts
     ffprobe -select_streams v -show_streams -show_packets kryp-1.ts | grep flags=K | wc -l | grep 1
@@ -1308,9 +1336,9 @@ func noKeyframeSegment(t *testing.T, accel Acceleration) {
   `
 	run(cmd)
 
-	tc := NewTranscoder()
 	prof := P144p30fps16x9
 	for i := 1; i <= 2; i++ {
+		tc := NewTranscoder()
 		in := &TranscodeOptionsIn{
 			Fname: fmt.Sprintf("%s/kryp-%d.ts", dir, i),
 			Accel: accel,
@@ -1326,12 +1354,143 @@ func noKeyframeSegment(t *testing.T, accel Acceleration) {
 		} else if i != 2 && err != nil {
 			t.Error(err)
 		}
+		tc.StopTranscoder()
 	}
-	tc.StopTranscoder()
-
 }
 
 func TestTranscoder_NoKeyframe(t *testing.T) {
 	noKeyframeSegment(t, Software)
+}
+
+func nonMonotonicAudioSegment(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+    cp "$1"/../data/duplicate-audio-dts.ts .
+
+    # verify dts non-monotonic audio frame in duplicate-audio-dts.ts
+    ffprobe -select_streams a -show_streams -show_packets duplicate-audio-dts.ts | grep dts_time=98.127522 | wc -l | grep 2
+  `
+	run(cmd)
+
+	tc := NewTranscoder()
+	prof := P144p30fps16x9
+
+	in := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("%s/duplicate-audio-dts.ts", dir),
+		Accel: accel,
+	}
+	out := []TranscodeOptions{{
+		Oname:   fmt.Sprintf("%s/out-dts.ts", dir),
+		Profile: prof,
+		Accel:   accel,
+	}}
+	_, err := tc.Transcode(in, out)
+	if err != nil {
+		t.Error("Expected to succeed for a segment with non-monotonic audio frame but did not")
+	}
+
+	tc.StopTranscoder()
+}
+func TestTranscoder_NonMonotonicAudioSegment(t *testing.T) {
+	nonMonotonicAudioSegment(t, Software)
+}
+
+func discontinuityPixelFormatSegment(t *testing.T, accel Acceleration) {
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+	cp "$1/../transcoder/test.ts" test.ts
+
+	# generate yuv420p segments
+    ffmpeg -loglevel warning -i test.ts -an -c:v copy -t 1 inyuv420p-1.mp4
+	ffmpeg -loglevel warning -i test.ts -an -c:v copy -t 1 inyuv420p-3.mp4
+    ffprobe -loglevel warning inyuv420p-1.mp4  -show_streams -select_streams v | grep pix_fmt=yuv420p
+
+	# generate yuvj420p type
+    ffmpeg -loglevel warning -i test.ts -an -c:v libx264 -pix_fmt yuvj420p -t 1 inyuv420p-2.mp4
+    ffprobe -loglevel warning inyuv420p-2.mp4  -show_streams -select_streams v | grep pix_fmt=yuvj420p
+	`
+	run(cmd)
+
+	tc := NewTranscoder()
+	prof := P144p30fps16x9
+	for i := 1; i <= 3; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/inyuv420p-%d.mp4", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
+			Profile: prof,
+			Accel:   accel,
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	tc.StopTranscoder()
+}
+
+func TestTranscoder_DiscontinuityPixelFormat(t *testing.T) {
+	discontinuityPixelFormatSegment(t, Software)
+}
+/*
+func detectionFreq(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+    # run segmenter and sanity check frame counts . Hardcode for now.
+    ffmpeg -loglevel warning -i "$1"/../transcoder/test.ts -c:a copy -c:v copy -f hls test.m3u8
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test0.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test1.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test2.ts | grep nb_read_frames=120
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams test3.ts | grep nb_read_frames=120
+  `
+	run(cmd)
+
+	err := ffmpeg.InitFFmpegWithDetectorProfile(&ffmpeg.DSceneAdultSoccer, "0")
+	if err != nil {
+		t.Error(err)
+	}
+	defer ffmpeg.ReleaseFFmpegDetectorProfile()
+	// Test encoding with only seg0 and seg2 under detection
+	tc := NewTranscoder()
+	prof := P144p30fps16x9
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/test%d.ts", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{
+			{
+				Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
+				Profile: prof,
+				Accel:   accel,
+			},
+		}
+		if i%2 == 0 {
+			out = append(out, TranscodeOptions{
+				Detector: &DSceneAdultSoccer,
+				Accel:    accel,
+			})
+		}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if i%2 == 0 && (len(res.Encoded) < 2 || res.Encoded[1].DetectData == nil) {
+			t.Error("No detect data returned for detection profile")
+		}
+	}
+	tc.StopTranscoder()
+}
+
+func TestTranscoder_DetectionFreq(t *testing.T) {
+	detectionFreq(t, Software)
 }
 */

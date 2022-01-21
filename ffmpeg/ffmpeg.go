@@ -1,19 +1,26 @@
 package ffmpeg
 
 import (
+	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
+	pb "github.com/livepeer/lpms/ffmpeg/proto"
 )
 
-// #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
+// #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale
 // #include <stdlib.h>
 // #include "transcoder.h"
 // #include "extras.h"
@@ -22,12 +29,16 @@ import "C"
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
 var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
 var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
+var ErrTranscoderClipConfig = errors.New("TranscoderInvalidClipConfig")
 var ErrTranscoderVid = errors.New("TranscoderInvalidVideo")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
 var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
 var ErrTranscoderGOP = errors.New("TranscoderInvalidGOP")
 var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
+var ErrEmptyData = errors.New("EmptyData")
+var ErrDNNInitialize = errors.New("DetectorInitializationError")
+var ErrSignCompare = errors.New("InvalidSignData")
 
 type Acceleration int
 
@@ -37,6 +48,19 @@ const (
 	Amd
 	Netint
 )
+
+var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
+	Software: {
+		H264: "libx264",
+		H265: "libx265",
+		VP8: "libvpx",
+		VP9: "libvpx-vp9",
+	},
+	Nvidia: {
+		H264: "h264_nvenc",
+		H265: "hevc_nvenc",
+	},
+}
 
 type ComponentOptions struct {
 	Name string
@@ -59,10 +83,14 @@ type TranscodeOptionsIn struct {
 }
 
 type TranscodeOptions struct {
-	Oname   string
-	Profile VideoProfile
-	Accel   Acceleration
-	Device  string
+	Oname    string
+	Profile  VideoProfile
+	Detector DetectorProfile
+	Accel    Acceleration
+	Device   string
+	CalcSign bool
+	From     time.Duration
+	To       time.Duration
 	XcoderParams  string
 
 	Muxer        ComponentOptions
@@ -71,13 +99,81 @@ type TranscodeOptions struct {
 }
 
 type MediaInfo struct {
-	Frames int
-	Pixels int64
+	Frames     int
+	Pixels     int64
+	DetectData DetectData
 }
 
 type TranscodeResults struct {
 	Decoded MediaInfo
 	Encoded []MediaInfo
+}
+
+// HasZeroVideoFrame opens video file and returns true if it has video stream with 0-frame
+func HasZeroVideoFrame(fname string) bool {
+	cfname := C.CString(fname)
+	defer C.free(unsafe.Pointer(cfname))
+	return int(C.lpms_is_bypass_needed(cfname)) == 1
+}
+
+// HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
+func HasZeroVideoFrameBytes(data []byte) (bool, error) {
+	if len(data) == 0 {
+		return false, ErrEmptyData
+	}
+	or, ow, err := os.Pipe()
+	if err != nil {
+		return false, err
+	}
+	fname := fmt.Sprintf("pipe:%d", or.Fd())
+	cfname := C.CString(fname)
+	defer C.free(unsafe.Pointer(cfname))
+	go func() {
+		br := bytes.NewReader(data)
+		io.Copy(ow, br)
+		ow.Close()
+	}()
+	bres := int(C.lpms_is_bypass_needed(cfname))
+	ow.Close()
+	return bres == 1, nil
+}
+
+// compare two signature files whether those matches or not
+func CompareSignatureByPath(fname1 string, fname2 string) (bool, error) {
+	if len(fname1) <= 0 || len(fname2) <= 0 {
+		return false, nil
+	}
+	cfpath1 := C.CString(fname1)
+	defer C.free(unsafe.Pointer(cfpath1))
+	cfpath2 := C.CString(fname2)
+	defer C.free(unsafe.Pointer(cfpath2))
+
+	res := int(C.lpms_compare_sign_bypath(cfpath1, cfpath2))
+
+	if res > 0 {
+		return true, nil
+	} else if res == 0 {
+		return false, nil
+	} else {
+		return false, ErrSignCompare
+	}
+}
+
+// compare two signature buffers whether those matches or not
+func CompareSignatureByBuffer(data1 []byte, data2 []byte) (bool, error) {
+
+	pdata1 := unsafe.Pointer(&data1[0])
+	pdata2 := unsafe.Pointer(&data2[0])
+
+	res := int(C.lpms_compare_sign_bybuffer(pdata1, C.int(len(data1)), pdata2, C.int(len(data2))))
+
+	if res > 0 {
+		return true, nil
+	} else if res == 0 {
+		return false, nil
+	} else {
+		return false, ErrSignCompare
+	}
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
@@ -131,37 +227,37 @@ func newAVOpts(opts map[string]string) *C.AVDictionary {
 }
 
 // return encoding specific options for the given accel
-func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, string, error) {
-	switch inAcc {
+func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, outDev string) (string, string, error) {
+	encoder := FfEncoderLookup[outOpts.Accel][outOpts.Profile.Encoder]
+	switch inOpts.Accel {
 	case Software:
-		switch outAcc {
+		switch outOpts.Accel {
 		case Software:
-			return "libx264", "scale", nil
+			return encoder, "scale", nil
 		case Nvidia:
 			upload := "hwupload_cuda"
 			if outDev != "" {
 				upload = upload + "=device=" + outDev
 			}
-			return "h264_nvenc", upload + ",scale_cuda", nil
+			return encoder, upload + ",scale_cuda", nil
 		}
 	case Nvidia:
-		switch outAcc {
+		switch outOpts.Accel {
 		case Software:
-			return "libx264", "scale_cuda", nil
+			return encoder, "scale_cuda", nil
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
 				return "", "", ErrTranscoderDev // XXX not allowed
 			}
-			return "h264_nvenc", "scale_cuda", nil
+			return encoder, "scale_cuda", nil
 		}
 	case Netint:
-		switch outAcc {
+		switch outOpts.Accel {
 		case Software, Nvidia:
 			return "", "", ErrTranscoderDev // XXX don't allow mix-match between NETINT and sw/nv
 		case Netint:
 			// Use software scale filter
-			// TODO replace with actual netint encoder name
 			return "h264_ni_enc", "scale", nil
 		}
 	}
@@ -169,14 +265,12 @@ func configAccel(inAcc, outAcc Acceleration, inDev, outDev string) (string, stri
 }
 func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 	switch accel {
-	// Netint and Software don't use HW accel API of libavcodec
 	case Software:
 		return C.AV_HWDEVICE_TYPE_NONE, nil
 	case Nvidia:
 		return C.AV_HWDEVICE_TYPE_CUDA, nil
 	case Netint:
 	    return C.AV_HWDEVICE_TYPE_MEDIACODEC, nil
-
 	}
 	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw
 }
@@ -219,8 +313,21 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		return nil, err
 	}
 	fmt.Printf("fname %s\n", input.Fname)
+	for _, p := range ps {
+		if p.From != 0 || p.To != 0 {
+			if p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy" {
+				glog.Warning("Could clip only when transcoding video")
+				return nil, ErrTranscoderClipConfig
+			}
+			if p.From < 0 || p.To < p.From {
+				glog.Warning("'To' should be after 'From'")
+				return nil, ErrTranscoderClipConfig
+
+			}
+		}
+	}
 	fname := C.CString(input.Fname)
-	
+
 	xcoderParams := C.CString(input.XcoderParams)
 	defer C.free(unsafe.Pointer(fname))
 	defer C.free(unsafe.Pointer(xcoderParams))
@@ -239,6 +346,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	params := make([]C.output_params, len(ps))
 	for i, p := range ps {
+		if p.Detector != nil {
+			// We don't do any encoding for detector profiles
+			// Adding placeholder values to pass checks for these everywhere
+			p.Oname = "/dev/null"
+			p.Profile = P144p30fps16x9
+			p.Muxer = ComponentOptions{Name: "mpegts"}
+		}
 		oname := C.CString(p.Oname)
 		xcoderParams := C.CString(p.XcoderParams)
 		defer C.free(unsafe.Pointer(oname))
@@ -260,7 +374,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 		encoder, scale_filter := p.VideoEncoder.Name, "scale"
 		if encoder == "" {
-			encoder, scale_filter, err = configAccel(input.Accel, p.Accel, input.Device, p.Device)
+			encoder, scale_filter, err = configEncoder(input, p, input.Device, p.Device)
 			if err != nil {
 				return nil, err
 			}
@@ -289,6 +403,18 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if param.Framerate > 0 {
 			filters += fmt.Sprintf(",fps=%d/%d", param.Framerate, param.FramerateDen)
 			fps = C.AVRational{num: C.int(param.Framerate), den: C.int(param.FramerateDen)}
+		}
+		// if has a detector profile, ignore all video options
+		if p.Detector != nil {
+			switch p.Detector.Type() {
+			case SceneClassification:
+				detectorProfile := p.Detector.(*SceneClassificationProfile)
+				// Set samplerate using select filter to prevent unnecessary HW->SW copying
+				filters = fmt.Sprintf("select='not(mod(n\\,%v))'", detectorProfile.SampleRate)
+				if input.Accel != Software {
+					filters += ",hwdownload,format=nv12"
+				}
+			}
 		}
 		var muxOpts C.component_opts
 		var muxName string
@@ -323,15 +449,29 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				"forced-idr": "1",
 			}
 			switch p.Profile.Profile {
-			case ProfileH264Baseline, ProfileH264Main, ProfileH264High:
-				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
-			case ProfileH264ConstrainedHigh:
+			case ProfileH264Baseline, ProfileH264ConstrainedHigh:
 				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
 				p.VideoEncoder.Opts["bf"] = "0"
+			case ProfileH264Main, ProfileH264High:
+				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+				p.VideoEncoder.Opts["bf"] = "3"
 			case ProfileNone:
-				// Do nothing, the encoder will use default profile
+				if p.Accel == Nvidia {
+					p.VideoEncoder.Opts["bf"] = "0"
+				} else {
+					p.VideoEncoder.Opts["bf"] = "3"
+				}
 			default:
 				return nil, ErrTranscoderPrf
+			}
+			if p.Profile.Framerate == 0 && p.Accel == Nvidia {
+				// When the decoded video contains non-monotonic increases in PTS (common with OBS)
+				// & when B-frames are enabled nvenc struggles at calculating correct DTS
+				// XXX so we disable B-frames altogether to avoid PTS < DTS errors
+				if p.VideoEncoder.Opts["bf"] != "0" {
+					p.VideoEncoder.Opts["bf"] = "0"
+					glog.Warning("Forcing max_b_frames=0 for nvenc, as it can't handle those well with timestamp passthrough")
+				}
 			}
 		}
 		gopMs := 0
@@ -364,14 +504,33 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			name: C.CString(audioEncoder),
 			opts: newAVOpts(p.AudioEncoder.Opts),
 		}
+		fromMs := int(p.From.Milliseconds())
+		toMs := int(p.To.Milliseconds())
 		vfilt := C.CString(filters)
 		defer C.free(unsafe.Pointer(vidOpts.name))
 		defer C.free(unsafe.Pointer(audioOpts.name))
 		defer C.free(unsafe.Pointer(vfilt))
+		isDNN := C.int(0)
+		if p.Detector != nil {
+			isDNN = C.int(1)
+		}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			gop_time: C.int(gopMs),
-			muxer:    muxOpts, audio: audioOpts, video: vidOpts, vfilters: vfilt}
+			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
+			muxer: muxOpts, audio: audioOpts, video: vidOpts,
+			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
+		if p.CalcSign {
+			//signfilter string
+			escapedOname := ffmpegStrEscape(p.Oname)
+			signfilter := fmt.Sprintf("signature=filename='%s.bin'", escapedOname)
+			if p.Accel == Nvidia {
+				//hw frame -> cuda signature -> sign.bin
+				signfilter = fmt.Sprintf("signature_cuda=filename='%s.bin'", escapedOname)
+			}
+			sfilt := C.CString(signfilter)
+			params[i].sfilters = sfilt
+			defer C.free(unsafe.Pointer(sfilt))
+		}
 		defer func(param *C.output_params) {
 			// Work around the ownership rules:
 			// ffmpeg normally takes ownership of the following AVDictionary options
@@ -393,7 +552,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		defer C.free(unsafe.Pointer(device))
 	}
 	fmt.Println("hw_type: ", hw_type)
-	fmt.Println("input.Device %s: ", input.Device)
+	fmt.Println("input.Device: ", input.Device)
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
 		handle: t.handle}
 	if input.Accel == Netint {
@@ -429,6 +588,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		glog.Error("Transcoder Return : ", ErrorMap[ret])
+		if ret == int(C.lpms_ERR_UNRECOVERABLE) {
+			panic(ErrorMap[ret])
+		}
 		return nil, ErrorMap[ret]
 	}
 	tr := make([]MediaInfo, len(ps))
@@ -436,6 +598,18 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		tr[i] = MediaInfo{
 			Frames: int(r.frames),
 			Pixels: int64(r.pixels),
+		}
+		// add detect result
+		if ps[i].Detector != nil {
+			switch ps[i].Detector.Type() {
+			case SceneClassification:
+				detector := ps[i].Detector.(*SceneClassificationProfile)
+				res := make(SceneClassificationData)
+				for j, class := range detector.Classes {
+					res[class.ID] = float64(r.probs[j])
+				}
+				tr[i].DetectData = res
+			}
 		}
 	}
 	dec := MediaInfo{
@@ -495,4 +669,51 @@ func InitFFmpegWithXcoderParams(param string) {
 
 func InitFFmpeg() {
 	InitFFmpegWithLogLevel(FFLogWarning)
+}
+
+func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Transcoder, error) {
+	switch detector.Type() {
+	case SceneClassification:
+		detectorProfile := detector.(*SceneClassificationProfile)
+		backendConfigs := createBackendConfig(deviceid)
+		dnnOpt := &C.lvpdnn_opts{
+			modelpath:       C.CString(detectorProfile.ModelPath),
+			inputname:       C.CString(detectorProfile.Input),
+			outputname:      C.CString(detectorProfile.Output),
+			backend_configs: C.CString(backendConfigs),
+		}
+		defer C.free(unsafe.Pointer(dnnOpt.modelpath))
+		defer C.free(unsafe.Pointer(dnnOpt.inputname))
+		defer C.free(unsafe.Pointer(dnnOpt.outputname))
+		defer C.free(unsafe.Pointer(dnnOpt.backend_configs))
+		handle := C.lpms_transcode_new_with_dnn(dnnOpt)
+		if handle != nil {
+			return &Transcoder{
+				handle: handle,
+				mu:     &sync.Mutex{},
+			}, nil
+		}
+	}
+	return nil, ErrDNNInitialize
+}
+
+func createBackendConfig(deviceid string) string {
+	configProto := &pb.ConfigProto{GpuOptions: &pb.GPUOptions{AllowGrowth: true}}
+	bytes, err := proto.Marshal(configProto)
+	if err != nil {
+		glog.Errorf("Unable to convert deviceid %v to Tensorflow config protobuf\n", err)
+		return ""
+	}
+	sessConfigOpt := fmt.Sprintf("device_id=%s&sess_config=0x", deviceid)
+	// serialize TF config proto as hex
+	for i := len(bytes) - 1; i >= 0; i-- {
+		sessConfigOpt += hex.EncodeToString(bytes[i : i+1])
+	}
+	return sessConfigOpt
+}
+
+func ffmpegStrEscape(origStr string) string {
+	tmpStr := strings.ReplaceAll(origStr, "\\", "\\\\")
+	outStr := strings.ReplaceAll(tmpStr, ":", "\\:")
+	return outStr
 }

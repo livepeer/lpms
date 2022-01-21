@@ -1,6 +1,6 @@
 [![Build Status](https://circleci.com/gh/livepeer/lpms.svg?style=shield&circle-token=e33534f6f4e2a6af19bb1596d7b72767a246cbab)](https://circleci.com/gh/livepeer/lpms/tree/master)
 
-# LPMS - Livepeer media server
+# LPMS - Livepeer Media Server
 
 LPMS is a media server that can run independently, or on top of the [Livepeer](https://livepeer.org) 
 network.  It allows you to manipulate / broadcast a live video stream.  Currently, LPMS supports RTMP
@@ -166,4 +166,12 @@ go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30f
 go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30fps16x9 nv 2
 ```
 
-You can follow the development of LPMS and Livepeer @ our [forum](http://forum.livepeer.org)
+### Contribute
+
+Thank you for your interest in contributing to LPMS!
+
+To get started:
+
+- Read the [contribution guide](doc/contributing.md)
+- Check out the [open issues](https://github.com/livepeer/lpms/issues)
+- Join the #dev channel in the [Discord](https://discord.gg/uaPhtyrWsF)

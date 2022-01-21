@@ -168,6 +168,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		}
 		return
 	}
+
 	w.Header().Set("Content-Type", mime.TypeByExtension(ext))
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")

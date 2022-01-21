@@ -44,7 +44,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 
   // Read a packet and attempt to decode it.
   // If decoding was not possible, return the packet anyway for streamcopy
-  av_init_packet(pkt);
+  av_packet_unref(pkt);
   while (1) {
     AVStream *ist = NULL;
     AVCodecContext *decoder = NULL;
@@ -242,13 +242,28 @@ open_audio_err:
   return ret;
 }
 
+char* get_hw_decoder(int ff_codec_id)
+{
+    switch (ff_codec_id) {
+        case AV_CODEC_ID_H264:
+            return "h264_cuvid";
+        case AV_CODEC_ID_HEVC:
+            return "hevc_cuvid";
+        case AV_CODEC_ID_VP8:
+            return "vp8_cuvid";
+        case AV_CODEC_ID_VP9:
+            return "vp9_cuvid";
+        default:
+            return "";
+    }
+}
+
 int open_video_decoder(input_params *params, struct input_ctx *ctx)
 {
   int ret = 0;
   AVCodec *codec = NULL;
   AVDictionary **opts = NULL;
   AVFormatContext *ic = ctx->ic;
-
   // open video decoder
   ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
   if (ctx->dv) ; // skip decoding video
@@ -256,11 +271,12 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     LPMS_WARN("No video stream found in input");
   } else {
     if (AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
-      if (AV_CODEC_ID_H264 != codec->id) {
+      char* decoder_name = get_hw_decoder(codec->id);
+      if (!*decoder_name) {
         ret = lpms_ERR_INPUT_CODEC;
-        LPMS_ERR(open_decoder_err, "Non H264 codec detected in input");
+        LPMS_ERR(open_decoder_err, "Input codec does not support hardware acceleration");
       }
-      AVCodec *c = avcodec_find_decoder_by_name("h264_cuvid");
+      AVCodec *c = avcodec_find_decoder_by_name(decoder_name);
       if (c) codec = c;
       else LPMS_WARN("Nvidia decoder not found; defaulting to software");
       if (AV_PIX_FMT_YUV420P != ic->streams[ctx->vi]->codecpar->format &&
@@ -283,7 +299,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to assign video params");
     vc->opaque = (void*)ctx;
     // XXX Could this break if the original device falls out of scope in golang?
-    if (params->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
+    if (params->hw_type > AV_HWDEVICE_TYPE_NONE && params->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
@@ -301,6 +317,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
 
 open_decoder_err:
   free_input(ctx);
+  if (ret == AVERROR_UNKNOWN) ret = lpms_ERR_UNRECOVERABLE;
   return ret;
 }
 

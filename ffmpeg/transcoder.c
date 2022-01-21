@@ -6,6 +6,9 @@
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersrc.h>
+#include <stdbool.h>
 
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
@@ -15,6 +18,7 @@ const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
 const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_FILTER_FLUSHED = FFERRTAG('F','L','F','L');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
+const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 
 //
 //  Notes on transcoder internals:
@@ -66,16 +70,15 @@ const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
 //           avcodec_flush_buffers to flush the encoder.
 //
 
-#define MAX_OUTPUT_SIZE 10
-
 struct transcode_thread {
   int initialized;
 
   struct input_ctx ictx;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
 
-  int nb_outputs;
+  AVFilterGraph *dnn_filtergraph;
 
+  int nb_outputs;
 };
 
 void lpms_init(enum LPMSLogLevel max_level)
@@ -126,7 +129,7 @@ int transcode(struct transcode_thread *h,
   int reopen_decoders = !ictx->transmuxing;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
-  AVPacket ipkt = {0};
+  AVPacket *ipkt = NULL;
   AVFrame *dframe = NULL;
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
@@ -145,13 +148,29 @@ int transcode(struct transcode_thread *h,
     ret = avio_open(&ictx->ic->pb, inp->fname, AVIO_FLAG_READ);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen file");
   } else reopen_decoders = 0;
+
+  if (AV_HWDEVICE_TYPE_CUDA == ictx->hw_type && ictx->vi >= 0) {
+    if (ictx->last_format == AV_PIX_FMT_NONE) ictx->last_format = ictx->ic->streams[ictx->vi]->codecpar->format;
+    else if (ictx->ic->streams[ictx->vi]->codecpar->format != ictx->last_format) {
+      LPMS_WARN("Input pixel format has been changed in the middle.");
+      ictx->last_format = ictx->ic->streams[ictx->vi]->codecpar->format;
+      // if the decoder is not re-opened when the video pixel format is changed,
+      // the decoder tries HW decoding with the video context initialized to a pixel format different from the input one.
+      // to handle a change in the input pixel format,
+      // we close the demuxer and re-open the decoder by calling open_input().
+      free_input(&h->ictx);
+      ret = open_input(inp, &h->ictx);
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video demuxer for HW decoding");
+      reopen_decoders = 0;
+    }
+  }
+
   if (reopen_decoders) {
     // XXX check to see if we can also reuse decoder for sw decoding
-    // XXX Forcing reuse of decoder for sw/hw/netint
-    /*if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
+    if (ictx->hw_type == AV_HWDEVICE_TYPE_NONE) {
       ret = open_video_decoder(inp, ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video decoder");
-    }*/
+    }
     ret = open_audio_decoder(inp, ictx);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen audio decoder")
   }
@@ -166,9 +185,16 @@ int transcode(struct transcode_thread *h,
       octx->audio = &params[i].audio;
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
+      octx->sfilters = params[i].sfilters;
+      if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
+          octx->is_dnn_profile = params[i].is_dnn;
+          octx->dnn_filtergraph = &h->dnn_filtergraph;
+      }
       if (params[i].bitrate) octx->bitrate = params[i].bitrate;
       if (params[i].fps.den) octx->fps = params[i].fps;
       if (params[i].gop_time) octx->gop_time = params[i].gop_time;
+      if (params[i].from) octx->clip_from = params[i].from;
+      if (params[i].to) octx->clip_to = params[i].to;
       octx->dv = ictx->vi < 0 || is_drop(octx->video->name);
       octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
       octx->res = &results[i];
@@ -178,8 +204,8 @@ int transcode(struct transcode_thread *h,
       // when transmuxing we're opening output with first segment, but closing it
       // only when lpms_transcode_stop called, so we don't want to re-open it
       // on subsequent segments
-      if (!h->initialized || (AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type && !ictx->transmuxing)) {
-		printf("open_output.... h->initialized %d\n", h->initialized);
+      if (!h->initialized || ((AV_HWDEVICE_TYPE_NONE == octx->hw_type || AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type )&& !ictx->transmuxing)) {
+        printf("open_output.... h->initialized %d\n", h->initialized);
         ret = open_output(octx, ictx);
         if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
         if (ictx->transmuxing) {
@@ -197,9 +223,11 @@ int transcode(struct transcode_thread *h,
       }
   }
 
-  av_init_packet(&ipkt);
+  ipkt = av_packet_alloc();
+  if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
   dframe = av_frame_alloc();
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+
 
   while (1) {
     // DEMUXING & DECODING
@@ -207,14 +235,14 @@ int transcode(struct transcode_thread *h,
     AVStream *ist = NULL;
     AVFrame *last_frame = NULL;
     av_frame_unref(dframe);
-    ret = process_in(ictx, dframe, &ipkt);
+    ret = process_in(ictx, dframe, ipkt);
     if (ret == AVERROR_EOF) break;
                             // Bail out on streams that appear to be broken
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
     else if (lpms_ERR_INPUT_NOKF == ret) {
       LPMS_ERR(transcode_cleanup, "Could not decode; No keyframes in input");
     } else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
-    ist = ictx->ic->streams[ipkt.stream_index];
+    ist = ictx->ic->streams[ipkt->stream_index];
     has_frame = lpms_ERR_PACKET_ONLY != ret;
 
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
@@ -242,24 +270,25 @@ int transcode(struct transcode_thread *h,
       av_frame_ref(last_frame, dframe);
     }
     if (ictx->transmuxing) {
-      // decoded_results->frames++;
-      ist = ictx->ic->streams[ipkt.stream_index];
+      ist = ictx->ic->streams[ipkt->stream_index];
       if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
         decoded_results->frames++;
       }
-      if (ictx->discontinuity) {
-        // calc dts diff
-        ictx->dts_diff = ictx->last_dts + ictx->last_duration - ipkt.dts;
-        ictx->discontinuity = 0;
-      }
-
-      ipkt.pts += ictx->dts_diff;
-      ipkt.dts += ictx->dts_diff;
-
-      if (ipkt.stream_index == 0) {
-        ictx->last_dts = ipkt.dts;
-        if (ipkt.duration) {
-          ictx->last_duration = ipkt.duration;
+      if (ipkt->stream_index < MAX_OUTPUT_SIZE) {
+        if (ictx->discontinuity[ipkt->stream_index]) {
+          // calc dts diff
+          ictx->dts_diff[ipkt->stream_index] = ictx->last_dts[ipkt->stream_index] + ictx->last_duration[ipkt->stream_index] - ipkt->dts;
+          ictx->discontinuity[ipkt->stream_index] = 0;
+        }
+        ipkt->pts += ictx->dts_diff[ipkt->stream_index];
+        ipkt->dts += ictx->dts_diff[ipkt->stream_index];
+        if (ictx->last_dts[ipkt->stream_index] > -1 && ipkt->dts <= ictx->last_dts[ipkt->stream_index])  {
+          // skip packet if dts is equal or less than previous one
+          goto whileloop_end;
+        }
+        ictx->last_dts[ipkt->stream_index] = ipkt->dts;
+        if (ipkt->duration) {
+          ictx->last_duration[ipkt->stream_index] = ipkt->duration;
         }
       }
     }
@@ -273,7 +302,7 @@ int transcode(struct transcode_thread *h,
       ret = 0; // reset to avoid any carry-through
 
       if (ictx->transmuxing)
-        ost = octx->oc->streams[ipkt.stream_index];
+        ost = octx->oc->streams[ipkt->stream_index];
       else if (ist->index == ictx->vi) {
         if (octx->dv) continue; // drop video stream for this output
         ost = octx->oc->streams[0];
@@ -296,10 +325,11 @@ int transcode(struct transcode_thread *h,
 
         // we hit this case when decoder is flushing; will be no input packet
         // (we don't need decoded frames since this stream is doing a copy)
-        if (ipkt.pts == AV_NOPTS_VALUE) continue;
+        if (ipkt->pts == AV_NOPTS_VALUE) continue;
 
-        pkt = av_packet_clone(&ipkt);
+        pkt = av_packet_clone(ipkt);
         if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
+        octx->has_output = 1;
         ret = mux(pkt, ist->time_base, octx, ost);
         av_packet_free(&pkt);
       } else if (has_frame) {
@@ -309,7 +339,7 @@ int transcode(struct transcode_thread *h,
       else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
     }
 whileloop_end:
-    av_packet_unref(&ipkt);
+    av_packet_unref(ipkt);
   }
 
   if (ictx->transmuxing) {
@@ -325,8 +355,15 @@ whileloop_end:
 
   // flush outputs
   for (i = 0; i < nb_outputs; i++) {
-    ret = flush_outputs(ictx, &outputs[i]);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
+    if(outputs[i].is_dnn_profile == 0 && outputs[i].has_output > 0) {
+      ret = flush_outputs(ictx, &outputs[i]);
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
+    }
+    else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0) {
+       for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
+         outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;
+       }
+    }
   }
 
 transcode_cleanup:
@@ -347,12 +384,18 @@ transcode_cleanup:
   ictx->flushing = 0;
   ictx->pkt_diff = 0;
   ictx->sentinel_count = 0;
-  av_packet_unref(&ipkt);  // needed for early exits
+  if (ipkt) av_packet_free(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
-  // XXX no longer closing decoder between segments for sw/hw/netint
-  //if (ictx->vc && AV_HWDEVICE_TYPE_MEDIACODEC == ictx->hw_type) avcodec_free_context(&ictx->vc);
-  for (i = 0; i < nb_outputs; i++) close_output(&outputs[i]);
+  if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
+  for (i = 0; i < nb_outputs; i++) {
+    //send EOF signal to signature filter
+    if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
+      av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
+      free_filter(&outputs[i].sf);
+    }
+    close_output(&outputs[i]);
+  }
   return ret == AVERROR_EOF ? 0 : ret;
 }
 
@@ -385,7 +428,21 @@ int lpms_transcode(input_params *inp, output_params *params,
   }
 
   if (h->nb_outputs != nb_outputs) {
-    return lpms_ERR_OUTPUTS; // Not the most accurate error...
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+    bool only_detector_diff = true;
+    // make sure only detection related outputs are changed
+    for (int i = MIN(nb_outputs, h->nb_outputs); i < MAX(nb_outputs, h->nb_outputs); i++) {
+      if (!h->outputs[i].is_dnn_profile)
+        only_detector_diff = false;
+    }
+    if (only_detector_diff) {
+      h->nb_outputs = nb_outputs;
+    } else {
+      return lpms_ERR_OUTPUTS;
+    }
+#undef MAX
+#undef MIN
   }
 
   ret = transcode(h, inp, params, results, decoded_results);
@@ -398,6 +455,13 @@ struct transcode_thread* lpms_transcode_new() {
   struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
   if (!h) return NULL;
   memset(h, 0, sizeof *h);
+  // initialize video stream pixel format.
+  h->ictx.last_format = AV_PIX_FMT_NONE;
+  // keep track of last dts in each stream.
+  // used while transmuxing, to skip packets with invalid dts.
+  for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
+    h->ictx.last_dts[i] = -1;
+  }
   return h;
 }
 
@@ -416,11 +480,70 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
     free_output(&handle->outputs[i]);
   }
 
+  if (handle->dnn_filtergraph) avfilter_graph_free(&handle->dnn_filtergraph);
+
   free(handle);
+}
+
+static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
+{
+  const AVFilter *filter = NULL;
+  AVFilterContext *filter_ctx = NULL;
+  AVFilterGraph *graph_ctx = NULL;
+  int ret = 0;
+  char errstr[1024];
+  char *filter_name = "livepeer_dnn";
+  char filter_args[512];
+  snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:backend_configs=%s",
+           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->backend_configs);
+
+  /* allocate graph */
+  graph_ctx = avfilter_graph_alloc();
+  if (!graph_ctx)
+    LPMS_ERR(create_dnn_error, "Unable to open DNN filtergraph");
+
+  /* get a corresponding filter and open it */
+  if (!(filter = avfilter_get_by_name(filter_name))) {
+    snprintf(errstr, sizeof errstr, "Unrecognized filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  /* open filter and add it to the graph */
+  if (!(filter_ctx = avfilter_graph_alloc_filter(graph_ctx, filter, filter_name))) {
+    snprintf(errstr, sizeof errstr, "Impossible to open filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+  if (avfilter_init_str(filter_ctx, filter_args) < 0) {
+    snprintf(errstr, sizeof errstr, "Impossible to init filter '%s' with arguments '%s'\n", filter_name, filter_args);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  return graph_ctx;
+
+create_dnn_error:
+  avfilter_graph_free(&graph_ctx);
+  return NULL;
+}
+
+struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts)
+{
+  struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
+  if (!h) return NULL;
+  memset(h, 0, sizeof *h);
+  AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
+  if (!filtergraph) {
+      free(h);
+      h = NULL;
+  } else {
+      h->dnn_filtergraph = filtergraph;
+  }
+  return h;
 }
 
 void lpms_transcode_discontinuity(struct transcode_thread *handle) {
   if (!handle)
     return;
-  handle->ictx.discontinuity = 1;
+  for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
+    handle->ictx.discontinuity[i] = 1;
+  }
 }

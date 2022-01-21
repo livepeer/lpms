@@ -20,14 +20,14 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/stream"
-	"github.com/livepeer/lpms/vidplayer"
-	"github.com/livepeer/m3u8"
 	"github.com/livepeer/joy4/av"
 	"github.com/livepeer/joy4/av/avutil"
 	"github.com/livepeer/joy4/format"
 	"github.com/livepeer/joy4/format/rtmp"
+	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/stream"
+	"github.com/livepeer/lpms/vidplayer"
+	"github.com/livepeer/m3u8"
 )
 
 type TestStream struct{}
@@ -60,6 +60,12 @@ func (s *TestStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (
 				dst.WriteTrailer()
 				eof <- struct{}{}
 			}
+			// this sends data through TCP connection
+			// during the process OS tries to negotiate bigger TCP windows
+			// and that leads to connection being reset and unit test fails
+			// because of that
+			// so slow down transfer a bit to fix this
+			time.Sleep(time.Millisecond)
 			dst.WritePacket(pkt)
 		}
 	}(eof)
