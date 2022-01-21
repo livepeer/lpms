@@ -138,6 +138,16 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	return bres == 1, nil
 }
 
+// compare two signature files whether those matches or not
+func CompareSignatureByPath(fname1 string, fname2 string) (bool, error) {
+	return true, nil
+}
+
+// compare two signature buffers whether those matches or not
+func CompareSignatureByBuffer(data1 []byte, data2 []byte) (bool, error) {
+	return true, nil
+}
+
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
 	inp := C.CString(localRTMPUrl)
 	outp := C.CString(outM3U8)
