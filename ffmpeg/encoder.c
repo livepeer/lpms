@@ -522,7 +522,7 @@ skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush
-    if (frame == NULL && AV_HWDEVICE_TYPE_NONE > octx->hw_type &&
+    if (frame == NULL && octx->hw_type > AV_HWDEVICE_TYPE_NONE &&
         AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type &&
         AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
     if (frame == NULL) return ret;

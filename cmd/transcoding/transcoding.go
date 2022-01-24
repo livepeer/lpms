@@ -26,11 +26,14 @@ func main() {
 	var err error
 	args := append([]string{os.Args[0]}, flag.Args()...)
 	if len(args) <= 3 {
-		panic("Usage: [-hevc] [-from dur] [-to dur] <input file> <output renditions, comma separated> <sw/nv>")
+		panic("Usage: [-hevc] [-from dur] [-to dur] <input file> <output renditions, comma separated> <sw/nv/nt>")
 	}
 	str2accel := func(inp string) (ffmpeg.Acceleration, string) {
 		if inp == "nv" {
 			return ffmpeg.Nvidia, "nv"
+		}
+		if inp == "nt" {
+			return ffmpeg.Netint, "nt"
 		}
 		return ffmpeg.Software, "sw"
 	}
@@ -72,7 +75,7 @@ func main() {
 	options := profs2opts(profiles)
 
 	var dev string
-	if accel == ffmpeg.Nvidia {
+	if accel != ffmpeg.Software {
 		if len(args) <= 4 {
 			panic("Expected device number")
 		}
