@@ -165,11 +165,6 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
 	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
-	//acodec := C.GoString(acodec_c)
-	//vcodec := C.GoString(vcodec_c)
-	//fmt.Print(acodec)
-	//fmt.Print(vcodec)
-
 	ow.Close()
 	return bres == 1, nil
 }
