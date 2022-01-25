@@ -75,6 +75,7 @@ type HLSSegment struct {
 	Name     string
 	Data     []byte
 	Duration float64
+	IsZeroFrame bool
 }
 
 //Compare playlists by segments
