@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestCuda_SignDataCreate(t *testing.T) {
+func TestNvidia_SignDataCreate(t *testing.T) {
 	_, dir := setupTest(t)
 
 	filesMustExist := func(names []string) {
@@ -40,13 +40,13 @@ func TestCuda_SignDataCreate(t *testing.T) {
 		AudioEncoder: ComponentOptions{Name: "copy"},
 		CalcSign:     true,
 	}, {
-		Oname:        dir + "/cuda_signtest1.ts",
+		Oname:        dir + "/nvidia_signtest1.ts",
 		Profile:      P720p60fps16x9,
 		AudioEncoder: ComponentOptions{Name: "copy"},
 		CalcSign:     true,
 		Accel:        Nvidia,
 	}, {
-		Oname:        dir + "/cuda_signtest2.ts",
+		Oname:        dir + "/nvidia_signtest2.ts",
 		Profile:      P360p30fps16x9,
 		AudioEncoder: ComponentOptions{Name: "copy"},
 		CalcSign:     true,
@@ -59,9 +59,9 @@ func TestCuda_SignDataCreate(t *testing.T) {
 	filesMustExist([]string{
 		"/cpu_signtest1.ts.bin",
 		"/cpu_signtest2.ts.bin",
-		"/cuda_signtest1.ts.bin",
-		"/cuda_signtest2.ts.bin",
+		"/nvidia_signtest1.ts.bin",
+		"/nvidia_signtest2.ts.bin",
 	})
-	compareSignatures("/cpu_signtest1.ts.bin", "/cuda_signtest1.ts.bin")
-	compareSignatures("/cpu_signtest2.ts.bin", "/cuda_signtest2.ts.bin")
+	compareSignatures("/cpu_signtest1.ts.bin", "/nvidia_signtest1.ts.bin")
+	compareSignatures("/cpu_signtest2.ts.bin", "/nvidia_signtest2.ts.bin")
 }
