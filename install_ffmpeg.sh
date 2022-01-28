@@ -56,16 +56,22 @@ else
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  #LIBTENSORFLOW_VERSION=2.3.0 \
-  #&& curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-  #&& sudo tar -C /usr/local -xzf libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-  #&& sudo ldconfig  
-  # --enable-libtensorflow
+  # download TensorFlow C library
+  LIBTENSORFLOW_VERSION=2.5.0 \
+  && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  && sudo ldconfig
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
+  
+  # download livepeer-ml model
+  LP_ML_MODEL_VERSION=0.3
+  curl -LO https://github.com/livepeer/livepeer-ml/releases/download/v${LP_ML_MODEL_VERSION}/tasmodel.pb
+  mv tasmodel.pb ./ffmpeg
 
   git clone https://github.com/livepeer/FFmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
 
-  git checkout e0eebeeeddf863f72da0232f9dddc05200340560 
+  git checkout d8e4017c1b9d002b1a5d15b2b57951098a084400
 
   ./configure --prefix="$HOME/compiled" --enable-libx264 --enable-gpl --enable-static $EXTRA_FFMPEG_FLAGS
   make

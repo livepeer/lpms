@@ -723,10 +723,8 @@ func TestNvidia_CompareVideo(t *testing.T) {
 	compareVideo(t, Nvidia)
 }
 
-/*
 func TestNvidia_DetectionFreq(t *testing.T) {
-	detectionFreq(t, Nvidia)
+	detectionFreq(t, Nvidia, "0")
 }
-*/
 
 // XXX test bframes or delayed frames

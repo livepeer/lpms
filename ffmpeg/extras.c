@@ -122,17 +122,19 @@ handle_r2h_err:
   return ret == AVERROR_EOF ? 0 : ret;
 }
 
+
 //
-// Bypass Check
-// this is needed to handle streams that have first few segments that are
+// Gets codec names for best video and audio streams
+// Also detects if bypass is needed for first few segments that are
 // audio-only (i.e. have a video stream but no frames)
 // returns: 0 if both audio/video streams valid
 //          1 for video with 0-frame, that needs bypass
 //          <0 invalid stream(s) or internal error
 //
-int lpms_is_bypass_needed(char *fname)
+int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_codec)
 {
   AVFormatContext *ic = NULL;
+  AVCodec *ac, *vc;
   int ret = 0, vstream = 0, astream = 0;
 
   ret = avformat_open_input(&ic, fname, NULL, NULL);
@@ -140,8 +142,12 @@ int lpms_is_bypass_needed(char *fname)
   ret = avformat_find_stream_info(ic, NULL);
   if (ret < 0) { ret = -1; goto close_format_context; }
 
-  vstream = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
-  astream = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
+  vstream = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &vc, 0);
+  astream = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &ac, 0);
+  if (vstream >= 0)
+      strncpy(out_video_codec, vc->name, (int)fmin(sizeof(out_video_codec), sizeof(vc->name)));
+  if (astream >= 0)
+      strncpy(out_audio_codec, ac->name, (int)fmin(sizeof(out_audio_codec), sizeof(ac->name)));
   if (vstream >= 0 && astream >= 0) {
       if (AV_PIX_FMT_NONE == ic->streams[vstream]->codecpar->format &&
           0 == ic->streams[vstream]->codecpar->height) {
