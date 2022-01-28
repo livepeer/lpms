@@ -108,9 +108,8 @@ dec_flush:
       ictx->flushed = 1;
     }
   }
-#if  0
   if (ictx->vc) {
-    if (ictx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC) {
+    if (ictx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC || ictx->hw_type == AV_HWDEVICE_TYPE_NONE) {
       // Flushing for software decoder is straightforward
       avcodec_send_packet(ictx->vc, NULL);
       ret = avcodec_receive_frame(ictx->vc, frame);
@@ -137,7 +136,6 @@ dec_flush:
       }
     }
   }
-#endif  
   // Flush audio decoder.
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
