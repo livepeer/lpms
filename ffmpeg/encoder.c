@@ -147,7 +147,7 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && octx->hw_type > AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
+  if (octx->vc && (octx->hw_type == AV_HWDEVICE_TYPE_NONE || octx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC)) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;

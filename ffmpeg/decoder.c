@@ -28,7 +28,7 @@ static int send_first_pkt(struct input_ctx *ictx)
   if (!ictx->first_pkt) return lpms_ERR_INPUT_NOKF;
 
   //LPMS_WARN("sending flush packet NOW !");
-  
+
   int ret = avcodec_send_packet(ictx->vc, ictx->first_pkt);
   ictx->sentinel_count++;
   if (ret < 0) {
@@ -92,52 +92,25 @@ dec_flush:
   // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
   // buffered frames with no success.
   // TODO this is unnecessary for SW decoding! SW process should match audio
-  if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
-    ictx->flushing = 1;
-    ret = send_first_pkt(ictx);
-    if (ret < 0) {
-      ictx->flushed = 1;
-      return ret;
-    }
-    ret = lpms_receive_frame(ictx, ictx->vc, frame);
-    pkt->stream_index = ictx->vi;
-    // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-      return 0; // ignore actual return value and keep flushing
-    } else {
-      ictx->flushed = 1;
-    }
-  }
-#if  0
-  if (ictx->vc) {
-    if (ictx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC) {
-      // Flushing for software decoder is straightforward
-      avcodec_send_packet(ictx->vc, NULL);
-      ret = avcodec_receive_frame(ictx->vc, frame);
-      pkt->stream_index = ictx->vi;
-      if (!ret) return ret;
-    } else if (!ictx->flushed && ictx->pkt_diff > 0) {
-      // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
-      // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
-      // buffered frames with no success.
-      ictx->flushing = 1;
-      ret = send_first_pkt(ictx);
-      if (ret < 0) {
-	ictx->flushed = 1;
-	return ret;
-      }
-      ret = lpms_receive_frame(ictx, ictx->vc, frame);
-      pkt->stream_index = ictx->vi;
-      // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-      if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-	return 0; // ignore actual return value and keep flushing
-      } else {
-	ictx->flushed = 1;
-	if (!ret) return ret;
-      }
-    }
-  }
-#endif  
+// xxx it doesn't work for NETINT
+//  if (ictx->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
+//      if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
+//        ictx->flushing = 1;
+//        ret = send_first_pkt(ictx);
+//        if (ret < 0) {
+//          ictx->flushed = 1;
+//          return ret;
+//        }
+//        ret = lpms_receive_frame(ictx, ictx->vc, frame);
+//        pkt->stream_index = ictx->vi;
+//        // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
+//        if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
+//          return 0; // ignore actual return value and keep flushing
+//        } else {
+//          ictx->flushed = 1;
+//        }
+//      }
+//  }
   // Flush audio decoder.
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
