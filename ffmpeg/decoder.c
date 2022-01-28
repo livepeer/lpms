@@ -92,25 +92,24 @@ dec_flush:
   // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
   // buffered frames with no success.
   // TODO this is unnecessary for SW decoding! SW process should match audio
-// xxx it doesn't work for NETINT
-//  if (ictx->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
-//      if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
-//        ictx->flushing = 1;
-//        ret = send_first_pkt(ictx);
-//        if (ret < 0) {
-//          ictx->flushed = 1;
-//          return ret;
-//        }
-//        ret = lpms_receive_frame(ictx, ictx->vc, frame);
-//        pkt->stream_index = ictx->vi;
-//        // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-//        if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-//          return 0; // ignore actual return value and keep flushing
-//        } else {
-//          ictx->flushed = 1;
-//        }
-//      }
-//  }
+  if (ictx->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
+      if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
+        ictx->flushing = 1;
+        ret = send_first_pkt(ictx);
+        if (ret < 0) {
+          ictx->flushed = 1;
+          return ret;
+        }
+        ret = lpms_receive_frame(ictx, ictx->vc, frame);
+        pkt->stream_index = ictx->vi;
+        // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
+        if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
+          return 0; // ignore actual return value and keep flushing
+        } else {
+          ictx->flushed = 1;
+        }
+      }
+  }
   // Flush audio decoder.
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
@@ -276,10 +275,10 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
-      ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
     }
+    ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
 	av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
     ret = avcodec_open2(vc, codec, opts);
