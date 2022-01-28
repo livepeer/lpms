@@ -1439,8 +1439,8 @@ func discontinuityPixelFormatSegment(t *testing.T, accel Acceleration) {
 func TestTranscoder_DiscontinuityPixelFormat(t *testing.T) {
 	discontinuityPixelFormatSegment(t, Software)
 }
-/*
-func detectionFreq(t *testing.T, accel Acceleration) {
+
+func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 	cmd := `
@@ -1453,13 +1453,13 @@ func detectionFreq(t *testing.T, accel Acceleration) {
   `
 	run(cmd)
 
-	err := ffmpeg.InitFFmpegWithDetectorProfile(&ffmpeg.DSceneAdultSoccer, "0")
+	InitFFmpeg()
+	tc, err := NewTranscoderWithDetector(&DSceneAdultSoccer, deviceid)
 	if err != nil {
 		t.Error(err)
 	}
-	defer ffmpeg.ReleaseFFmpegDetectorProfile()
+	defer tc.StopTranscoder()
 	// Test encoding with only seg0 and seg2 under detection
-	tc := NewTranscoder()
 	prof := P144p30fps16x9
 	for i := 0; i < 4; i++ {
 		in := &TranscodeOptionsIn{
@@ -1487,10 +1487,8 @@ func detectionFreq(t *testing.T, accel Acceleration) {
 			t.Error("No detect data returned for detection profile")
 		}
 	}
-	tc.StopTranscoder()
 }
 
 func TestTranscoder_DetectionFreq(t *testing.T) {
-	detectionFreq(t, Software)
+	detectionFreq(t, Software, "-1")
 }
-*/
