@@ -14,10 +14,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 func selectFile(files *[]string) filepath.WalkFunc {
@@ -40,71 +38,6 @@ func getTsFilename(txtpath string) string {
 		tsfname = txtfname[:i] + ".ts"
 	}
 	return tsfname
-}
-func parseProfiles(instr string) []ffmpeg.VideoProfile {
-	type profilesJson struct {
-		Profiles []struct {
-			Name    string `json:"name"`
-			Width   int    `json:"width"`
-			Height  int    `json:"height"`
-			Bitrate int    `json:"bitrate"`
-			FPS     uint   `json:"fps"`
-			FPSDen  uint   `json:"fpsDen"`
-			Profile string `json:"profile"`
-			GOP     string `json:"gop"`
-		} `json:"profiles"`
-	}
-	profs := []ffmpeg.VideoProfile{}
-	resp := &profilesJson{}
-	err := json.Unmarshal([]byte(instr), &resp.Profiles)
-	if err != nil {
-		return profs
-	}
-	for _, profile := range resp.Profiles {
-		name := profile.Name
-		if name == "" {
-			name = "custom_" + fmt.Sprintf("%dx%d_%d", profile.Width, profile.Height, profile.Bitrate)
-		}
-		var gop time.Duration
-		if profile.GOP != "" {
-			if profile.GOP == "intra" {
-				gop = ffmpeg.GOPIntraOnly
-			} else {
-				gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
-				if err != nil {
-					break
-				}
-				if gopFloat <= 0.0 {
-					break
-				}
-				gop = time.Duration(gopFloat * float64(time.Second))
-			}
-		}
-		var EncoderProfileLookup = map[string]ffmpeg.Profile{
-			"":                    ffmpeg.ProfileNone,
-			"none":                ffmpeg.ProfileNone,
-			"h264baseline":        ffmpeg.ProfileH264Baseline,
-			"h264main":            ffmpeg.ProfileH264Main,
-			"h264high":            ffmpeg.ProfileH264High,
-			"h264constrainedhigh": ffmpeg.ProfileH264ConstrainedHigh,
-		}
-		encodingProfile, ok := EncoderProfileLookup[strings.ToLower(profile.Profile)]
-
-		if !ok {
-			break
-		}
-		prof := ffmpeg.VideoProfile{
-			Name:         name,
-			Bitrate:      fmt.Sprint(profile.Bitrate),
-			Framerate:    profile.FPS,
-			FramerateDen: profile.FPSDen,
-			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
-			Profile:      encodingProfile,
-			GOP:          gop,
-		}
-		profs = append(profs, prof)
-	}
-	return profs
 }
 
 func parsingAndStore(t *testing.T, infiles []string, outdir string, inTparam *[][]string) error {
@@ -185,7 +118,15 @@ func checkTranscodingFailCase(t *testing.T, inputs [][]string, accel ffmpeg.Acce
 
 	for i, indata := range inputs {
 
-		profiles := parseProfiles(indata[1])
+		jsonEncodedProfiles := []byte(indata[1])
+		profiles, parsingError := ffmpeg.ParseProfiles(jsonEncodedProfiles)
+		if parsingError != nil {
+			// display the error and continue with other inputs
+			fmt.Println("Failed in parsing input:", i, profiles, indata[0])
+			indata = append(indata, parsingError.Error())
+			csvrecorder.Write(indata)
+			continue
+		}
 		tc := ffmpeg.NewTranscoder()
 
 		profs2opts := func(profs []ffmpeg.VideoProfile) []ffmpeg.TranscodeOptions {
