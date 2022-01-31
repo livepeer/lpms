@@ -1,11 +1,11 @@
 package ffmpeg
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
-	"encoding/json"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/m3u8"
@@ -258,4 +258,3 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 	}
 	return parsedProfiles, nil
 }
-

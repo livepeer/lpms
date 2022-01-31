@@ -1,3 +1,4 @@
+//go:build nvidia
 // +build nvidia
 
 package transcoder
