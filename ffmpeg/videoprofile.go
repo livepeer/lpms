@@ -218,7 +218,6 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 	decodedJson := &profilesJson{}
 	err := json.Unmarshal(injson, &decodedJson.Profiles)
 	if err != nil {
-		// TODO: include err info into returned error
 		return parsedProfiles, fmt.Errorf("Unable to unmarshal the passed transcoding option: %w", err)
 	}
 	for _, profile := range decodedJson.Profiles {
