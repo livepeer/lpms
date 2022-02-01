@@ -1,6 +1,8 @@
 package ffmpeg
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -8,6 +10,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/m3u8"
 )
+
+var ErrProfName = fmt.Errorf("unknown VideoProfile profile name")
 
 type Format int
 
@@ -26,6 +30,15 @@ const (
 	ProfileH264High
 	ProfileH264ConstrainedHigh
 )
+
+var EncoderProfileLookup = map[string]Profile{
+	"":                    ProfileNone,
+	"none":                ProfileNone,
+	"h264baseline":        ProfileH264Baseline,
+	"h264main":            ProfileH264Main,
+	"h264high":            ProfileH264High,
+	"h264constrainedhigh": ProfileH264ConstrainedHigh,
+}
 
 // For additional "special" GOP values
 // enumerate backwards from here
@@ -175,3 +188,72 @@ func (a ByName) Less(i, j int) bool {
 // 	res, _ := strconv.Atoi(intstr)
 // 	return res
 // }
+
+func EncoderProfileNameToValue(profile string) (Profile, error) {
+	p, ok := EncoderProfileLookup[strings.ToLower(profile)]
+	if !ok {
+		return -1, ErrProfName
+	}
+	return p, nil
+}
+
+func DefaultProfileName(width int, height int, bitrate int) string {
+	return fmt.Sprintf("%dx%d_%d", width, height, bitrate)
+}
+
+func ParseProfiles(injson []byte) ([]VideoProfile, error) {
+	type profilesJson struct {
+		Profiles []struct {
+			Name    string `json:"name"`
+			Width   int    `json:"width"`
+			Height  int    `json:"height"`
+			Bitrate int    `json:"bitrate"`
+			FPS     uint   `json:"fps"`
+			FPSDen  uint   `json:"fpsDen"`
+			Profile string `json:"profile"`
+			GOP     string `json:"gop"`
+		} `json:"profiles"`
+	}
+	parsedProfiles := []VideoProfile{}
+	decodedJson := &profilesJson{}
+	err := json.Unmarshal(injson, &decodedJson.Profiles)
+	if err != nil {
+		return parsedProfiles, fmt.Errorf("Unable to unmarshal the passed transcoding option: %w", err)
+	}
+	for _, profile := range decodedJson.Profiles {
+		name := profile.Name
+		if name == "" {
+			name = "custom_" + DefaultProfileName(profile.Width, profile.Height, profile.Bitrate)
+		}
+		var gop time.Duration
+		if profile.GOP != "" {
+			if profile.GOP == "intra" {
+				gop = GOPIntraOnly
+			} else {
+				gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
+				if err != nil {
+					return parsedProfiles, fmt.Errorf("Cannot parse the GOP value in the transcoding options: %w", err)
+				}
+				if gopFloat <= 0.0 {
+					return parsedProfiles, fmt.Errorf("Invalid gop value %f. Please set it to a positive value", gopFloat)
+				}
+				gop = time.Duration(gopFloat * float64(time.Second))
+			}
+		}
+		encodingProfile, err := EncoderProfileNameToValue(profile.Profile)
+		if err != nil {
+			return parsedProfiles, fmt.Errorf("Unable to parse the H264 encoder profile: %w", err)
+		}
+		prof := VideoProfile{
+			Name:         name,
+			Bitrate:      fmt.Sprint(profile.Bitrate),
+			Framerate:    profile.FPS,
+			FramerateDen: profile.FPSDen,
+			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+			Profile:      encodingProfile,
+			GOP:          gop,
+		}
+		parsedProfiles = append(parsedProfiles, prof)
+	}
+	return parsedProfiles, nil
+}
