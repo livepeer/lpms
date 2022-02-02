@@ -52,8 +52,8 @@ var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
 	Software: {
 		H264: "libx264",
 		H265: "libx265",
-		VP8: "libvpx",
-		VP9: "libvpx-vp9",
+		VP8:  "libvpx",
+		VP9:  "libvpx-vp9",
 	},
 	Nvidia: {
 		H264: "h264_nvenc",
@@ -115,10 +115,10 @@ func GetCodecInfo(fname string) (bool, string, string, error) {
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
 	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
-	if C.strlen(acodec_c)<255 {
+	if C.strlen(acodec_c) < 255 {
 		acodec = C.GoString(acodec_c)
 	}
-	if C.strlen(vcodec_c)<255 {
+	if C.strlen(vcodec_c) < 255 {
 		vcodec = C.GoString(vcodec_c)
 	}
 	return bres == 1, acodec, vcodec, nil
