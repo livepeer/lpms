@@ -128,10 +128,10 @@ int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_code
 
   vstream = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &vc, 0);
   astream = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &ac, 0);
-  if (vstream >= 0)
-      strncpy(out_video_codec, vc->name, (int)fmin(sizeof(out_video_codec), sizeof(vc->name)));
-  if (astream >= 0)
-      strncpy(out_audio_codec, ac->name, (int)fmin(sizeof(out_audio_codec), sizeof(ac->name)));
+  if (vstream >= 0 && vc->name)
+      strncpy(out_video_codec, vc->name, (int)fmin(strlen(out_video_codec), strlen(vc->name))+1);
+  if (astream >= 0 && ac->name)
+      strncpy(out_audio_codec, ac->name, (int)fmin(strlen(out_audio_codec), strlen(ac->name))+1);
   if (vstream >= 0 && astream >= 0) {
       if (AV_PIX_FMT_NONE == ic->streams[vstream]->codecpar->format &&
           0 == ic->streams[vstream]->codecpar->height) {
