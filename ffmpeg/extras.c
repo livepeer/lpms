@@ -117,6 +117,7 @@ handle_r2h_err:
 //
 int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_codec)
 {
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
   AVCodec *ac, *vc;
   int ret = 0, vstream = 0, astream = 0;
@@ -129,9 +130,9 @@ int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_code
   vstream = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &vc, 0);
   astream = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &ac, 0);
   if (vstream >= 0 && vc->name)
-      strncpy(out_video_codec, vc->name, (int)fmin(strlen(out_video_codec), strlen(vc->name))+1);
+      strncpy(out_video_codec, vc->name, MIN(strlen(out_video_codec), strlen(vc->name))+1);
   if (astream >= 0 && ac->name)
-      strncpy(out_audio_codec, ac->name, (int)fmin(strlen(out_audio_codec), strlen(ac->name))+1);
+      strncpy(out_audio_codec, ac->name, MIN(strlen(out_audio_codec), strlen(ac->name))+1);
   if (vstream >= 0 && astream >= 0) {
       if (AV_PIX_FMT_NONE == ic->streams[vstream]->codecpar->format &&
           0 == ic->streams[vstream]->codecpar->height) {
@@ -145,6 +146,7 @@ int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_code
       // one of audio or video streams not present at all, won't bypass
       ret = -1;
   }
+#undef MIN
 close_format_context:
   if (ic) avformat_close_input(&ic);
   return ret;
