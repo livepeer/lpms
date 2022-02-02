@@ -605,11 +605,11 @@ func TestTranscoder_MuxerOpts(t *testing.T) {
 }
 
 type TranscodeOptionsTest struct {
-	InputCodec   VideoCodec
-	OutputCodec  VideoCodec
-	InputAccel   Acceleration
-	OutputAccel  Acceleration
-	Profile      VideoProfile
+	InputCodec  VideoCodec
+	OutputCodec VideoCodec
+	InputAccel  Acceleration
+	OutputAccel Acceleration
+	Profile     VideoProfile
 }
 
 func TestSW_Transcoding(t *testing.T) {
@@ -627,18 +627,18 @@ func supportedCodecsCombinations(accels []Acceleration) []TranscodeOptionsTest {
 				for _, outCodec := range outCodecs {
 					// skip unsupported combinations
 					switch outAccel {
-						case Nvidia:
-							switch outCodec {
-								case VP8, VP9:
-									continue
-								}
+					case Nvidia:
+						switch outCodec {
+						case VP8, VP9:
+							continue
+						}
 					}
 					opts = append(opts, TranscodeOptionsTest{
-						InputCodec:   inCodec,
-						OutputCodec:  outCodec,
-						InputAccel:   inAccel,
-						OutputAccel:  outAccel,
-						Profile:      prof,
+						InputCodec:  inCodec,
+						OutputCodec: outCodec,
+						InputAccel:  inAccel,
+						OutputAccel: outAccel,
+						Profile:     prof,
 					})
 				}
 			}
@@ -661,18 +661,18 @@ func codecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
 	for i := range options {
 		curOptions := options[i]
 		switch curOptions.InputCodec {
-			case VP8, VP9:
-				inName = dir + "/test_in.mkv"
-			case H264, H265:
-				inName = dir + "/test_in.ts"
+		case VP8, VP9:
+			inName = dir + "/test_in.mkv"
+		case H264, H265:
+			inName = dir + "/test_in.ts"
 		}
 		switch curOptions.OutputCodec {
-			case VP8, VP9:
-				outName = dir + "/out.mkv"
-				qName = dir + "/sw.mkv"
-			case H264, H265:
-				outName = dir + "/out.ts"
-				qName = dir + "/sw.ts"
+		case VP8, VP9:
+			outName = dir + "/out.mkv"
+			qName = dir + "/sw.mkv"
+		case H264, H265:
+			outName = dir + "/out.ts"
+			qName = dir + "/sw.ts"
 		}
 		// if non-h264 test requested, transcode to target input codec first
 		prepare := true
