@@ -1,10 +1,13 @@
 package ffmpeg
 
 import (
+	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func Test_SignDataCreate(t *testing.T) {
@@ -137,5 +140,21 @@ func Test_SignDataCompare(t *testing.T) {
 	res, err = CompareSignatureByBuffer(data0, data1)
 	if err != nil || res != false {
 		t.Error(err)
+	}
+	rand.Seed(time.Now().UnixNano())
+	xdata0 := make([]byte, len(data0))
+	xdata2 := make([]byte, len(data2))
+	// check that CompareSignatureByBuffer does not segfault on random data
+	for i := 0; i < 300; i++ {
+		copy(xdata0, data0)
+		copy(xdata2, data2)
+		for j := 0; j < 20; j++ {
+			pos := rand.Intn(len(xdata0))
+			xdata0[pos] = byte(rand.Int31n(256))
+			CompareSignatureByBuffer(xdata0, xdata2)
+		}
+		if i%100 == 0 {
+			fmt.Printf("Processed %d times\n", i)
+		}
 	}
 }
