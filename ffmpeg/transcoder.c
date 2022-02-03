@@ -126,6 +126,7 @@ int transcode(struct transcode_thread *h,
   int ret = 0, i = 0;
   struct input_ctx *ictx = &h->ictx;
   ictx->xcoderParams = inp->xcoderParams;
+  ictx->xcodec = inp->xcodec;
   int reopen_decoders = !ictx->transmuxing;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;

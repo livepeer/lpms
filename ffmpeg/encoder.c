@@ -203,7 +203,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   AVCodecContext *vc  = NULL;
   AVCodec *codec      = NULL;
 
-  printf("open_output octx->fname %s\n", octx->fname);
+  //printf("ictx->xcodec %s\n", ictx->xcodec);
+  //printf("octx->video->name %s\n", octx->video->name);
 
   // open muxer
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
@@ -221,8 +222,16 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     }
     ret = init_video_filters(ictx, octx);
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
-
-    codec = avcodec_find_encoder_by_name(octx->video->name);
+	
+	
+	if (ictx->xcodec != NULL && (strcmp(ictx->xcodec, "h264_ni_enc") == 0 || strcmp(ictx->xcodec, "h265_ni_enc") == 0)) {
+		codec = avcodec_find_encoder_by_name(ictx->xcodec);
+		printf("open_output ictx->xcodec %s\n", ictx->xcodec);
+	} else {
+		codec = avcodec_find_encoder_by_name(octx->video->name);
+		printf("open_output octx->video->name %s\n", octx->video->name);
+	}
+    
     if (!codec) LPMS_ERR(open_output_err, "Unable to find encoder");
 
     // open video encoder

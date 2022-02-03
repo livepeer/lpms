@@ -79,6 +79,7 @@ type TranscodeOptionsIn struct {
 	Accel       Acceleration
 	Device      string
 	XcoderParams      string
+	Xcodec      string
 	Transmuxing bool
 }
 
@@ -92,6 +93,7 @@ type TranscodeOptions struct {
 	From     time.Duration
 	To       time.Duration
 	XcoderParams  string
+	Xcodec      string
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -301,8 +303,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	fname := C.CString(input.Fname)
 
 	xcoderParams := C.CString(input.XcoderParams)
+	xcodec := C.CString(input.Xcodec)
 	defer C.free(unsafe.Pointer(fname))
 	defer C.free(unsafe.Pointer(xcoderParams))
+	defer C.free(unsafe.Pointer(xcodec))
 	if input.Transmuxing {
 		t.started = true
 	}
@@ -327,8 +331,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 		oname := C.CString(p.Oname)
 		xcoderParams := C.CString(p.XcoderParams)
+		xcodec := C.CString(p.Xcodec)
 		defer C.free(unsafe.Pointer(oname))
 		defer C.free(unsafe.Pointer(xcoderParams))
+		defer C.free(unsafe.Pointer(xcodec))
 
 		param := p.Profile
 		w, h, err := VideoProfileResolution(param)
@@ -526,7 +532,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	fmt.Println("hw_type: ", hw_type)
 	fmt.Println("input.Device: ", input.Device)
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
-		handle: t.handle}
+		xcodec: xcodec, handle: t.handle}
 	if input.Accel == Netint {
 		// Set decoder and AVOpts for NETINT
 		decoder, opts, err := decoderOpts(input.Accel)
