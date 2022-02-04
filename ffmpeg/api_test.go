@@ -100,8 +100,10 @@ func TestTranscoderAPI_InvalidFile(t *testing.T) {
 	// fail # 1
 	in.Fname = "none"
 	_, err := tc.Transcode(in, out)
-	if err == nil || err.Error() != "No such file or directory" {
-		t.Error("Expected 'No such file or directory', got ", err)
+	if err == nil || err.Error() != "TranscoderInvalidVideo" {
+		// Early codec check didn't find video in missing input file so we get `TranscoderInvalidVideo`
+		//  instead of `No such file or directory`
+		t.Error("Expected 'TranscoderInvalidVideo', got ", err)
 	}
 
 	// success # 1
@@ -161,7 +163,8 @@ func TestTranscoderAPI_TooManyOutputs(t *testing.T) {
 	for i := range out {
 		out[i].VideoEncoder = ComponentOptions{Name: "drop"}
 	}
-	in := &TranscodeOptionsIn{}
+	// We need input file with video stream to pass early format check
+	in := &TranscodeOptionsIn{Fname: "../transcoder/test.ts"}
 	tc := NewTranscoder()
 	_, err := tc.Transcode(in, out)
 	if err == nil || err.Error() != "Too many outputs" {

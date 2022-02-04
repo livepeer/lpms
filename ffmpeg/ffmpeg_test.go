@@ -879,13 +879,9 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 			AudioEncoder: ComponentOptions{Name: "copy"},
 		},
 	}
-	res, err = Transcode3(in, out)
-	if err != nil {
-		t.Error(err)
-	}
-	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
-		t.Error("Unexpected count of decoded frames")
-	}
+	// Audio only segments are not supported
+	_, err = Transcode3(in, out)
+	assert.EqualError(t, err, "TranscoderInvalidVideo")
 }
 
 func TestTranscoder_StreamCopy_Validate_B_Frames(t *testing.T) {
@@ -1016,13 +1012,9 @@ func TestTranscoder_Drop(t *testing.T) {
 	}
 	in.Fname = dir + "/novideo.ts"
 	out = []TranscodeOptions{{Oname: dir + "/encoded-audio.mp4", Profile: P144p30fps16x9}}
-	res, err = Transcode3(in, out)
-	if err != nil {
-		t.Error(err)
-	}
-	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
-		t.Error("Unexpected encoded/decoded frame counts ")
-	}
+	_, err = Transcode3(in, out)
+	// Audio only segments are not supported
+	assert.EqualError(t, err, "TranscoderInvalidVideo")
 }
 
 func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
@@ -1719,29 +1711,35 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
-	res, acodec, vcodec, err := GetCodecInfo(fname)
-	if res != true {
-		t.Errorf("Expecting true, got %v fname=%s", res, fname)
+	status, acodec, vcodec, pixelFormat, err := GetCodecInfo(fname)
+	isZeroFrame := status == CodecStatusNeedsBypass
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
+	if isZeroFrame != true {
+		t.Errorf("Expecting true, got %v fname=%s", isZeroFrame, fname)
 	}
 	data, err := ioutil.ReadFile(fname)
 	if err != nil {
 		t.Error(err)
 	}
-	res, acodec, vcodec, err = GetCodecInfoBytes(data)
+	status, acodec, vcodec, pixelFormat, err = GetCodecInfoBytes(data)
+	isZeroFrame = status == CodecStatusNeedsBypass
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
 	if err != nil {
 		t.Error(err)
 	}
-	if res != true {
-		t.Errorf("Expecting true, got %v fname=%s", res, fname)
+	if isZeroFrame != true {
+		t.Errorf("Expecting true, got %v fname=%s", isZeroFrame, fname)
 	}
 	_, err = HasZeroVideoFrameBytes(nil)
 	if err != ErrEmptyData {
 		t.Errorf("Unexpected error %v", err)
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
-	res, acodec, vcodec, err = GetCodecInfo(fname)
-	if res != false {
-		t.Errorf("Expecting false, got %v fname=%s", res, fname)
+	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
+	isZeroFrame = status == CodecStatusNeedsBypass
+	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
+	if isZeroFrame != false {
+		t.Errorf("Expecting false, got %v fname=%s", isZeroFrame, fname)
 	}
 	assert.Equal(t, "h264", vcodec)
 	assert.Equal(t, "aac", acodec)

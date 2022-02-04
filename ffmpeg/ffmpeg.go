@@ -39,6 +39,7 @@ var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 var ErrEmptyData = errors.New("EmptyData")
 var ErrDNNInitialize = errors.New("DetectorInitializationError")
 var ErrSignCompare = errors.New("InvalidSignData")
+var ErrTranscoderPixelformat = errors.New("TranscoderInvalidPixelformat")
 var ErrVideoCompare = errors.New("InvalidVideoData")
 
 type Acceleration int
@@ -107,7 +108,124 @@ type TranscodeResults struct {
 	Encoded []MediaInfo
 }
 
-func GetCodecInfo(fname string) (bool, string, string, error) {
+type PixelFormat struct {
+	RawValue int
+}
+
+const (
+	PixelFormatNone        int = C.AV_PIX_FMT_NONE
+	PixelFormatYUV420P     int = C.AV_PIX_FMT_YUV420P
+	PixelFormatYUYV422     int = C.AV_PIX_FMT_YUYV422
+	PixelFormatYUV422P     int = C.AV_PIX_FMT_YUV422P
+	PixelFormatYUV444P     int = C.AV_PIX_FMT_YUV444P
+	PixelFormatUYVY422     int = C.AV_PIX_FMT_UYVY422
+	PixelFormatNV12        int = C.AV_PIX_FMT_NV12
+	PixelFormatNV21        int = C.AV_PIX_FMT_NV21
+	PixelFormatYUV420P10BE int = C.AV_PIX_FMT_YUV420P10BE
+	PixelFormatYUV420P10LE int = C.AV_PIX_FMT_YUV420P10LE
+	PixelFormatYUV422P10BE int = C.AV_PIX_FMT_YUV422P10BE
+	PixelFormatYUV422P10LE int = C.AV_PIX_FMT_YUV422P10LE
+	PixelFormatYUV444P10BE int = C.AV_PIX_FMT_YUV444P10BE
+	PixelFormatYUV444P10LE int = C.AV_PIX_FMT_YUV444P10LE
+	PixelFormatYUV420P16LE int = C.AV_PIX_FMT_YUV420P16LE
+	PixelFormatYUV420P16BE int = C.AV_PIX_FMT_YUV420P16BE
+	PixelFormatYUV422P16LE int = C.AV_PIX_FMT_YUV422P16LE
+	PixelFormatYUV422P16BE int = C.AV_PIX_FMT_YUV422P16BE
+	PixelFormatYUV444P16LE int = C.AV_PIX_FMT_YUV444P16LE
+	PixelFormatYUV444P16BE int = C.AV_PIX_FMT_YUV444P16BE
+	PixelFormatYUV420P12BE int = C.AV_PIX_FMT_YUV420P12BE
+	PixelFormatYUV420P12LE int = C.AV_PIX_FMT_YUV420P12LE
+	PixelFormatYUV422P12BE int = C.AV_PIX_FMT_YUV422P12BE
+	PixelFormatYUV422P12LE int = C.AV_PIX_FMT_YUV422P12LE
+	PixelFormatYUV444P12BE int = C.AV_PIX_FMT_YUV444P12BE
+	PixelFormatYUV444P12LE int = C.AV_PIX_FMT_YUV444P12LE
+)
+
+// hold bit number minus 8; ColorDepthBits + 8 == bit number
+type ColorDepthBits int
+
+const (
+	ColorDepth8Bit  ColorDepthBits = 0
+	ColorDepth10Bit ColorDepthBits = 2
+	ColorDepth12Bit ColorDepthBits = 4
+	ColorDepth16Bit ColorDepthBits = 8
+)
+
+type ChromaSubsampling int
+
+const (
+	ChromaSubsampling420 ChromaSubsampling = iota
+	ChromaSubsampling422
+	ChromaSubsampling444
+)
+
+func (pixelFormat PixelFormat) Properties() (ChromaSubsampling, ColorDepthBits, error) {
+	switch pixelFormat.RawValue {
+	case C.AV_PIX_FMT_YUV420P:
+		return ChromaSubsampling420, ColorDepth8Bit, nil
+	case C.AV_PIX_FMT_YUYV422:
+		return ChromaSubsampling422, ColorDepth8Bit, nil
+	case C.AV_PIX_FMT_YUV422P:
+		return ChromaSubsampling422, ColorDepth8Bit, nil
+	case C.AV_PIX_FMT_YUV444P:
+		return ChromaSubsampling444, ColorDepth8Bit, nil
+	case C.AV_PIX_FMT_UYVY422:
+		return ChromaSubsampling422, ColorDepth8Bit, nil
+	case C.AV_PIX_FMT_NV12:
+		return ChromaSubsampling420, ColorDepth8Bit, nil
+	case C.AV_PIX_FMT_NV21:
+		return ChromaSubsampling420, ColorDepth8Bit, nil
+	case C.AV_PIX_FMT_YUV420P10BE:
+		return ChromaSubsampling420, ColorDepth10Bit, nil
+	case C.AV_PIX_FMT_YUV420P10LE:
+		return ChromaSubsampling420, ColorDepth10Bit, nil
+	case C.AV_PIX_FMT_YUV422P10BE:
+		return ChromaSubsampling422, ColorDepth10Bit, nil
+	case C.AV_PIX_FMT_YUV422P10LE:
+		return ChromaSubsampling422, ColorDepth10Bit, nil
+	case C.AV_PIX_FMT_YUV444P10BE:
+		return ChromaSubsampling444, ColorDepth10Bit, nil
+	case C.AV_PIX_FMT_YUV444P10LE:
+		return ChromaSubsampling444, ColorDepth10Bit, nil
+	case C.AV_PIX_FMT_YUV420P16LE:
+		return ChromaSubsampling420, ColorDepth16Bit, nil
+	case C.AV_PIX_FMT_YUV420P16BE:
+		return ChromaSubsampling420, ColorDepth16Bit, nil
+	case C.AV_PIX_FMT_YUV422P16LE:
+		return ChromaSubsampling422, ColorDepth16Bit, nil
+	case C.AV_PIX_FMT_YUV422P16BE:
+		return ChromaSubsampling422, ColorDepth16Bit, nil
+	case C.AV_PIX_FMT_YUV444P16LE:
+		return ChromaSubsampling444, ColorDepth16Bit, nil
+	case C.AV_PIX_FMT_YUV444P16BE:
+		return ChromaSubsampling444, ColorDepth16Bit, nil
+	case C.AV_PIX_FMT_YUV420P12BE:
+		return ChromaSubsampling420, ColorDepth12Bit, nil
+	case C.AV_PIX_FMT_YUV420P12LE:
+		return ChromaSubsampling420, ColorDepth12Bit, nil
+	case C.AV_PIX_FMT_YUV422P12BE:
+		return ChromaSubsampling422, ColorDepth12Bit, nil
+	case C.AV_PIX_FMT_YUV422P12LE:
+		return ChromaSubsampling422, ColorDepth12Bit, nil
+	case C.AV_PIX_FMT_YUV444P12BE:
+		return ChromaSubsampling444, ColorDepth12Bit, nil
+	case C.AV_PIX_FMT_YUV444P12LE:
+		return ChromaSubsampling444, ColorDepth12Bit, nil
+	default:
+		return ChromaSubsampling420, ColorDepth8Bit, ErrTranscoderPixelformat
+	}
+}
+
+type CodecStatus int
+
+const (
+	CodecStatusInternalError CodecStatus = -1
+	CodecStatusOk            CodecStatus = 0
+	CodecStatusNeedsBypass   CodecStatus = 1
+	CodecStatusMissing       CodecStatus = 2
+)
+
+func GetCodecInfo(fname string) (CodecStatus, string, string, PixelFormat, error) {
 	var acodec, vcodec string
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
@@ -115,21 +233,27 @@ func GetCodecInfo(fname string) (bool, string, string, error) {
 	vcodec_c := C.CString(strings.Repeat("0", 255))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
-	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
+	var params_c C.codec_info
+	params_c.video_codec = vcodec_c
+	params_c.audio_codec = acodec_c
+	params_c.pixel_format = C.AV_PIX_FMT_NONE
+	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
 	if C.strlen(acodec_c) < 255 {
 		acodec = C.GoString(acodec_c)
 	}
 	if C.strlen(vcodec_c) < 255 {
 		vcodec = C.GoString(vcodec_c)
 	}
-	return bres == 1, acodec, vcodec, nil
+	pixelFormat := PixelFormat{int(params_c.pixel_format)}
+	return status, acodec, vcodec, pixelFormat, nil
 }
 
 // GetCodecInfo opens the segment and attempts to get video and audio codec names. Additionally, first return value
 // indicates whether the segment has zero video frames
-func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
+func GetCodecInfoBytes(data []byte) (CodecStatus, string, string, PixelFormat, error) {
 	var acodec, vcodec string
-	res := false
+	var pixelFormat PixelFormat
+	status := CodecStatusInternalError
 	or, ow, err := os.Pipe()
 	go func() {
 		br := bytes.NewReader(data)
@@ -137,11 +261,11 @@ func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
 		ow.Close()
 	}()
 	if err != nil {
-		return false, acodec, vcodec, ErrEmptyData
+		return status, acodec, vcodec, pixelFormat, ErrEmptyData
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
-	res, acodec, vcodec, err = GetCodecInfo(fname)
-	return res, acodec, vcodec, nil
+	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
+	return status, acodec, vcodec, pixelFormat, err
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -154,20 +278,14 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		return false, err
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
-	cfname := C.CString(fname)
-	defer C.free(unsafe.Pointer(cfname))
 	go func() {
 		br := bytes.NewReader(data)
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	acodec_c := C.CString(strings.Repeat("0", 255))
-	vcodec_c := C.CString(strings.Repeat("0", 255))
-	defer C.free(unsafe.Pointer(acodec_c))
-	defer C.free(unsafe.Pointer(vcodec_c))
-	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
+	status, _, _, _, err := GetCodecInfo(fname)
 	ow.Close()
-	return bres == 1, nil
+	return status == CodecStatusNeedsBypass, err
 }
 
 // compare two signature files whether those matches or not
@@ -379,14 +497,15 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		t.started = true
 	}
 	if !t.started {
-		ret, _, _, _ := GetCodecInfo(input.Fname)
-		if !ret {
-			// Stream is either OK or completely broken, let the transcoder handle it
-			t.started = true
-		} else {
+		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
+		// NeedsBypass is state where video is present in container & vithout any frames
+		videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
+		if videoMissing {
 			// Audio-only segment, fail fast right here as we cannot handle them nicely
 			return nil, ErrTranscoderVid
 		}
+		// Stream is either OK or completely broken, let the transcoder handle it
+		t.started = true
 	}
 	params := make([]C.output_params, len(ps))
 	for i, p := range ps {
