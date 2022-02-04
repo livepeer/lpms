@@ -1,6 +1,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavfilter/avfilter.h>
+#include <stdbool.h>
 #include <libavutil/md5.h>
 #include "extras.h"
 #include "logging.h"
@@ -131,7 +132,7 @@ handle_r2h_err:
 //          1 for video with 0-frame, that needs bypass
 //          <0 invalid stream(s) or internal error
 //
-int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_codec)
+int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_codec, int *out_pixel_format)
 {
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
@@ -150,12 +151,15 @@ int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_code
   if (astream >= 0 && ac->name)
       strncpy(out_audio_codec, ac->name, MIN(strlen(out_audio_codec), strlen(ac->name))+1);
   if (vstream >= 0 && astream >= 0) {
-      if (AV_PIX_FMT_NONE == ic->streams[vstream]->codecpar->format &&
-          0 == ic->streams[vstream]->codecpar->height) {
+      int  pixel_format         = ic->streams[vstream]->codecpar->format;
+      bool pixel_format_missing = AV_PIX_FMT_NONE == pixel_format;
+      bool no_picture_height    = 0 == ic->streams[vstream]->codecpar->height;
+      if (pixel_format_missing && no_picture_height) {
           // no valid pixel format and picture height => needs bypass
           ret = 1;
       } else {
           // no bypass needed if video stream is valid
+          *out_pixel_format = pixel_format;
           ret = 0;
       }
   } else {

@@ -107,28 +107,35 @@ type TranscodeResults struct {
 	Encoded []MediaInfo
 }
 
-func GetCodecInfo(fname string) (bool, string, string, error) {
+type PixelFormat struct {
+	RawValue int
+}
+
+func GetCodecInfo(fname string) (bool, string, string, PixelFormat, error) {
 	var acodec, vcodec string
+	vpixel_format_c := C.int(-1)
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
 	acodec_c := C.CString(strings.Repeat("0", 255))
 	vcodec_c := C.CString(strings.Repeat("0", 255))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
-	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
+	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c, &vpixel_format_c))
 	if C.strlen(acodec_c) < 255 {
 		acodec = C.GoString(acodec_c)
 	}
 	if C.strlen(vcodec_c) < 255 {
 		vcodec = C.GoString(vcodec_c)
 	}
-	return bres == 1, acodec, vcodec, nil
+	pixelFormat := PixelFormat{int(vpixel_format_c)}
+	return bres == 1, acodec, vcodec, pixelFormat, nil
 }
 
 // GetCodecInfo opens the segment and attempts to get video and audio codec names. Additionally, first return value
 // indicates whether the segment has zero video frames
-func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
+func GetCodecInfoBytes(data []byte) (bool, string, string, PixelFormat, error) {
 	var acodec, vcodec string
+	var pixelFormat PixelFormat
 	res := false
 	or, ow, err := os.Pipe()
 	go func() {
@@ -137,11 +144,12 @@ func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
 		ow.Close()
 	}()
 	if err != nil {
-		return false, acodec, vcodec, ErrEmptyData
+		return false, acodec, vcodec, pixelFormat, ErrEmptyData
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
-	res, acodec, vcodec, err = GetCodecInfo(fname)
-	return res, acodec, vcodec, nil
+	res, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
+	// TODO: why is err ignored? GetCodecInfo() at this time does not errors out?
+	return res, acodec, vcodec, pixelFormat, nil
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -161,11 +169,12 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		io.Copy(ow, br)
 		ow.Close()
 	}()
+	vpixel_format_c := C.int(-1)
 	acodec_c := C.CString(strings.Repeat("0", 255))
 	vcodec_c := C.CString(strings.Repeat("0", 255))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
-	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
+	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c, &vpixel_format_c))
 	ow.Close()
 	return bres == 1, nil
 }
@@ -379,7 +388,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		t.started = true
 	}
 	if !t.started {
-		ret, _, _, _ := GetCodecInfo(input.Fname)
+		ret, _, _, _, _ := GetCodecInfo(input.Fname)
 		if !ret {
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true

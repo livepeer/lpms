@@ -1719,7 +1719,8 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
-	res, acodec, vcodec, err := GetCodecInfo(fname)
+	res, acodec, vcodec, pixelFormat, err := GetCodecInfo(fname)
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", res, acodec, vcodec, pixelFormat, err)
 	if res != true {
 		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
@@ -1727,7 +1728,8 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	res, acodec, vcodec, err = GetCodecInfoBytes(data)
+	res, acodec, vcodec, pixelFormat, err = GetCodecInfoBytes(data)
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", res, acodec, vcodec, pixelFormat, err)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1739,7 +1741,8 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 		t.Errorf("Unexpected error %v", err)
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
-	res, acodec, vcodec, err = GetCodecInfo(fname)
+	res, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
+	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", res, acodec, vcodec, pixelFormat, err)
 	if res != false {
 		t.Errorf("Expecting false, got %v fname=%s", res, fname)
 	}
