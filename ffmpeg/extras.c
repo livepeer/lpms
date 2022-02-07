@@ -1,7 +1,23 @@
-#include "extras.h"
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavfilter/avfilter.h>
+#include <libavutil/md5.h>
+#include "extras.h"
+#include "logging.h"
+
+struct match_info {
+  int       width;
+  int       height;
+  uint64_t  bit_rate;
+  int       packetcount; //video total packet count
+  uint64_t  timestamp;    //XOR sum of avpacket pts  
+  int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
+};
+
+struct buffer_data {
+    uint8_t *ptr;
+    size_t size; ///< size left in the buffer
+};
 
 //
 // Segmenter
@@ -171,5 +187,209 @@ int lpms_compare_sign_bypath(char *signpath1, char *signpath2)
 int lpms_compare_sign_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
   int ret = avfilter_compare_sign_bybuff(buffer1, len1, buffer2, len2);
+  return ret;
+}
+
+static int get_filesize(const char *filename)
+{
+    int fileLength = 0;
+    FILE *f = NULL;
+    f = fopen(filename, "rb");
+    if(f != NULL) {
+        fseek(f, 0, SEEK_END);
+        fileLength = ftell(f);
+        fclose(f);
+    }
+    return fileLength;
+}
+
+static uint8_t * get_filebuffer(const char *filename, int* fileLength)
+{
+    FILE *f = NULL;
+    unsigned int readLength, paddedLength = 0;
+    uint8_t *buffer = NULL;
+
+    //check input parameters
+    if (strlen(filename) <= 0) return buffer;
+    f = fopen(filename, "rb");
+    if (f == NULL) {
+        av_log(NULL, AV_LOG_ERROR, "Could not open the file %s\n", filename);
+        return buffer;
+    }
+    *fileLength = get_filesize(filename);
+    if(*fileLength > 0) {
+        // Cast to float is necessary to avoid int division
+        paddedLength = ceil(*fileLength / (float)AV_INPUT_BUFFER_PADDING_SIZE)*AV_INPUT_BUFFER_PADDING_SIZE + AV_INPUT_BUFFER_PADDING_SIZE;
+        buffer = (uint8_t*)av_calloc(paddedLength, sizeof(uint8_t));
+        if (!buffer) {
+            av_log(NULL, AV_LOG_ERROR, "Could not allocate memory for reading signature file\n");
+            fclose(f);
+            return NULL;
+        }
+        // Read entire file into memory
+        readLength = fread(buffer, sizeof(uint8_t), *fileLength, f);
+        if(readLength != *fileLength) {
+            av_log(NULL, AV_LOG_ERROR, "Could not read the file %s\n", filename);
+            free(buffer);
+            buffer = NULL;
+        }
+    }
+    fclose(f);
+    return buffer;
+}
+
+static int read_packet(void *opaque, uint8_t *buf, int buf_size)
+{
+    struct buffer_data *bd = (struct buffer_data *)opaque;
+    buf_size = FFMIN(buf_size, bd->size);
+
+    if (!buf_size)
+        return AVERROR_EOF;
+    /* copy internal buffer data to buf */
+    memcpy(buf, bd->ptr, buf_size);
+    bd->ptr  += buf_size;
+    bd->size -= buf_size;
+
+    return buf_size;
+}
+
+static int get_matchinfo(void *buffer, int len, struct match_info* info) 
+{
+  int ret = 0;
+  AVFormatContext* ifmt_ctx = NULL;
+  AVIOContext *avio_in = NULL;
+  AVPacket *packet = NULL;
+  int audioid = -1;
+  int md5tmp[4];
+  uint8_t *avio_ctx_buffer = NULL;
+  size_t  avio_ctx_buffer_size = 4096;
+  struct buffer_data bd = { 0 };
+  //initialize matching information
+  memset(info, 0x00, sizeof(struct match_info));
+
+   /* fill opaque structure used by the AVIOContext read callback */
+  bd.ptr  = buffer;
+  bd.size = len;
+
+  avio_ctx_buffer = av_malloc(avio_ctx_buffer_size);
+  if (!avio_ctx_buffer) {
+        ret = AVERROR(ENOMEM);
+        LPMS_ERR(clean, "Error allocating buffer");
+  }
+
+  avio_in = avio_alloc_context(avio_ctx_buffer, avio_ctx_buffer_size, 0, &bd, &read_packet, NULL, NULL);  
+  if (!avio_ctx_buffer) {
+        ret = AVERROR(ENOMEM);
+        LPMS_ERR(clean, "Error allocating context");
+  }
+  ifmt_ctx = avformat_alloc_context();
+  if (!ifmt_ctx) {
+        ret = AVERROR(ENOMEM);
+        LPMS_ERR(clean, "Error allocating avformat context");
+  }
+  ifmt_ctx->pb = avio_in;
+  ifmt_ctx->flags = AVFMT_FLAG_CUSTOM_IO;
+  
+  if ((ret = avformat_open_input(&ifmt_ctx, "", NULL, NULL)) < 0) {
+        LPMS_ERR(clean, "Cannot open input video file\n");
+  }
+  
+  if ((ret = avformat_find_stream_info(ifmt_ctx, NULL)) < 0) {
+        LPMS_ERR(clean, "Cannot find stream information\n");
+  }
+  
+  for (int i = 0; i < ifmt_ctx->nb_streams; i++) {
+    AVStream *stream;
+    stream = ifmt_ctx->streams[i];
+    AVCodecParameters *in_codecpar = stream->codecpar;
+    if (in_codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+      info->width = in_codecpar->width;
+      info->height = in_codecpar->height;
+      info->bit_rate = in_codecpar->bit_rate;
+    }
+    else if (in_codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      audioid = i;      
+    }
+  }
+  packet = av_packet_alloc();  
+  if (!packet) LPMS_ERR(clean, "Error allocating packet");
+  while (1) {
+    ret = av_read_frame(ifmt_ctx, packet);
+    if (ret == AVERROR_EOF) {
+      ret = 0;
+      break;
+    }
+    else if (ret < 0) {      
+      LPMS_ERR(clean, "Unable to read input");
+    }
+    info->packetcount++;
+    info->timestamp ^= packet->pts;
+    if(packet->stream_index == audioid && packet->size > 0) {
+      av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
+      for (int i=0; i<4; i++) info->audiosum[i] ^= md5tmp[i];
+    }
+    av_packet_unref(packet);
+  }
+  
+clean:  
+  if(packet)
+    av_packet_free(&packet);
+  /* note: the internal buffer could have changed, and be != avio_ctx_buffer */
+  if(avio_in)
+    av_freep(&avio_in->buffer);
+  avio_context_free(&avio_in);
+  avformat_close_input(&ifmt_ctx);
+  return ret;
+}
+
+// compare two video buffers whether those matches or not.
+// @param buffer1         the pointer of the first video buffer.
+// @param buffer2         the pointer of the second video buffer.
+// @param len1            the length of the first video buffer.
+// @param len2            the length of the second video buffer.
+// @return  <0: error =0: matching 1: no matching
+int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
+{
+  int ret = 0; 
+  struct match_info info1, info2;
+
+  ret = get_matchinfo(buffer1,len1,&info1);
+  if(ret < 0) return ret;
+
+  ret = get_matchinfo(buffer2,len2,&info2);
+  if(ret < 0) return ret;
+  //compare two matching information
+  if (info1.width != info2.width || info1.height != info2.height || 
+      info1.bit_rate != info2.bit_rate || info1.packetcount != info2.packetcount ||
+      info1.timestamp != info2.timestamp || memcmp(info1.audiosum, info2.audiosum, 16)) {
+      ret = 1;
+  }
+
+  return ret;
+}
+
+// compare two video files whether those matches or not.
+// @param vpath1        full path of the first video file.
+// @param vpath2        full path of the second video file.
+// @return  <0: error =0: matching 1: no matching
+int lpms_compare_video_bypath(char *vpath1, char *vpath2)
+{
+  int ret = 0;
+  int len1, len2;
+  uint8_t *buffer1, *buffer2;
+  buffer1 = get_filebuffer(vpath1, &len1);
+  if(buffer1 == NULL) return AVERROR(ENOMEM);
+  buffer2 = get_filebuffer(vpath2, &len2);
+  if(buffer2 == NULL) {
+      av_freep(&buffer1);
+      return AVERROR(ENOMEM);
+  }
+  ret = lpms_compare_video_bybuffer(buffer1, len1, buffer2, len2);
+
+  if(buffer1 != NULL)
+      av_freep(&buffer1);
+  if(buffer2 != NULL)
+      av_freep(&buffer2);
+
   return ret;
 }
