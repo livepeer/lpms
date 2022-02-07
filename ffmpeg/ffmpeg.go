@@ -39,6 +39,7 @@ var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 var ErrEmptyData = errors.New("EmptyData")
 var ErrDNNInitialize = errors.New("DetectorInitializationError")
 var ErrSignCompare = errors.New("InvalidSignData")
+var ErrTranscoderPixelformat = errors.New("TranscoderInvalidPixelformat")
 var ErrVideoCompare = errors.New("InvalidVideoData")
 
 type Acceleration int
@@ -109,6 +110,48 @@ type TranscodeResults struct {
 
 type PixelFormat struct {
 	RawValue int
+}
+
+type ColorDepthBits int
+
+type ChromaSubsampling int
+
+const (
+	ChromaSubsampling420 ChromaSubsampling = iota
+	ChromaSubsampling422
+	ChromaSubsampling444
+)
+
+func (self PixelFormat) Properties() (ChromaSubsampling, ColorDepthBits, error) {
+	switch(self.RawValue) {
+	case C.AV_PIX_FMT_YUV420P:     return ChromaSubsampling420, 8, nil
+	case C.AV_PIX_FMT_YUYV422:     return ChromaSubsampling422, 8, nil
+	case C.AV_PIX_FMT_YUV422P:     return ChromaSubsampling422, 8, nil
+	case C.AV_PIX_FMT_YUV444P:     return ChromaSubsampling444, 8, nil
+	case C.AV_PIX_FMT_UYVY422:     return ChromaSubsampling422, 8, nil
+	case C.AV_PIX_FMT_NV12:        return ChromaSubsampling420, 8, nil
+	case C.AV_PIX_FMT_NV21:        return ChromaSubsampling420, 8, nil
+	case C.AV_PIX_FMT_YUV420P10BE: return ChromaSubsampling420, 10, nil
+	case C.AV_PIX_FMT_YUV420P10LE: return ChromaSubsampling420, 10, nil
+	case C.AV_PIX_FMT_YUV422P10BE: return ChromaSubsampling422, 10, nil
+	case C.AV_PIX_FMT_YUV422P10LE: return ChromaSubsampling422, 10, nil
+	case C.AV_PIX_FMT_YUV444P10BE: return ChromaSubsampling444, 10, nil
+	case C.AV_PIX_FMT_YUV444P10LE: return ChromaSubsampling444, 10, nil
+	case C.AV_PIX_FMT_YUV420P16LE: return ChromaSubsampling420, 16, nil
+	case C.AV_PIX_FMT_YUV420P16BE: return ChromaSubsampling420, 16, nil
+	case C.AV_PIX_FMT_YUV422P16LE: return ChromaSubsampling422, 16, nil
+	case C.AV_PIX_FMT_YUV422P16BE: return ChromaSubsampling422, 16, nil
+	case C.AV_PIX_FMT_YUV444P16LE: return ChromaSubsampling444, 16, nil
+	case C.AV_PIX_FMT_YUV444P16BE: return ChromaSubsampling444, 16, nil
+	case C.AV_PIX_FMT_YUV420P12BE: return ChromaSubsampling420, 12, nil
+	case C.AV_PIX_FMT_YUV420P12LE: return ChromaSubsampling420, 12, nil
+	case C.AV_PIX_FMT_YUV422P12BE: return ChromaSubsampling422, 12, nil
+	case C.AV_PIX_FMT_YUV422P12LE: return ChromaSubsampling422, 12, nil
+	case C.AV_PIX_FMT_YUV444P12BE: return ChromaSubsampling444, 12, nil
+	case C.AV_PIX_FMT_YUV444P12LE: return ChromaSubsampling444, 12, nil
+	default:
+		return 0, 0, ErrTranscoderPixelformat
+	}
 }
 
 func GetCodecInfo(fname string) (bool, string, string, PixelFormat, error) {

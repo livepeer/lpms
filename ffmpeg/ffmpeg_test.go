@@ -1743,6 +1743,8 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
 	res, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
 	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", res, acodec, vcodec, pixelFormat, err)
+	chromaSubsampling, colorDepth, formatErr := pixelFormat.Properties()
+	fmt.Printf("bunny.mp4 pixel format chromaSubsampling=%d colorDepth=%d err=%v\n", chromaSubsampling, colorDepth, formatErr)
 	if res != false {
 		t.Errorf("Expecting false, got %v fname=%s", res, fname)
 	}
