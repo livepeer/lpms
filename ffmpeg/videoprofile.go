@@ -259,6 +259,7 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 			return parsedProfiles, fmt.Errorf("Unable to parse encoder profile: %w", err)
 		}
 		codec, err := CodecNameToValue(profile.Encoder)
+		glog.Errorf("Codec name: %v", codec)
 		if err != nil {
 			return parsedProfiles, fmt.Errorf("Unable to parse encoder profile, unknown encoder: %s %w", profile.Encoder, err)
 		}

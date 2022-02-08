@@ -61,6 +61,10 @@ var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
 		H264: "h264_nvenc",
 		H265: "hevc_nvenc",
 	},
+	Netint: {
+		H264: "h264_ni_enc",
+		H265: "h265_ni_enc",
+	},
 }
 
 type ComponentOptions struct {
@@ -76,23 +80,23 @@ type Transcoder struct {
 }
 
 type TranscodeOptionsIn struct {
-	Fname       string
-	Accel       Acceleration
-	Device      string
-	XcoderParams      string
-	Transmuxing bool
+	Fname        string
+	Accel        Acceleration
+	Device       string
+	XcoderParams string
+	Transmuxing  bool
 }
 
 type TranscodeOptions struct {
-	Oname    string
-	Profile  VideoProfile
-	Detector DetectorProfile
-	Accel    Acceleration
-	Device   string
-	CalcSign bool
-	From     time.Duration
-	To       time.Duration
-	XcoderParams  string
+	Oname        string
+	Profile      VideoProfile
+	Detector     DetectorProfile
+	Accel        Acceleration
+	Device       string
+	CalcSign     bool
+	From         time.Duration
+	To           time.Duration
+	XcoderParams string
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -303,7 +307,7 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, 
 			return "", "", ErrTranscoderDev // XXX don't allow mix-match between NETINT and sw/nv
 		case Netint:
 			// Use software scale filter
-			return "h264_ni_enc", "scale", nil
+			return encoder, "scale", nil
 		}
 	}
 	return "", "", ErrTranscoderHw
@@ -315,7 +319,7 @@ func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 	case Nvidia:
 		return C.AV_HWDEVICE_TYPE_CUDA, nil
 	case Netint:
-	    return C.AV_HWDEVICE_TYPE_MEDIACODEC, nil
+		return C.AV_HWDEVICE_TYPE_MEDIACODEC, nil
 	}
 	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw
 }
@@ -708,7 +712,7 @@ func InitFFmpegWithLogLevel(level LogLevel) {
 
 func InitFFmpegWithXcoderParams(param string) {
 	fmt.Println("InitFFmpegWithXcoderParams: ", param)
-    ts_param := C.CString(param)
+	ts_param := C.CString(param)
 	C.lpms_init_xcoder_params(ts_param)
 }
 

@@ -147,7 +147,8 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && (octx->hw_type == AV_HWDEVICE_TYPE_NONE || octx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC)) avcodec_free_context(&octx->vc);
+  // last stable with Netint: if (octx->vc && (octx->hw_type == AV_HWDEVICE_TYPE_NONE || octx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC)) avcodec_free_context(&octx->vc);
+  if (octx->vc && (octx->hw_type == AV_HWDEVICE_TYPE_NONE)) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
@@ -522,8 +523,11 @@ skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush
+    // last stable with Netint:
+//    if (frame == NULL && octx->hw_type > AV_HWDEVICE_TYPE_NONE &&
+//            AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type &&
+//            AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
     if (frame == NULL && octx->hw_type > AV_HWDEVICE_TYPE_NONE &&
-        AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type &&
         AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
     if (frame == NULL) return ret;
   }

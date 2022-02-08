@@ -92,7 +92,8 @@ dec_flush:
   // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
   // buffered frames with no success.
   // TODO this is unnecessary for SW decoding! SW process should match audio
-  if (ictx->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
+  // last stable with Netint:
+  //if (ictx->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
       if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
         ictx->flushing = 1;
         ret = send_first_pkt(ictx);
@@ -109,7 +110,7 @@ dec_flush:
           ictx->flushed = 1;
         }
       }
-  }
+  //}
   // Flush audio decoder.
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
