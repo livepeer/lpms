@@ -720,10 +720,12 @@ func TestNvidia_DiscontinuityPixelFormat(t *testing.T) {
 	discontinuityPixelFormatSegment(t, Nvidia)
 }
 
-/*
-func TestNvidia_DetectionFreq(t *testing.T) {
-	detectionFreq(t, Nvidia)
+func TestNvidia_CompareVideo(t *testing.T) {
+	compareVideo(t, Nvidia)
 }
-*/
+
+func TestNvidia_DetectionFreq(t *testing.T) {
+	detectionFreq(t, Nvidia, "0")
+}
 
 // XXX test bframes or delayed frames

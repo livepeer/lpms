@@ -39,6 +39,7 @@ var ErrTranscoderDev = errors.New("TranscoderIncompatibleDevices")
 var ErrEmptyData = errors.New("EmptyData")
 var ErrDNNInitialize = errors.New("DetectorInitializationError")
 var ErrSignCompare = errors.New("InvalidSignData")
+var ErrVideoCompare = errors.New("InvalidVideoData")
 
 type Acceleration int
 
@@ -53,8 +54,8 @@ var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
 	Software: {
 		H264: "libx264",
 		H265: "libx265",
-		VP8: "libvpx",
-		VP9: "libvpx-vp9",
+		VP8:  "libvpx",
+		VP9:  "libvpx-vp9",
 	},
 	Nvidia: {
 		H264: "h264_nvenc",
@@ -109,11 +110,41 @@ type TranscodeResults struct {
 	Encoded []MediaInfo
 }
 
-// HasZeroVideoFrame opens video file and returns true if it has video stream with 0-frame
-func HasZeroVideoFrame(fname string) bool {
+func GetCodecInfo(fname string) (bool, string, string, error) {
+	var acodec, vcodec string
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
-	return int(C.lpms_is_bypass_needed(cfname)) == 1
+	acodec_c := C.CString(strings.Repeat("0", 255))
+	vcodec_c := C.CString(strings.Repeat("0", 255))
+	defer C.free(unsafe.Pointer(acodec_c))
+	defer C.free(unsafe.Pointer(vcodec_c))
+	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
+	if C.strlen(acodec_c) < 255 {
+		acodec = C.GoString(acodec_c)
+	}
+	if C.strlen(vcodec_c) < 255 {
+		vcodec = C.GoString(vcodec_c)
+	}
+	return bres == 1, acodec, vcodec, nil
+}
+
+// GetCodecInfo opens the segment and attempts to get video and audio codec names. Additionally, first return value
+// indicates whether the segment has zero video frames
+func GetCodecInfoBytes(data []byte) (bool, string, string, error) {
+	var acodec, vcodec string
+	res := false
+	or, ow, err := os.Pipe()
+	go func() {
+		br := bytes.NewReader(data)
+		io.Copy(ow, br)
+		ow.Close()
+	}()
+	if err != nil {
+		return false, acodec, vcodec, ErrEmptyData
+	}
+	fname := fmt.Sprintf("pipe:%d", or.Fd())
+	res, acodec, vcodec, err = GetCodecInfo(fname)
+	return res, acodec, vcodec, nil
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -133,7 +164,11 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	bres := int(C.lpms_is_bypass_needed(cfname))
+	acodec_c := C.CString(strings.Repeat("0", 255))
+	vcodec_c := C.CString(strings.Repeat("0", 255))
+	defer C.free(unsafe.Pointer(acodec_c))
+	defer C.free(unsafe.Pointer(vcodec_c))
+	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c))
 	ow.Close()
 	return bres == 1, nil
 }
@@ -146,6 +181,44 @@ func CompareSignatureByPath(fname1 string, fname2 string) (bool, error) {
 // compare two signature buffers whether those matches or not
 func CompareSignatureByBuffer(data1 []byte, data2 []byte) (bool, error) {
 	return true, nil
+}
+
+// compare two vidoe files whether those matches or not
+func CompareVideoByPath(fname1 string, fname2 string) (bool, error) {
+	if len(fname1) <= 0 || len(fname2) <= 0 {
+		return false, nil
+	}
+	cfpath1 := C.CString(fname1)
+	defer C.free(unsafe.Pointer(cfpath1))
+	cfpath2 := C.CString(fname2)
+	defer C.free(unsafe.Pointer(cfpath2))
+
+	res := int(C.lpms_compare_video_bypath(cfpath1, cfpath2))
+
+	if res == 0 {
+		return true, nil
+	} else if res == 1 {
+		return false, nil
+	} else {
+		return false, ErrVideoCompare
+	}
+}
+
+// compare two video buffers whether those matches or not
+func CompareVideoByBuffer(data1 []byte, data2 []byte) (bool, error) {
+
+	pdata1 := unsafe.Pointer(&data1[0])
+	pdata2 := unsafe.Pointer(&data2[0])
+
+	res := int(C.lpms_compare_video_bybuffer(pdata1, C.int(len(data1)), pdata2, C.int(len(data2))))
+
+	if res == 0 {
+		return true, nil
+	} else if res == 1 {
+		return false, nil
+	} else {
+		return false, ErrVideoCompare
+	}
 }
 
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
@@ -307,8 +380,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		t.started = true
 	}
 	if !t.started {
-		ret := int(C.lpms_is_bypass_needed(fname))
-		if ret != 1 {
+		ret, _, _, _ := GetCodecInfo(input.Fname)
+		if !ret {
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
 		} else {

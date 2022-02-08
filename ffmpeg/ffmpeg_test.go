@@ -605,11 +605,11 @@ func TestTranscoder_MuxerOpts(t *testing.T) {
 }
 
 type TranscodeOptionsTest struct {
-	InputCodec   VideoCodec
-	OutputCodec  VideoCodec
-	InputAccel   Acceleration
-	OutputAccel  Acceleration
-	Profile      VideoProfile
+	InputCodec  VideoCodec
+	OutputCodec VideoCodec
+	InputAccel  Acceleration
+	OutputAccel Acceleration
+	Profile     VideoProfile
 }
 
 func TestSW_Transcoding(t *testing.T) {
@@ -627,18 +627,18 @@ func supportedCodecsCombinations(accels []Acceleration) []TranscodeOptionsTest {
 				for _, outCodec := range outCodecs {
 					// skip unsupported combinations
 					switch outAccel {
-						case Nvidia:
-							switch outCodec {
-								case VP8, VP9:
-									continue
-								}
+					case Nvidia:
+						switch outCodec {
+						case VP8, VP9:
+							continue
+						}
 					}
 					opts = append(opts, TranscodeOptionsTest{
-						InputCodec:   inCodec,
-						OutputCodec:  outCodec,
-						InputAccel:   inAccel,
-						OutputAccel:  outAccel,
-						Profile:      prof,
+						InputCodec:  inCodec,
+						OutputCodec: outCodec,
+						InputAccel:  inAccel,
+						OutputAccel: outAccel,
+						Profile:     prof,
 					})
 				}
 			}
@@ -661,18 +661,18 @@ func codecsComboTest(t *testing.T, options []TranscodeOptionsTest) {
 	for i := range options {
 		curOptions := options[i]
 		switch curOptions.InputCodec {
-			case VP8, VP9:
-				inName = dir + "/test_in.mkv"
-			case H264, H265:
-				inName = dir + "/test_in.ts"
+		case VP8, VP9:
+			inName = dir + "/test_in.mkv"
+		case H264, H265:
+			inName = dir + "/test_in.ts"
 		}
 		switch curOptions.OutputCodec {
-			case VP8, VP9:
-				outName = dir + "/out.mkv"
-				qName = dir + "/sw.mkv"
-			case H264, H265:
-				outName = dir + "/out.ts"
-				qName = dir + "/sw.ts"
+		case VP8, VP9:
+			outName = dir + "/out.mkv"
+			qName = dir + "/sw.mkv"
+		case H264, H265:
+			outName = dir + "/out.ts"
+			qName = dir + "/sw.ts"
 		}
 		// if non-h264 test requested, transcode to target input codec first
 		prepare := true
@@ -1713,13 +1713,13 @@ func TestTranscoder_IgnoreUnknown(t *testing.T) {
 	run(cmd)
 }
 
-func TestTranscoder_ZeroFrame(t *testing.T) {
+func TestTranscoder_GetCodecInfo(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
-	res := HasZeroVideoFrame(fname)
+	res, acodec, vcodec, err := GetCodecInfo(fname)
 	if res != true {
 		t.Errorf("Expecting true, got %v fname=%s", res, fname)
 	}
@@ -1727,7 +1727,7 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	res, err = HasZeroVideoFrameBytes(data)
+	res, acodec, vcodec, err = GetCodecInfoBytes(data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1739,10 +1739,12 @@ func TestTranscoder_ZeroFrame(t *testing.T) {
 		t.Errorf("Unexpected error %v", err)
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
-	res = HasZeroVideoFrame(fname)
+	res, acodec, vcodec, err = GetCodecInfo(fname)
 	if res != false {
 		t.Errorf("Expecting false, got %v fname=%s", res, fname)
 	}
+	assert.Equal(t, "h264", vcodec)
+	assert.Equal(t, "aac", acodec)
 }
 
 func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {

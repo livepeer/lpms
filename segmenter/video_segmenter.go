@@ -14,10 +14,10 @@ import (
 	"path"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/joy4/av"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
-	"github.com/livepeer/joy4/av"
 )
 
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")

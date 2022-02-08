@@ -3,8 +3,8 @@ package stream
 import (
 	"context"
 
-	"github.com/livepeer/m3u8"
 	"github.com/livepeer/joy4/av"
+	"github.com/livepeer/m3u8"
 )
 
 type AppData interface {
