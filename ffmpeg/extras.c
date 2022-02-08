@@ -168,27 +168,27 @@ close_format_context:
   return ret;
 }
 
-// compare two signature files whether those matches or not.
-// @param signpath1        full path of the first signature file.
-// @param signpath2        full path of the second signature file.
-// @return  <0: error 0: no matchiing 1: partial matching 2: whole matching.
-
-int lpms_compare_sign_bypath(char *signpath1, char *signpath2)
-{
-  int ret = avfilter_compare_sign_bypath(signpath1, signpath2);
-  return ret;
-}
-// compare two signature buffers whether those matches or not.
-// @param signbuf1        the pointer of the first signature buffer.
-// @param signbuf2        the pointer of the second signature buffer.
-// @param len1            the length of the first signature buffer.
-// @param len2            the length of the second signature buffer.
-// @return  <0: error =0: no matchiing 1: partial matching 2: whole matching.
-int lpms_compare_sign_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
-{
-  int ret = avfilter_compare_sign_bybuff(buffer1, len1, buffer2, len2);
-  return ret;
-}
+//// compare two signature files whether those matches or not.
+//// @param signpath1        full path of the first signature file.
+//// @param signpath2        full path of the second signature file.
+//// @return  <0: error 0: no matchiing 1: partial matching 2: whole matching.
+//
+//int lpms_compare_sign_bypath(char *signpath1, char *signpath2)
+//{
+//  int ret = avfilter_compare_sign_bypath(signpath1, signpath2);
+//  return ret;
+//}
+//// compare two signature buffers whether those matches or not.
+//// @param signbuf1        the pointer of the first signature buffer.
+//// @param signbuf2        the pointer of the second signature buffer.
+//// @param len1            the length of the first signature buffer.
+//// @param len2            the length of the second signature buffer.
+//// @return  <0: error =0: no matchiing 1: partial matching 2: whole matching.
+//int lpms_compare_sign_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
+//{
+//  int ret = avfilter_compare_sign_bybuff(buffer1, len1, buffer2, len2);
+//  return ret;
+//}
 
 static int get_filesize(const char *filename)
 {
