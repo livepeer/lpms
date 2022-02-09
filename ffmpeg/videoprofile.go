@@ -12,6 +12,7 @@ import (
 )
 
 var ErrProfName = fmt.Errorf("unknown VideoProfile profile name")
+var ErrCodecName = fmt.Errorf("unknown codec name")
 
 type Format int
 
@@ -197,6 +198,18 @@ func EncoderProfileNameToValue(profile string) (Profile, error) {
 	return p, nil
 }
 
+func CodecNameToValue(encoder string) (VideoCodec, error) {
+	if encoder == "" {
+		return H264, nil
+	}
+	for codec, codecName := range VideoCodecName {
+		if codecName == encoder {
+			return codec, nil
+		}
+	}
+	return -1, ErrCodecName
+}
+
 func DefaultProfileName(width int, height int, bitrate int) string {
 	return fmt.Sprintf("%dx%d_%d", width, height, bitrate)
 }
@@ -212,6 +225,7 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 			FPSDen  uint   `json:"fpsDen"`
 			Profile string `json:"profile"`
 			GOP     string `json:"gop"`
+			Encoder string `json:"encoder"`
 		} `json:"profiles"`
 	}
 	parsedProfiles := []VideoProfile{}
@@ -242,7 +256,11 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 		}
 		encodingProfile, err := EncoderProfileNameToValue(profile.Profile)
 		if err != nil {
-			return parsedProfiles, fmt.Errorf("Unable to parse the H264 encoder profile: %w", err)
+			return parsedProfiles, fmt.Errorf("Unable to parse encoder profile: %w", err)
+		}
+		codec, err := CodecNameToValue(profile.Encoder)
+		if err != nil {
+			return parsedProfiles, fmt.Errorf("Unable to parse encoder profile, unknown encoder: %s %w", profile.Encoder, err)
 		}
 		prof := VideoProfile{
 			Name:         name,
@@ -252,6 +270,7 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
 			Profile:      encodingProfile,
 			GOP:          gop,
+			Encoder:      codec,
 		}
 		parsedProfiles = append(parsedProfiles, prof)
 	}
