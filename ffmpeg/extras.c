@@ -124,6 +124,10 @@ handle_r2h_err:
 }
 
 
+#define GET_CODEC_INTERNAL_ERROR -1
+#define GET_CODEC_OK 0
+#define GET_CODEC_NEEDS_BYPASS 1
+#define GET_CODEC_STREAMS_MISSING 2
 //
 // Gets codec names for best video and audio streams
 // Also detects if bypass is needed for first few segments that are
@@ -137,34 +141,40 @@ int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_code
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
   AVCodec *ac, *vc;
-  int ret = 0, vstream = 0, astream = 0;
+  int ret = GET_CODEC_OK, vstream = 0, astream = 0;
 
   ret = avformat_open_input(&ic, fname, NULL, NULL);
-  if (ret < 0) { ret = -1; goto close_format_context; }
+  if (ret < 0) { ret = GET_CODEC_INTERNAL_ERROR; goto close_format_context; }
   ret = avformat_find_stream_info(ic, NULL);
-  if (ret < 0) { ret = -1; goto close_format_context; }
+  if (ret < 0) { ret = GET_CODEC_INTERNAL_ERROR; goto close_format_context; }
 
   vstream = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &vc, 0);
   astream = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &ac, 0);
-  if (vstream >= 0 && vc->name)
+  bool audio_present = astream >= 0;
+  bool video_present = vstream >= 0;
+  // Return
+  if (video_present && vc->name) {
       strncpy(out_video_codec, vc->name, MIN(strlen(out_video_codec), strlen(vc->name))+1);
-  if (astream >= 0 && ac->name)
-      strncpy(out_audio_codec, ac->name, MIN(strlen(out_audio_codec), strlen(ac->name))+1);
-  if (vstream >= 0 && astream >= 0) {
-      int  pixel_format         = ic->streams[vstream]->codecpar->format;
-      bool pixel_format_missing = AV_PIX_FMT_NONE == pixel_format;
+      // If video track is present extract pixel format info
+      *out_pixel_format         = ic->streams[vstream]->codecpar->format;
+      bool pixel_format_missing = AV_PIX_FMT_NONE == *out_pixel_format;
       bool no_picture_height    = 0 == ic->streams[vstream]->codecpar->height;
-      if (pixel_format_missing && no_picture_height) {
-          // no valid pixel format and picture height => needs bypass
-          ret = 1;
-      } else {
-          // no bypass needed if video stream is valid
-          *out_pixel_format = pixel_format;
-          ret = 0;
+      if(audio_present && pixel_format_missing && no_picture_height) {
+        ret = GET_CODEC_NEEDS_BYPASS;
       }
   } else {
-      // one of audio or video streams not present at all, won't bypass
-      ret = -1;
+      // Indicate failure to extract video codec from given container
+      out_video_codec[0] = 0;
+  }
+  if (audio_present && ac->name) {
+      strncpy(out_audio_codec, ac->name, MIN(strlen(out_audio_codec), strlen(ac->name))+1);
+  } else {
+      // Indicate failure to extract audio codec from given container
+      out_audio_codec[0] = 0;
+  }
+  if(!audio_present && !video_present) {
+    // instead of returning -1
+    ret = GET_CODEC_STREAMS_MISSING;
   }
 #undef MIN
 close_format_context:
