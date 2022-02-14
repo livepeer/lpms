@@ -93,6 +93,8 @@ type VideoProfile struct {
 	Profile      Profile
 	GOP          time.Duration
 	Encoder      VideoCodec
+	ColorDepth   ColorDepthBits
+	ChromaFormat ChromaSubsampling
 }
 
 //Some sample video profiles
@@ -214,27 +216,23 @@ func DefaultProfileName(width int, height int, bitrate int) string {
 	return fmt.Sprintf("%dx%d_%d", width, height, bitrate)
 }
 
-func ParseProfiles(injson []byte) ([]VideoProfile, error) {
-	type profilesJson struct {
-		Profiles []struct {
-			Name    string `json:"name"`
-			Width   int    `json:"width"`
-			Height  int    `json:"height"`
-			Bitrate int    `json:"bitrate"`
-			FPS     uint   `json:"fps"`
-			FPSDen  uint   `json:"fpsDen"`
-			Profile string `json:"profile"`
-			GOP     string `json:"gop"`
-			Encoder string `json:"encoder"`
-		} `json:"profiles"`
-	}
+type JsonProfile struct {
+	Name         string            `json:"name"`
+	Width        int               `json:"width"`
+	Height       int               `json:"height"`
+	Bitrate      int               `json:"bitrate"`
+	FPS          uint              `json:"fps"`
+	FPSDen       uint              `json:"fpsDen"`
+	Profile      string            `json:"profile"`
+	GOP          string            `json:"gop"`
+	Encoder      string            `json:"encoder"`
+	ColorDepth   ColorDepthBits    `json:"colorDepth"`
+	ChromaFormat ChromaSubsampling `json:"chromaFormat"`
+}
+
+func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, error) {
 	parsedProfiles := []VideoProfile{}
-	decodedJson := &profilesJson{}
-	err := json.Unmarshal(injson, &decodedJson.Profiles)
-	if err != nil {
-		return parsedProfiles, fmt.Errorf("Unable to unmarshal the passed transcoding option: %w", err)
-	}
-	for _, profile := range decodedJson.Profiles {
+	for _, profile := range profiles {
 		name := profile.Name
 		if name == "" {
 			name = "custom_" + DefaultProfileName(profile.Width, profile.Height, profile.Bitrate)
@@ -246,17 +244,22 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 			} else {
 				gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
 				if err != nil {
-					return parsedProfiles, fmt.Errorf("Cannot parse the GOP value in the transcoding options: %w", err)
+					return parsedProfiles, fmt.Errorf("cannot parse the GOP value in the transcoding options: %w", err)
 				}
 				if gopFloat <= 0.0 {
-					return parsedProfiles, fmt.Errorf("Invalid gop value %f. Please set it to a positive value", gopFloat)
+					return parsedProfiles, fmt.Errorf("invalid gop value %f. Please set it to a positive value", gopFloat)
 				}
 				gop = time.Duration(gopFloat * float64(time.Second))
 			}
 		}
 		encodingProfile, err := EncoderProfileNameToValue(profile.Profile)
 		if err != nil {
-			return parsedProfiles, fmt.Errorf("Unable to parse encoder profile: %w", err)
+			return parsedProfiles, fmt.Errorf("unable to parse the H264 encoder profile: %w", err)
+		}
+		colorDepth := profile.ColorDepth
+		// set default value for colorDepth
+		if colorDepth == 0 {
+			colorDepth = 8
 		}
 		codec, err := CodecNameToValue(profile.Encoder)
 		if err != nil {
@@ -271,8 +274,23 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 			Profile:      encodingProfile,
 			GOP:          gop,
 			Encoder:      codec,
+			ColorDepth:   colorDepth,
+			// profile.ChromaFormat of 0 is default ChromaSubsampling420
+			ChromaFormat: profile.ChromaFormat,
 		}
 		parsedProfiles = append(parsedProfiles, prof)
 	}
 	return parsedProfiles, nil
+}
+
+func ParseProfiles(injson []byte) ([]VideoProfile, error) {
+	type jsonProfileArray struct {
+		Profiles []JsonProfile `json:"profiles"`
+	}
+	decodedJson := &jsonProfileArray{}
+	err := json.Unmarshal(injson, &decodedJson.Profiles)
+	if err != nil {
+		return []VideoProfile{}, fmt.Errorf("unable to unmarshal the passed transcoding option: %w", err)
+	}
+	return ParseProfilesFromJsonProfileArray(decodedJson.Profiles)
 }
