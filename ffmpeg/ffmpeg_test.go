@@ -1719,34 +1719,37 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
-	res, acodec, vcodec, pixelFormat, err := GetCodecInfo(fname)
-	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", res, acodec, vcodec, pixelFormat, err)
-	if res != true {
-		t.Errorf("Expecting true, got %v fname=%s", res, fname)
+	status, acodec, vcodec, pixelFormat, err := GetCodecInfo(fname)
+	isZeroFrame := status == GetCodecNeedsBypass
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
+	if isZeroFrame != true {
+		t.Errorf("Expecting true, got %v fname=%s", isZeroFrame, fname)
 	}
 	data, err := ioutil.ReadFile(fname)
 	if err != nil {
 		t.Error(err)
 	}
-	res, acodec, vcodec, pixelFormat, err = GetCodecInfoBytes(data)
-	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", res, acodec, vcodec, pixelFormat, err)
+	status, acodec, vcodec, pixelFormat, err = GetCodecInfoBytes(data)
+	isZeroFrame = status == GetCodecNeedsBypass
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
 	if err != nil {
 		t.Error(err)
 	}
-	if res != true {
-		t.Errorf("Expecting true, got %v fname=%s", res, fname)
+	if isZeroFrame != true {
+		t.Errorf("Expecting true, got %v fname=%s", isZeroFrame, fname)
 	}
 	_, err = HasZeroVideoFrameBytes(nil)
 	if err != ErrEmptyData {
 		t.Errorf("Unexpected error %v", err)
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
-	res, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
-	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", res, acodec, vcodec, pixelFormat, err)
+	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
+	isZeroFrame = status == GetCodecNeedsBypass
+	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
 	chromaSubsampling, colorDepth, formatErr := pixelFormat.Properties()
 	fmt.Printf("bunny.mp4 pixel format chromaSubsampling=%d colorDepth=%d err=%v\n", chromaSubsampling, colorDepth, formatErr)
-	if res != false {
-		t.Errorf("Expecting false, got %v fname=%s", res, fname)
+	if isZeroFrame != false {
+		t.Errorf("Expecting false, got %v fname=%s", isZeroFrame, fname)
 	}
 	assert.Equal(t, "h264", vcodec)
 	assert.Equal(t, "aac", acodec)

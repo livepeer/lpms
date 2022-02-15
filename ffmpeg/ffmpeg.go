@@ -225,8 +225,7 @@ func GetCodecInfoBytes(data []byte) (GetCodecStatus, string, string, PixelFormat
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
-	// TODO: why is err ignored? GetCodecInfo() at this time does not errors out?
-	return status, acodec, vcodec, pixelFormat, nil
+	return status, acodec, vcodec, pixelFormat, err
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -466,6 +465,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	if !t.started {
 		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
+		// TODO: Check following condition, is vcodec == "" ?
 		videoMissing := status == GetCodecNeedsBypass || vcodec == ""
 		if videoMissing {
 			// Audio-only segment, fail fast right here as we cannot handle them nicely
