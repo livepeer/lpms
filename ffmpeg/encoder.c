@@ -352,7 +352,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
   }
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
-      octx->hw_type > AV_HWDEVICE_TYPE_NONE && !frame) {
+      (AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type || AV_HWDEVICE_TYPE_CUDA == octx->hw_type) && !frame) {
     avcodec_flush_buffers(encoder);
   }
 

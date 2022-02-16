@@ -167,7 +167,7 @@ int transcode(struct transcode_thread *h,
 
   if (reopen_decoders) {
     // XXX check to see if we can also reuse decoder for sw decoding
-    if (ictx->hw_type == AV_HWDEVICE_TYPE_NONE||ictx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC) {
+    if (ictx->hw_type == AV_HWDEVICE_TYPE_NONE) {
       ret = open_video_decoder(inp, ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video decoder");
     }
@@ -387,7 +387,7 @@ transcode_cleanup:
   if (ipkt) av_packet_free(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
-  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type || AV_HWDEVICE_TYPE_MEDIACODEC == ictx->hw_type)) avcodec_free_context(&ictx->vc);
+  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
   for (i = 0; i < nb_outputs; i++) {
     //send EOF signal to signature filter
     if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
