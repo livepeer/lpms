@@ -3,6 +3,7 @@
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/opt.h>
 #include "transcoder.h"
 
 struct input_ctx {
