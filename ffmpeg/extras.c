@@ -123,7 +123,6 @@ handle_r2h_err:
   return ret == AVERROR_EOF ? 0 : ret;
 }
 
-
 #define GET_CODEC_INTERNAL_ERROR -1
 #define GET_CODEC_OK 0
 #define GET_CODEC_NEEDS_BYPASS 1
@@ -136,7 +135,7 @@ handle_r2h_err:
 //          1 for video with 0-frame, that needs bypass
 //          <0 invalid stream(s) or internal error
 //
-int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_codec, int *out_pixel_format)
+int lpms_get_codec_info(char *fname, pcodec_info out)
 {
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
@@ -154,23 +153,23 @@ int lpms_get_codec_info(char *fname, char *out_video_codec, char *out_audio_code
   bool video_present = vstream >= 0;
   // Return
   if (video_present && vc->name) {
-      strncpy(out_video_codec, vc->name, MIN(strlen(out_video_codec), strlen(vc->name))+1);
+      strncpy(out->video_codec, vc->name, MIN(strlen(out->video_codec), strlen(vc->name))+1);
       // If video track is present extract pixel format info
-      *out_pixel_format         = ic->streams[vstream]->codecpar->format;
-      bool pixel_format_missing = AV_PIX_FMT_NONE == *out_pixel_format;
+      out->pixel_format         = ic->streams[vstream]->codecpar->format;
+      bool pixel_format_missing = AV_PIX_FMT_NONE == out->pixel_format;
       bool no_picture_height    = 0 == ic->streams[vstream]->codecpar->height;
       if(audio_present && pixel_format_missing && no_picture_height) {
         ret = GET_CODEC_NEEDS_BYPASS;
       }
   } else {
       // Indicate failure to extract video codec from given container
-      out_video_codec[0] = 0;
+      out->video_codec[0] = 0;
   }
   if (audio_present && ac->name) {
-      strncpy(out_audio_codec, ac->name, MIN(strlen(out_audio_codec), strlen(ac->name))+1);
+      strncpy(out->audio_codec, ac->name, MIN(strlen(out->audio_codec), strlen(ac->name))+1);
   } else {
       // Indicate failure to extract audio codec from given container
-      out_audio_codec[0] = 0;
+      out->audio_codec[0] = 0;
   }
   if(!audio_present && !video_present) {
     // instead of returning -1

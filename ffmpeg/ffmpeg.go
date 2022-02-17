@@ -112,7 +112,15 @@ type PixelFormat struct {
 	RawValue int
 }
 
+const PixelFormatNone int = C.AV_PIX_FMT_NONE
+
 type ColorDepthBits int
+
+const (
+	ColorDepth8Bit  ColorDepthBits = 8
+	ColorDepth10Bit ColorDepthBits = 10
+	ColorDepth12Bit ColorDepthBits = 12
+)
 
 type ChromaSubsampling int
 
@@ -190,21 +198,24 @@ const (
 
 func GetCodecInfo(fname string) (GetCodecStatus, string, string, PixelFormat, error) {
 	var acodec, vcodec string
-	vpixel_format_c := C.int(-1)
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
 	acodec_c := C.CString(strings.Repeat("0", 255))
 	vcodec_c := C.CString(strings.Repeat("0", 255))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
-	status := GetCodecStatus(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c, &vpixel_format_c))
+	var params_c C.codec_info
+	params_c.video_codec = vcodec_c
+	params_c.audio_codec = acodec_c
+	params_c.pixel_format = C.AV_PIX_FMT_NONE
+	status := GetCodecStatus(C.lpms_get_codec_info(cfname, &params_c))
 	if C.strlen(acodec_c) < 255 {
 		acodec = C.GoString(acodec_c)
 	}
 	if C.strlen(vcodec_c) < 255 {
 		vcodec = C.GoString(vcodec_c)
 	}
-	pixelFormat := PixelFormat{int(vpixel_format_c)}
+	pixelFormat := PixelFormat{int(params_c.pixel_format)}
 	return status, acodec, vcodec, pixelFormat, nil
 }
 
@@ -245,14 +256,17 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	vpixel_format_c := C.int(-1)
 	acodec_c := C.CString(strings.Repeat("0", 255))
 	vcodec_c := C.CString(strings.Repeat("0", 255))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
-	bres := int(C.lpms_get_codec_info(cfname, vcodec_c, acodec_c, &vpixel_format_c))
+	var params_c C.codec_info
+	params_c.video_codec = vcodec_c
+	params_c.audio_codec = acodec_c
+	params_c.pixel_format = C.AV_PIX_FMT_NONE
+	status := GetCodecStatus(C.lpms_get_codec_info(cfname, &params_c))
 	ow.Close()
-	return bres == 1, nil
+	return status == GetCodecNeedsBypass, nil
 }
 
 // compare two signature files whether those matches or not
