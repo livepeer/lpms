@@ -319,8 +319,28 @@ int transcode(struct transcode_thread *h,
         // (we don't need decoded frames since this stream is doing a copy)
         if (ipkt->pts == AV_NOPTS_VALUE) continue;
 
+        if (ist->index == ictx->ai) {
+          if (!octx->clip_audio_start_pts_found) {
+            octx->clip_audio_start_pts = ipkt->pts;
+            octx->clip_audio_start_pts_found = 1;
+          }
+          if (octx->clip_to && octx->clip_audio_start_pts_found && ipkt->pts > octx->clip_audio_to_pts + octx->clip_audio_start_pts) {
+            continue;
+          }
+          if (octx->clip_from && !octx->clip_started) {
+            // we want first frame to be video frame
+            continue;
+          }
+          if (octx->clip_from && ipkt->pts < octx->clip_audio_from_pts + octx->clip_audio_start_pts) {
+            continue;
+          }
+        }
+
         pkt = av_packet_clone(ipkt);
         if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
+        if (octx->clip_from && ist->index == ictx->ai) {
+          pkt->pts -= octx->clip_audio_from_pts + octx->clip_audio_start_pts;
+        }
         octx->has_output = 1;
         ret = mux(pkt, ist->time_base, octx, ost);
         av_packet_free(&pkt);
