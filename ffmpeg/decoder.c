@@ -44,7 +44,7 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
 
   // Read a packet and attempt to decode it.
   // If decoding was not possible, return the packet anyway for streamcopy
-  av_packet_unref(pkt);
+  av_init_packet(pkt);
   while (1) {
     AVStream *ist = NULL;
     AVCodecContext *decoder = NULL;
@@ -92,25 +92,52 @@ dec_flush:
   // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
   // buffered frames with no success.
   // TODO this is unnecessary for SW decoding! SW process should match audio
-  // last stable with Netint:
-  //if (ictx->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
-      if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
-        ictx->flushing = 1;
-        ret = send_first_pkt(ictx);
-        if (ret < 0) {
-          ictx->flushed = 1;
-          return ret;
-        }
-        ret = lpms_receive_frame(ictx, ictx->vc, frame);
-        pkt->stream_index = ictx->vi;
-        // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-        if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-          return 0; // ignore actual return value and keep flushing
-        } else {
-          ictx->flushed = 1;
-        }
+  if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
+    ictx->flushing = 1;
+    ret = send_first_pkt(ictx);
+    if (ret < 0) {
+      ictx->flushed = 1;
+      return ret;
+    }
+    ret = lpms_receive_frame(ictx, ictx->vc, frame);
+    pkt->stream_index = ictx->vi;
+    // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
+    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
+      return 0; // ignore actual return value and keep flushing
+    } else {
+      ictx->flushed = 1;
+    }
+  }
+#if  0
+  if (ictx->vc) {
+    if (ictx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC) {
+      // Flushing for software decoder is straightforward
+      avcodec_send_packet(ictx->vc, NULL);
+      ret = avcodec_receive_frame(ictx->vc, frame);
+      pkt->stream_index = ictx->vi;
+      if (!ret) return ret;
+    } else if (!ictx->flushed && ictx->pkt_diff > 0) {
+      // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
+      // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
+      // buffered frames with no success.
+      ictx->flushing = 1;
+      ret = send_first_pkt(ictx);
+      if (ret < 0) {
+	ictx->flushed = 1;
+	return ret;
       }
-  //}
+      ret = lpms_receive_frame(ictx, ictx->vc, frame);
+      pkt->stream_index = ictx->vi;
+      // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
+      if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
+	return 0; // ignore actual return value and keep flushing
+      } else {
+	ictx->flushed = 1;
+	if (!ret) return ret;
+      }
+    }
+  }
+#endif
   // Flush audio decoder.
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
@@ -215,28 +242,13 @@ open_audio_err:
   return ret;
 }
 
-char* get_hw_decoder(int ff_codec_id)
-{
-    switch (ff_codec_id) {
-        case AV_CODEC_ID_H264:
-            return "h264_cuvid";
-        case AV_CODEC_ID_HEVC:
-            return "hevc_cuvid";
-        case AV_CODEC_ID_VP8:
-            return "vp8_cuvid";
-        case AV_CODEC_ID_VP9:
-            return "vp9_cuvid";
-        default:
-            return "";
-    }
-}
-
 int open_video_decoder(input_params *params, struct input_ctx *ctx)
 {
   int ret = 0;
   AVCodec *codec = NULL;
   AVDictionary **opts = NULL;
   AVFormatContext *ic = ctx->ic;
+
   // open video decoder
   ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
   if (ctx->dv) ; // skip decoding video
@@ -244,12 +256,11 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     LPMS_WARN("No video stream found in input");
   } else {
     if (AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
-      char* decoder_name = get_hw_decoder(codec->id);
-      if (!*decoder_name) {
+      if (AV_CODEC_ID_H264 != codec->id) {
         ret = lpms_ERR_INPUT_CODEC;
-        LPMS_ERR(open_decoder_err, "Input codec does not support hardware acceleration");
+        LPMS_ERR(open_decoder_err, "Non H264 codec detected in input");
       }
-      AVCodec *c = avcodec_find_decoder_by_name(decoder_name);
+      AVCodec *c = avcodec_find_decoder_by_name("h264_cuvid");
       if (c) codec = c;
       else LPMS_WARN("Nvidia decoder not found; defaulting to software");
       if (AV_PIX_FMT_YUV420P != ic->streams[ctx->vi]->codecpar->format &&
@@ -272,14 +283,14 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to assign video params");
     vc->opaque = (void*)ctx;
     // XXX Could this break if the original device falls out of scope in golang?
-    if (params->hw_type == AV_HWDEVICE_TYPE_CUDA) {
+    if (params->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
+      ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
     }
-    ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
 	av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
     ret = avcodec_open2(vc, codec, opts);
@@ -290,7 +301,6 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
 
 open_decoder_err:
   free_input(ctx);
-  if (ret == AVERROR_UNKNOWN) ret = lpms_ERR_UNRECOVERABLE;
   return ret;
 }
 
