@@ -26,22 +26,16 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
   } else if (octx->vc) {
     st->time_base = octx->vc->time_base;
     ret = avcodec_parameters_from_context(st->codecpar, octx->vc);
-    // Rescale the gop/clip time to the expected timebase after filtering.
-    // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
-    // while non-fps will retain the input timebase.
-    AVRational ms_tb = {1, 1000};
-    AVRational dest_tb;
-    if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
-    else dest_tb = ictx->ic->streams[ictx->vi]->time_base;
     if (octx->gop_time) {
-      octx->gop_pts_len = av_rescale_q(octx->gop_time, ms_tb, dest_tb);
+      // Rescale the gop time to the expected timebase after filtering.
+      // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
+      // while non-fps will retain the input timebase.
+      AVRational gop_tb = {1, 1000};
+      AVRational dest_tb;
+      if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
+      else dest_tb = ictx->ic->streams[ictx->vi]->time_base;
+      octx->gop_pts_len = av_rescale_q(octx->gop_time, gop_tb, dest_tb);
       octx->next_kf_pts = 0; // force for first frame
-    }
-    if (octx->clip_from) {
-      octx->clip_from_pts = av_rescale_q(octx->clip_from, ms_tb, dest_tb);
-    }
-    if (octx->clip_to) {
-      octx->clip_to_pts = av_rescale_q(octx->clip_to, ms_tb, dest_tb);
     }
     if (ret < 0) LPMS_ERR(add_video_err, "Error setting video params from encoder");
   } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
@@ -87,9 +81,6 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 
   // signal whether to drop preroll audio
   if (st->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
-
-  octx->last_audio_dts = AV_NOPTS_VALUE;
-
   return 0;
 
 add_audio_err:
@@ -147,7 +138,7 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && (octx->hw_type == AV_HWDEVICE_TYPE_NONE || octx->hw_type == AV_HWDEVICE_TYPE_MEDIACODEC)) avcodec_free_context(&octx->vc);
+  if (octx->vc && AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
@@ -160,7 +151,6 @@ void free_output(struct output_ctx *octx)
   if (octx->vc) avcodec_free_context(&octx->vc);
   free_filter(&octx->vf);
   free_filter(&octx->af);
-  free_filter(&octx->sf);
 }
 
 int open_remux_output(struct input_ctx *ictx, struct output_ctx *octx)
@@ -214,11 +204,6 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   // add video encoder if a decoder exists and this output requires one
   if (ictx->vc && needs_decoder(octx->video->name)) {
-    if (octx->dnn_filtergraph && !ictx->vc->hw_frames_ctx) {
-      // swap filtergraph with the pre-initialized DNN filtergraph for SW
-      // for HW we handle it later during filter re-init
-      octx->vf.graph = *octx->dnn_filtergraph;
-    }
     ret = init_video_filters(ictx, octx);
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
 
@@ -238,7 +223,7 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
     else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
     else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
-    if (octx->bitrate) vc->rc_min_rate = vc->bit_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+    if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
     if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
       vc->hw_frames_ctx =
         av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
@@ -281,11 +266,6 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   ret = avformat_write_header(oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
 
-  if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
-    ret = init_signature_filters(octx, NULL);
-    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
-  }
-
   return 0;
 
 open_output_err:
@@ -319,11 +299,6 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
   ret = avformat_write_header(octx->oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-writing header");
 
-  if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
-    ret = init_signature_filters(octx, NULL);
-    if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to open signature filter");
-  }
-
 reopen_out_err:
   return ret;
 }
@@ -331,7 +306,7 @@ reopen_out_err:
 static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost)
 {
   int ret = 0;
-  AVPacket *pkt = NULL;
+  AVPacket pkt = {0};
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && frame) {
     if (!octx->res->frames) {
@@ -340,38 +315,33 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     octx->res->frames++;
     octx->res->pixels += encoder->width * encoder->height;
   }
-  octx->has_output = 1;
+
 
   // We don't want to send NULL frames for HW encoding
   // because that closes the encoder: not something we want
-  if (AV_HWDEVICE_TYPE_NONE == octx->hw_type || AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type ||
-        AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type || frame) {
+  if (AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type || frame) {
     ret = avcodec_send_frame(encoder, frame);
     if (AVERROR_EOF == ret) ; // continue ; drain encoder
     else if (ret < 0) LPMS_ERR(encode_cleanup, "Error sending frame to encoder");
   }
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
-      (AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type || AV_HWDEVICE_TYPE_CUDA == octx->hw_type) && !frame) {
+      AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type && !frame) {
     avcodec_flush_buffers(encoder);
   }
 
-  pkt = av_packet_alloc();
-  if (!pkt) {
-      ret = AVERROR(ENOMEM);
-      LPMS_ERR(encode_cleanup, "Error allocating packet for encode");
-  }
   while (1) {
-    av_packet_unref(pkt);
-    ret = avcodec_receive_packet(encoder, pkt);
+    av_init_packet(&pkt);
+    ret = avcodec_receive_packet(encoder, &pkt);
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
     if (ret < 0) LPMS_ERR(encode_cleanup, "Error receiving packet from encoder");
-    ret = mux(pkt, encoder->time_base, octx, ost);
+    ret = mux(&pkt, encoder->time_base, octx, ost);
     if (ret < 0) goto encode_cleanup;
+    av_packet_unref(&pkt);
   }
 
 encode_cleanup:
-  if (pkt) av_packet_free(&pkt);
+  av_packet_unref(&pkt);
   return ret;
 }
 
@@ -388,69 +358,9 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
   if (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type) {
       if (octx->drop_ts == AV_NOPTS_VALUE) octx->drop_ts = pkt->pts;
       if (pkt->pts && pkt->pts == octx->drop_ts) return 0;
-
-      if (pkt->dts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->dts > pkt->pts) {
-        pkt->pts = pkt->dts = pkt->pts + pkt->dts + octx->last_audio_dts + 1
-                     - FFMIN3(pkt->pts, pkt->dts, octx->last_audio_dts + 1)
-                     - FFMAX3(pkt->pts, pkt->dts, octx->last_audio_dts + 1);
-      }
-      /*https://github.com/livepeer/FFmpeg/blob/682c4189d8364867bcc49f9749e04b27dc37cded/fftools/ffmpeg.c#L824*/
-      if (pkt->dts != AV_NOPTS_VALUE && octx->last_audio_dts != AV_NOPTS_VALUE) {
-        /*If the out video format does not require strictly increasing timestamps,
-        but they must still be monotonic, then let set max timestamp as octx->last_audio_dts+1.*/
-        int64_t max = octx->last_audio_dts + !(octx->oc->oformat->flags & AVFMT_TS_NONSTRICT);
-        // check if dts is bigger than previous last dts or not, not then that's non-monotonic
-        if (pkt->dts < max) {
-          if (pkt->pts >= pkt->dts) pkt->pts = FFMAX(pkt->pts, max);
-          pkt->dts = max;
-        }
-      }
-      octx->last_audio_dts = pkt->dts;
   }
 
   return av_interleaved_write_frame(octx->oc, pkt);
-}
-
-static int getmetadatainf(AVFrame *inf, struct output_ctx *octx)
-{
-  if(inf == NULL) return -1;
-  char classinfo[128] = {0,};
-  AVDictionaryEntry *element = NULL;
-  AVDictionary *metadata = inf->metadata;
-
-  if(metadata != NULL) {
-    element = av_dict_get(metadata, LVPDNN_FILTER_META, element, 0);
-    if(element != NULL) {
-      strcpy(classinfo, element->value);
-      if(strlen(classinfo) > 0) {
-        char * token = strtok(classinfo, ",");
-        int cid = 0;
-        while( token != NULL ) {
-            octx->res->probs[cid] += atof(token);
-            token = strtok(NULL, ",");
-            cid++;
-        }
-        octx->res->frames++;
-      }
-    }
-  }
-  return 0;
-}
-
-static int calc_signature(AVFrame *inf, struct output_ctx *octx)
-{
-  int ret = 0;
-  if (inf->hw_frames_ctx && octx->sf.hwframes && inf->hw_frames_ctx->data != octx->sf.hwframes) {
-      free_filter(&octx->sf);
-      ret = init_signature_filters(octx, inf);
-      if (ret < 0) return lpms_ERR_FILTERS;
-  }
-  ret = av_buffersrc_write_frame(octx->sf.src_ctx, inf);
-  if (ret < 0) return ret;
-  AVFrame *signframe = octx->sf.frame;
-  av_frame_unref(signframe);
-  ret = av_buffersink_get_frame(octx->sf.sink_ctx, signframe);
-  return ret;
 }
 
 int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
@@ -481,50 +391,17 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       frame = NULL;
     } else if (ret < 0) goto proc_cleanup;
 
-    if (is_video && !octx->clip_start_pts_found && frame) {
-      octx->clip_start_pts = frame->pts;
-      octx->clip_start_pts_found = 1;
-    }
-
-    if (octx->clip_to && octx->clip_start_pts_found && frame && frame->pts > octx->clip_to_pts + octx->clip_start_pts) goto skip;
-
-    if (is_video) {
-      if (octx->clip_from && frame) {
-        if (frame->pts < octx->clip_from_pts + octx->clip_start_pts) goto skip;
-        if (!octx->clip_started) {
-          octx->clip_started = 1;
-          frame->pict_type = AV_PICTURE_TYPE_I;
-          if (octx->gop_pts_len) {
-            octx->next_kf_pts = frame->pts + octx->gop_pts_len;
-          }
-        }
-      }
-    } else if (octx->clip_from_pts && !octx->clip_started) {
-      // we want first frame to be video frame
-      goto skip;
-    }
-
     // Set GOP interval if necessary
     if (is_video && octx->gop_pts_len && frame && frame->pts >= octx->next_kf_pts) {
         frame->pict_type = AV_PICTURE_TYPE_I;
         octx->next_kf_pts = frame->pts + octx->gop_pts_len;
     }
-    if(octx->is_dnn_profile) {
-      ret = getmetadatainf(frame, octx);
-    } else {
-      if(is_video && frame != NULL && octx->sfilters != NULL) {
-         ret = calc_signature(frame, octx);
-         if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
-      }
-      ret = encode(encoder, frame, octx, ost);
-    }
-skip:
+    ret = encode(encoder, frame, octx, ost);
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush
-    if (frame == NULL && octx->hw_type > AV_HWDEVICE_TYPE_NONE &&
-            AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type &&
-            AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
+    if (frame == NULL && AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type &&
+        AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
     if (frame == NULL) return ret;
   }
 
