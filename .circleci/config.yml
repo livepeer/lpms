@@ -8,9 +8,9 @@ jobs:
           GOROOT: /usr/local/go
           PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
           # compile ffmpeg with tools required for tests
-          BUILD_TAGS: "debug-video"
+          BUILD_TAGS: "debug-video experimental"
           # required for libx265 support (software) for running tests on CI
-          LD_LIBRARY_PATH: "/home/circleci/compiled/lib"
+          LD_LIBRARY_PATH: "/home/circleci/compiled/lib:/usr/local/lib"
     steps:
       - checkout
 
@@ -49,8 +49,7 @@ jobs:
       - run:
           name: "Download tasmodel.pb"
           command: |
-            wget https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
-            mv tasmodel.pb ./ffmpeg
+            wget https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb -P ffmpeg
       
       - run:
           name: "Build LPMS"
