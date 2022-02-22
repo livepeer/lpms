@@ -20,8 +20,8 @@ jobs:
             rm install_ffmpeg.sh || true
             wget https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
 
-      - restore_cache:
-          key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
+      # - restore_cache:
+      #     key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
 
       - run:
           name: "Tweak PATH"
@@ -49,7 +49,7 @@ jobs:
       - run:
           name: "Download tasmodel.pb"
           command: |
-            wget https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb -P ffmpeg
+            wget https://github.com/livepeer/livepeer-ml/releases/latest/download/tasmodel.pb -P ffmpeg
       
       - run:
           name: "Build LPMS"
