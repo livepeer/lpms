@@ -20,8 +20,8 @@ jobs:
             rm install_ffmpeg.sh || true
             wget https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
 
-      # - restore_cache:
-      #     key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
+      - restore_cache:
+          key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
 
       - run:
           name: "Tweak PATH"
