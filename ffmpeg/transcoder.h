@@ -5,8 +5,6 @@
 #include <libavutil/rational.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-#include <libavfilter/avfilter.h>
-#include "logging.h"
 
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
@@ -16,7 +14,6 @@ extern const int lpms_ERR_FILTERS;
 extern const int lpms_ERR_PACKET_ONLY;
 extern const int lpms_ERR_FILTER_FLUSHED;
 extern const int lpms_ERR_OUTPUTS;
-extern const int lpms_ERR_UNRECOVERABLE;
 
 struct transcode_thread;
 
@@ -28,10 +25,8 @@ typedef struct {
 typedef struct {
   char *fname;
   char *vfilters;
-  char *sfilters;
-  int w, h, bitrate, gop_time, from, to;
+  int w, h, bitrate, gop_time;
   AVRational fps;
-  int is_dnn;
 
   component_opts muxer;
   component_opts audio;
@@ -59,23 +54,9 @@ typedef struct {
   int transmuxe;
 } input_params;
 
-#define MAX_CLASSIFY_SIZE 10
-#define LVPDNN_FILTER_NAME "lvpdnn"
-#define LVPDNN_FILTER_META "lavfi.lvpdnn.text"
-#define MAX_OUTPUT_SIZE 10
-
-typedef struct {
-    char *modelpath;
-    char *inputname;
-    char *outputname;
-    char *backend_configs;
-} lvpdnn_opts;
-
 typedef struct {
     int frames;
     int64_t pixels;
-    //for scene classification  
-    float probs[MAX_CLASSIFY_SIZE];//probability
 } output_results;
 
 enum LPMSLogLevel {
@@ -94,7 +75,6 @@ void lpms_init(enum LPMSLogLevel max_level);
 void lpms_init_xcoder_params(char *ts_params);
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 struct transcode_thread* lpms_transcode_new();
-struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts);
 void lpms_transcode_stop(struct transcode_thread* handle);
 void lpms_transcode_discontinuity(struct transcode_thread *handle);
 

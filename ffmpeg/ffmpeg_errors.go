@@ -19,7 +19,7 @@ var lpmsErrors = []struct {
 	{Code: C.lpms_ERR_OUTPUTS, Desc: "Too many outputs"},
 	{Code: C.lpms_ERR_INPUT_CODEC, Desc: "Unsupported input codec"},
 	{Code: C.lpms_ERR_INPUT_NOKF, Desc: "No keyframes in input"},
-	{Code: C.lpms_ERR_UNRECOVERABLE, Desc: "Unrecoverable state, restart process"},
+	{Code: -1, Desc: "Unrecoverable state, restart process"},
 }
 
 func error_map() map[int]error {

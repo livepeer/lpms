@@ -553,21 +553,17 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			name: C.CString(audioEncoder),
 			opts: newAVOpts(p.AudioEncoder.Opts),
 		}
-		fromMs := int(p.From.Milliseconds())
-		toMs := int(p.To.Milliseconds())
 		vfilt := C.CString(filters)
 		defer C.free(unsafe.Pointer(vidOpts.name))
 		defer C.free(unsafe.Pointer(audioOpts.name))
 		defer C.free(unsafe.Pointer(vfilt))
-		isDNN := C.int(0)
 		if p.Detector != nil {
-			isDNN = C.int(1)
 		}
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
-			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
+			gop_time: C.int(gopMs),
 			muxer: muxOpts, audio: audioOpts, video: vidOpts,
-			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
+			vfilters: vfilt}
 		if p.CalcSign {
 			//signfilter string
 			escapedOname := ffmpegStrEscape(p.Oname)
@@ -577,7 +573,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				signfilter = fmt.Sprintf("signature_cuda=filename='%s.bin'", escapedOname)
 			}
 			sfilt := C.CString(signfilter)
-			params[i].sfilters = sfilt
 			defer C.free(unsafe.Pointer(sfilt))
 		}
 		defer func(param *C.output_params) {
@@ -637,7 +632,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		glog.Error("Transcoder Return : ", ErrorMap[ret])
-		if ret == int(C.lpms_ERR_UNRECOVERABLE) {
+		if ret == int(-1) {
 			panic(ErrorMap[ret])
 		}
 		return nil, ErrorMap[ret]
@@ -652,12 +647,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if ps[i].Detector != nil {
 			switch ps[i].Detector.Type() {
 			case SceneClassification:
-				detector := ps[i].Detector.(*SceneClassificationProfile)
-				res := make(SceneClassificationData)
-				for j, class := range detector.Classes {
-					res[class.ID] = float64(r.probs[j])
-				}
-				tr[i].DetectData = res
+				//detector := ps[i].Detector.(*SceneClassificationProfile)
+				//res := make(SceneClassificationData)
+				//for j, class := range detector.Classes {
+				//	res[class.ID] = float64(r.probs[j])
+				//}
+				//tr[i].DetectData = res
 			}
 		}
 	}
@@ -721,28 +716,28 @@ func InitFFmpeg() {
 }
 
 func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Transcoder, error) {
-	switch detector.Type() {
-	case SceneClassification:
-		detectorProfile := detector.(*SceneClassificationProfile)
-		backendConfigs := createBackendConfig(deviceid)
-		dnnOpt := &C.lvpdnn_opts{
-			modelpath:       C.CString(detectorProfile.ModelPath),
-			inputname:       C.CString(detectorProfile.Input),
-			outputname:      C.CString(detectorProfile.Output),
-			backend_configs: C.CString(backendConfigs),
-		}
-		defer C.free(unsafe.Pointer(dnnOpt.modelpath))
-		defer C.free(unsafe.Pointer(dnnOpt.inputname))
-		defer C.free(unsafe.Pointer(dnnOpt.outputname))
-		defer C.free(unsafe.Pointer(dnnOpt.backend_configs))
-		handle := C.lpms_transcode_new_with_dnn(dnnOpt)
-		if handle != nil {
-			return &Transcoder{
-				handle: handle,
-				mu:     &sync.Mutex{},
-			}, nil
-		}
-	}
+	//switch detector.Type() {
+	//case SceneClassification:
+	//	detectorProfile := detector.(*SceneClassificationProfile)
+	//	backendConfigs := createBackendConfig(deviceid)
+	//	dnnOpt := &C.lvpdnn_opts{
+	//		modelpath:       C.CString(detectorProfile.ModelPath),
+	//		inputname:       C.CString(detectorProfile.Input),
+	//		outputname:      C.CString(detectorProfile.Output),
+	//		backend_configs: C.CString(backendConfigs),
+	//	}
+	//	defer C.free(unsafe.Pointer(dnnOpt.modelpath))
+	//	defer C.free(unsafe.Pointer(dnnOpt.inputname))
+	//	defer C.free(unsafe.Pointer(dnnOpt.outputname))
+	//	defer C.free(unsafe.Pointer(dnnOpt.backend_configs))
+	//	handle := C.lpms_transcode_new_with_dnn(dnnOpt)
+	//	if handle != nil {
+	//		return &Transcoder{
+	//			handle: handle,
+	//			mu:     &sync.Mutex{},
+	//		}, nil
+	//	}
+	//}
 	return nil, ErrDNNInitialize
 }
 

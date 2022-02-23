@@ -3,7 +3,6 @@
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
-#include <libavutil/opt.h>
 #include "transcoder.h"
 
 struct input_ctx {
@@ -38,20 +37,16 @@ struct input_ctx {
 
   // transmuxing specific fields:
   // last non-zero duration
-  int64_t last_duration[MAX_OUTPUT_SIZE];
-  // keep track of last dts in each stream.
-  // used while transmuxing, to skip packets with invalid dts.
-  int64_t last_dts[MAX_OUTPUT_SIZE];
+  int64_t last_duration;
   //
-  int64_t dts_diff[MAX_OUTPUT_SIZE];
+  int64_t last_dts;
   //
-  int discontinuity[MAX_OUTPUT_SIZE];
+  int64_t dts_diff;
+  //
+  int discontinuity;
   // Transmuxing mode. Close output in lpms_transcode_stop instead of
   // at the end of lpms_transcode call.
   int transmuxing;
-  // In HW transcoding, demuxer is opened once and used,
-  // so it is necessary to check whether the input pixel format does not change in the middle.
-  enum AVPixelFormat last_format;
 };
 
 // Exported methods
@@ -60,11 +55,10 @@ enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx);
 int open_input(input_params *params, struct input_ctx *ctx);
 int open_video_decoder(input_params *params, struct input_ctx *ctx);
 int open_audio_decoder(input_params *params, struct input_ctx *ctx);
-char* get_hw_decoder(int ff_codec_id);
 void free_input(struct input_ctx *inctx);
 
 // Utility functions
-static inline int is_flush_frame(AVFrame *frame)
+inline int is_flush_frame(AVFrame *frame)
 {
   return -1 == frame->pts;
 }
