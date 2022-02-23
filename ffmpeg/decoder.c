@@ -253,7 +253,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to assign video params");
     vc->opaque = (void*)ctx;
     // XXX Could this break if the original device falls out of scope in golang?
-    if (params->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
+    if (params->hw_type == AV_HWDEVICE_TYPE_CUDA) {
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
