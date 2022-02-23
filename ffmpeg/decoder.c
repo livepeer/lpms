@@ -257,10 +257,10 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
-      ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
     }
+    ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
 	av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
     ret = avcodec_open2(vc, codec, opts);
