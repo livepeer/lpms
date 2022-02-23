@@ -204,7 +204,7 @@ int transcode(struct transcode_thread *h,
       // when transmuxing we're opening output with first segment, but closing it
       // only when lpms_transcode_stop called, so we don't want to re-open it
       // on subsequent segments
-      if (!h->initialized || ((AV_HWDEVICE_TYPE_NONE == octx->hw_type || AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type )&& !ictx->transmuxing)) {
+      if (!h->initialized || ((AV_HWDEVICE_TYPE_NONE == octx->hw_type && inp->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC)&& !ictx->transmuxing)) {
         printf("open_output.... h->initialized %d\n", h->initialized);
         ret = open_output(octx, ictx);
         if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
