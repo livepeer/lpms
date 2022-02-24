@@ -1720,7 +1720,7 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
 	status, acodec, vcodec, pixelFormat, err := GetCodecInfo(fname)
-	isZeroFrame := status == GetCodecNeedsBypass
+	isZeroFrame := status == CodecStatusNeedsBypass
 	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
 	if isZeroFrame != true {
 		t.Errorf("Expecting true, got %v fname=%s", isZeroFrame, fname)
@@ -1730,7 +1730,7 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 		t.Error(err)
 	}
 	status, acodec, vcodec, pixelFormat, err = GetCodecInfoBytes(data)
-	isZeroFrame = status == GetCodecNeedsBypass
+	isZeroFrame = status == CodecStatusNeedsBypass
 	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
 	if err != nil {
 		t.Error(err)
@@ -1744,7 +1744,7 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
 	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
-	isZeroFrame = status == GetCodecNeedsBypass
+	isZeroFrame = status == CodecStatusNeedsBypass
 	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
 	chromaSubsampling, colorDepth, formatErr := pixelFormat.Properties()
 	fmt.Printf("bunny.mp4 pixel format chromaSubsampling=%d colorDepth=%d err=%v\n", chromaSubsampling, colorDepth, formatErr)

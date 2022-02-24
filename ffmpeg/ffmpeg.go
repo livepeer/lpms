@@ -215,16 +215,16 @@ func (self PixelFormat) Properties() (ChromaSubsampling, ColorDepthBits, error) 
 	}
 }
 
-type GetCodecStatus int
+type CodecStatus int
 
 const (
-	GetCodecInternalError  GetCodecStatus = -1
-	GetCodecOk             GetCodecStatus = 0
-	GetCodecNeedsBypass    GetCodecStatus = 1
-	GetCodecStreamsMissing GetCodecStatus = 2
+	CodecStatusInternalError CodecStatus = -1
+	CodecStatusOk            CodecStatus = 0
+	CodecStatusNeedsBypass   CodecStatus = 1
+	CodecStatusMissing       CodecStatus = 2
 )
 
-func GetCodecInfo(fname string) (GetCodecStatus, string, string, PixelFormat, error) {
+func GetCodecInfo(fname string) (CodecStatus, string, string, PixelFormat, error) {
 	var acodec, vcodec string
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
@@ -236,7 +236,7 @@ func GetCodecInfo(fname string) (GetCodecStatus, string, string, PixelFormat, er
 	params_c.video_codec = vcodec_c
 	params_c.audio_codec = acodec_c
 	params_c.pixel_format = C.AV_PIX_FMT_NONE
-	status := GetCodecStatus(C.lpms_get_codec_info(cfname, &params_c))
+	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
 	if C.strlen(acodec_c) < 255 {
 		acodec = C.GoString(acodec_c)
 	}
@@ -249,10 +249,10 @@ func GetCodecInfo(fname string) (GetCodecStatus, string, string, PixelFormat, er
 
 // GetCodecInfo opens the segment and attempts to get video and audio codec names. Additionally, first return value
 // indicates whether the segment has zero video frames
-func GetCodecInfoBytes(data []byte) (GetCodecStatus, string, string, PixelFormat, error) {
+func GetCodecInfoBytes(data []byte) (CodecStatus, string, string, PixelFormat, error) {
 	var acodec, vcodec string
 	var pixelFormat PixelFormat
-	status := GetCodecInternalError
+	status := CodecStatusInternalError
 	or, ow, err := os.Pipe()
 	go func() {
 		br := bytes.NewReader(data)
@@ -292,9 +292,9 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	params_c.video_codec = vcodec_c
 	params_c.audio_codec = acodec_c
 	params_c.pixel_format = C.AV_PIX_FMT_NONE
-	status := GetCodecStatus(C.lpms_get_codec_info(cfname, &params_c))
+	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
 	ow.Close()
-	return status == GetCodecNeedsBypass, nil
+	return status == CodecStatusNeedsBypass, nil
 }
 
 // compare two signature files whether those matches or not
@@ -508,7 +508,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if !t.started {
 		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
 		// TODO: Check following condition, is vcodec == "" ?
-		videoMissing := status == GetCodecNeedsBypass || vcodec == ""
+		videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
 		if videoMissing {
 			// Audio-only segment, fail fast right here as we cannot handle them nicely
 			return nil, ErrTranscoderVid
