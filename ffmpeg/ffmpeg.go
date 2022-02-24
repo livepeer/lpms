@@ -147,6 +147,7 @@ const (
 	ColorDepth8Bit  ColorDepthBits = 8
 	ColorDepth10Bit ColorDepthBits = 10
 	ColorDepth12Bit ColorDepthBits = 12
+	ColorDepth16Bit ColorDepthBits = 16
 )
 
 type ChromaSubsampling int
