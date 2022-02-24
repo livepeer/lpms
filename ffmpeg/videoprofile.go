@@ -246,7 +246,8 @@ func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, 
 				if err != nil {
 					return parsedProfiles, fmt.Errorf("cannot parse the GOP value in the transcoding options: %w", err)
 				}
-				if gopFloat <= 0.0 {
+				// gopFloat is allowed to be 0
+				if gopFloat < 0.0 {
 					return parsedProfiles, fmt.Errorf("invalid gop value %f. Please set it to a positive value", gopFloat)
 				}
 				gop = time.Duration(gopFloat * float64(time.Second))
