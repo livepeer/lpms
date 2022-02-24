@@ -131,8 +131,10 @@ handle_r2h_err:
 // Gets codec names for best video and audio streams
 // Also detects if bypass is needed for first few segments that are
 // audio-only (i.e. have a video stream but no frames)
+// If codec name can't be determined string is truncated to 0 size
 // returns: 0 if both audio/video streams valid
 //          1 for video with 0-frame, that needs bypass
+//          2 if audio or video stream is missing
 //          <0 invalid stream(s) or internal error
 //
 int lpms_get_codec_info(char *fname, pcodec_info out)
@@ -151,6 +153,10 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   astream = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &ac, 0);
   bool audio_present = astream >= 0;
   bool video_present = vstream >= 0;
+  if(!audio_present && !video_present) {
+    // instead of returning -1
+    ret = GET_CODEC_STREAMS_MISSING;
+  }
   // Return
   if (video_present && vc->name) {
       strncpy(out->video_codec, vc->name, MIN(strlen(out->video_codec), strlen(vc->name))+1);
@@ -170,10 +176,6 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   } else {
       // Indicate failure to extract audio codec from given container
       out->audio_codec[0] = 0;
-  }
-  if(!audio_present && !video_present) {
-    // instead of returning -1
-    ret = GET_CODEC_STREAMS_MISSING;
   }
 #undef MIN
 close_format_context:
