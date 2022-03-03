@@ -1746,8 +1746,6 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
 	isZeroFrame = status == CodecStatusNeedsBypass
 	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
-	chromaSubsampling, colorDepth, formatErr := pixelFormat.Properties()
-	fmt.Printf("bunny.mp4 pixel format chromaSubsampling=%d colorDepth=%d err=%v\n", chromaSubsampling, colorDepth, formatErr)
 	if isZeroFrame != false {
 		t.Errorf("Expecting false, got %v fname=%s", isZeroFrame, fname)
 	}
