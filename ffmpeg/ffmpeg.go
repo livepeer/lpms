@@ -506,14 +506,11 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		t.started = true
 	}
 	if !t.started {
-		status, _, _, _, _ := GetCodecInfo(input.Fname)
-		// DONE: Check following condition, is vcodec == "" ?
-		// videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
-		// if videoMissing {
-		if status == CodecStatusNeedsBypass {
-			// > no longer valid comment > Audio-only segment, fail fast right here as we cannot handle them nicely
-			// core/transcoder_test.go::TestAudioCopy() and others use transcoder to process audio only media files
-			// NeedsBypass is state where video is present in container & vithout any frames
+		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
+		// NeedsBypass is state where video is present in container & vithout any frames
+		videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
+		if videoMissing {
+			// Audio-only segment, fail fast right here as we cannot handle them nicely
 			return nil, ErrTranscoderVid
 		}
 		// Stream is either OK or completely broken, let the transcoder handle it
