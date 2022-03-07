@@ -277,24 +277,14 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		return false, err
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
-	cfname := C.CString(fname)
-	defer C.free(unsafe.Pointer(cfname))
 	go func() {
 		br := bytes.NewReader(data)
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	acodec_c := C.CString(strings.Repeat("0", 255))
-	vcodec_c := C.CString(strings.Repeat("0", 255))
-	defer C.free(unsafe.Pointer(acodec_c))
-	defer C.free(unsafe.Pointer(vcodec_c))
-	var params_c C.codec_info
-	params_c.video_codec = vcodec_c
-	params_c.audio_codec = acodec_c
-	params_c.pixel_format = C.AV_PIX_FMT_NONE
-	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
+	status, _, _, _, err := GetCodecInfo(fname)
 	ow.Close()
-	return status == CodecStatusNeedsBypass, nil
+	return status == CodecStatusNeedsBypass, err
 }
 
 // compare two signature files whether those matches or not
