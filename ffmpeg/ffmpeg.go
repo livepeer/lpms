@@ -141,6 +141,7 @@ const (
 	PixelFormatYUV444P12LE int = C.AV_PIX_FMT_YUV444P12LE
 )
 
+// hold bit number minus 8; ColorDepthBits + 8 == bit number
 type ColorDepthBits int
 
 const (
@@ -161,57 +162,57 @@ const (
 func (pixelFormat PixelFormat) Properties() (ChromaSubsampling, ColorDepthBits, error) {
 	switch pixelFormat.RawValue {
 	case C.AV_PIX_FMT_YUV420P:
-		return ChromaSubsampling420, 0, nil
+		return ChromaSubsampling420, ColorDepth8Bit, nil
 	case C.AV_PIX_FMT_YUYV422:
-		return ChromaSubsampling422, 0, nil
+		return ChromaSubsampling422, ColorDepth8Bit, nil
 	case C.AV_PIX_FMT_YUV422P:
-		return ChromaSubsampling422, 0, nil
+		return ChromaSubsampling422, ColorDepth8Bit, nil
 	case C.AV_PIX_FMT_YUV444P:
-		return ChromaSubsampling444, 0, nil
+		return ChromaSubsampling444, ColorDepth8Bit, nil
 	case C.AV_PIX_FMT_UYVY422:
-		return ChromaSubsampling422, 0, nil
+		return ChromaSubsampling422, ColorDepth8Bit, nil
 	case C.AV_PIX_FMT_NV12:
-		return ChromaSubsampling420, 0, nil
+		return ChromaSubsampling420, ColorDepth8Bit, nil
 	case C.AV_PIX_FMT_NV21:
-		return ChromaSubsampling420, 0, nil
+		return ChromaSubsampling420, ColorDepth8Bit, nil
 	case C.AV_PIX_FMT_YUV420P10BE:
-		return ChromaSubsampling420, 2, nil
+		return ChromaSubsampling420, ColorDepth10Bit, nil
 	case C.AV_PIX_FMT_YUV420P10LE:
-		return ChromaSubsampling420, 2, nil
+		return ChromaSubsampling420, ColorDepth10Bit, nil
 	case C.AV_PIX_FMT_YUV422P10BE:
-		return ChromaSubsampling422, 2, nil
+		return ChromaSubsampling422, ColorDepth10Bit, nil
 	case C.AV_PIX_FMT_YUV422P10LE:
-		return ChromaSubsampling422, 2, nil
+		return ChromaSubsampling422, ColorDepth10Bit, nil
 	case C.AV_PIX_FMT_YUV444P10BE:
-		return ChromaSubsampling444, 2, nil
+		return ChromaSubsampling444, ColorDepth10Bit, nil
 	case C.AV_PIX_FMT_YUV444P10LE:
-		return ChromaSubsampling444, 2, nil
+		return ChromaSubsampling444, ColorDepth10Bit, nil
 	case C.AV_PIX_FMT_YUV420P16LE:
-		return ChromaSubsampling420, 8, nil
+		return ChromaSubsampling420, ColorDepth16Bit, nil
 	case C.AV_PIX_FMT_YUV420P16BE:
-		return ChromaSubsampling420, 8, nil
+		return ChromaSubsampling420, ColorDepth16Bit, nil
 	case C.AV_PIX_FMT_YUV422P16LE:
-		return ChromaSubsampling422, 8, nil
+		return ChromaSubsampling422, ColorDepth16Bit, nil
 	case C.AV_PIX_FMT_YUV422P16BE:
-		return ChromaSubsampling422, 8, nil
+		return ChromaSubsampling422, ColorDepth16Bit, nil
 	case C.AV_PIX_FMT_YUV444P16LE:
-		return ChromaSubsampling444, 8, nil
+		return ChromaSubsampling444, ColorDepth16Bit, nil
 	case C.AV_PIX_FMT_YUV444P16BE:
-		return ChromaSubsampling444, 8, nil
+		return ChromaSubsampling444, ColorDepth16Bit, nil
 	case C.AV_PIX_FMT_YUV420P12BE:
-		return ChromaSubsampling420, 4, nil
+		return ChromaSubsampling420, ColorDepth12Bit, nil
 	case C.AV_PIX_FMT_YUV420P12LE:
-		return ChromaSubsampling420, 4, nil
+		return ChromaSubsampling420, ColorDepth12Bit, nil
 	case C.AV_PIX_FMT_YUV422P12BE:
-		return ChromaSubsampling422, 4, nil
+		return ChromaSubsampling422, ColorDepth12Bit, nil
 	case C.AV_PIX_FMT_YUV422P12LE:
-		return ChromaSubsampling422, 4, nil
+		return ChromaSubsampling422, ColorDepth12Bit, nil
 	case C.AV_PIX_FMT_YUV444P12BE:
-		return ChromaSubsampling444, 4, nil
+		return ChromaSubsampling444, ColorDepth12Bit, nil
 	case C.AV_PIX_FMT_YUV444P12LE:
-		return ChromaSubsampling444, 4, nil
+		return ChromaSubsampling444, ColorDepth12Bit, nil
 	default:
-		return 0, 0, ErrTranscoderPixelformat
+		return ChromaSubsampling420, ColorDepth8Bit, ErrTranscoderPixelformat
 	}
 }
 
