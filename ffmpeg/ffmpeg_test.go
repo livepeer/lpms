@@ -879,13 +879,9 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 			AudioEncoder: ComponentOptions{Name: "copy"},
 		},
 	}
-	res, err = Transcode3(in, out)
-	if err != nil {
-		t.Error(err)
-	}
-	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
-		t.Error("Unexpected count of decoded frames")
-	}
+	// Audio only segments are not supported
+	_, err = Transcode3(in, out)
+	assert.EqualError(t, err, "TranscoderInvalidVideo")
 }
 
 func TestTranscoder_StreamCopy_Validate_B_Frames(t *testing.T) {
