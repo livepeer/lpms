@@ -1012,13 +1012,9 @@ func TestTranscoder_Drop(t *testing.T) {
 	}
 	in.Fname = dir + "/novideo.ts"
 	out = []TranscodeOptions{{Oname: dir + "/encoded-audio.mp4", Profile: P144p30fps16x9}}
-	res, err = Transcode3(in, out)
-	if err != nil {
-		t.Error(err)
-	}
-	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
-		t.Error("Unexpected encoded/decoded frame counts ")
-	}
+	_, err = Transcode3(in, out)
+	// Audio only segments are not supported
+	assert.EqualError(t, err, "TranscoderInvalidVideo")
 }
 
 func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
