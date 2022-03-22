@@ -85,6 +85,15 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
   }
   octx->ai = st->index;
 
+  AVRational ms_tb = {1, 1000};
+  AVRational dest_tb = ictx->ic->streams[ictx->ai]->time_base;
+  if (octx->clip_from) {
+    octx->clip_audio_from_pts = av_rescale_q(octx->clip_from, ms_tb, dest_tb);
+  }
+  if (octx->clip_to) {
+    octx->clip_audio_to_pts = av_rescale_q(octx->clip_to, ms_tb, dest_tb);
+  }
+
   // signal whether to drop preroll audio
   if (st->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
 
@@ -457,6 +466,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   }
 
   int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
+  int is_audio = (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type);
   ret = filtergraph_write(inf, ictx, octx, filter, is_video);
   if (ret < 0) goto proc_cleanup;
 
@@ -476,12 +486,20 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       octx->clip_start_pts = frame->pts;
       octx->clip_start_pts_found = 1;
     }
+    if (is_audio && !octx->clip_audio_start_pts_found && frame) {
+      octx->clip_audio_start_pts = frame->pts;
+      octx->clip_audio_start_pts_found = 1;
+    }
 
-    if (octx->clip_to && octx->clip_start_pts_found && frame && frame->pts > octx->clip_to_pts + octx->clip_start_pts) goto skip;
+
+    if (is_video && octx->clip_to && octx->clip_start_pts_found && frame && frame->pts > octx->clip_to_pts + octx->clip_start_pts) goto skip;
+    if (is_audio && octx->clip_to && octx->clip_audio_start_pts_found && frame && frame->pts > octx->clip_audio_to_pts + octx->clip_audio_start_pts) {
+      goto skip;
+    }
 
     if (is_video) {
       if (octx->clip_from && frame) {
-        if (frame->pts < octx->clip_from_pts + octx->clip_start_pts) goto skip;
+        if (frame->pts < octx->clip_from_pts + octx->clip_start_pts)  goto skip;
         if (!octx->clip_started) {
           octx->clip_started = 1;
           frame->pict_type = AV_PICTURE_TYPE_I;
@@ -489,10 +507,19 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
             octx->next_kf_pts = frame->pts + octx->gop_pts_len;
           }
         }
+        if (octx->clip_from && frame) {
+          frame->pts -= octx->clip_from_pts + octx->clip_start_pts;
+        }
       }
     } else if (octx->clip_from_pts && !octx->clip_started) {
       // we want first frame to be video frame
       goto skip;
+    }
+    if (is_audio && octx->clip_from && frame && frame->pts < octx->clip_audio_from_pts + octx->clip_audio_start_pts) {
+      goto skip;
+    }
+    if (is_audio && octx->clip_from && frame) {
+      frame->pts -= octx->clip_audio_from_pts + octx->clip_audio_start_pts;
     }
 
     // Set GOP interval if necessary
