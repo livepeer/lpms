@@ -234,9 +234,8 @@ int transcode(struct transcode_thread *h,
     ret = process_in(ictx, dframe, ipkt);
     if (ret == AVERROR_EOF) {
       if(filters_state == FILTERS_NORMAL && ictx->flushing) {
-        // TODO: Here we need to flush the filtergraph and encoders
+        // Here we need to flush the filtergraph and encoders
         filters_state = FILTERS_SHOULD_FLUSH;
-        // ret = process_out(ictx, octx, encoder, ost, filter, NULL);
       } else {
         // Bail out on streams that appear to be broken
         break;
