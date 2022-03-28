@@ -234,7 +234,7 @@ static uint8_t * get_filebuffer(const char *filename, int* fileLength)
     *fileLength = get_filesize(filename);
     if(*fileLength > 0) {
         // Cast to float is necessary to avoid int division
-        paddedLength = ceil(*fileLength / (float)AV_INPUT_BUFFER_PADDING_SIZE)*AV_INPUT_BUFFER_PADDING_SIZE + AV_INPUT_BUFFER_PADDING_SIZE;
+        paddedLength = (int)((*fileLength / (float)AV_INPUT_BUFFER_PADDING_SIZE)+1)*AV_INPUT_BUFFER_PADDING_SIZE + AV_INPUT_BUFFER_PADDING_SIZE;
         buffer = (uint8_t*)av_calloc(paddedLength, sizeof(uint8_t));
         if (!buffer) {
             av_log(NULL, AV_LOG_ERROR, "Could not allocate memory for reading signature file\n");
