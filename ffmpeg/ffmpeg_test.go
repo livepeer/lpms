@@ -1705,6 +1705,37 @@ func TestTranscoder_IgnoreUnknown(t *testing.T) {
 	run(cmd)
 }
 
+func TestTranscoder_FramesSingle(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fname := path.Join(wd, "..", "data", "singleframe.ts")
+	outName := path.Join(wd, "..", "data", "singleframe-transcoded.ts")
+	prof := P720p30fps16x9
+	in := &TranscodeOptionsIn{Fname: fname}
+	out := []TranscodeOptions{{
+		Oname:   outName,
+		Profile: prof,
+	}}
+	res, err := Transcode3(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+	outInfo, err := os.Stat(outName)
+	if os.IsNotExist(err) {
+		t.Error(err)
+	} else {
+		defer os.Remove(outName)
+	}
+	if outInfo.Size() == 0 {
+		t.Error("Must produce output")
+	}
+	if res.Encoded[0].Frames != 1 {
+		t.Error("Must produce frame in output. frames=", res.Encoded[0].Frames)
+	}
+}
+
 func TestTranscoder_GetCodecInfo(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
