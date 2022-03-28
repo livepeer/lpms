@@ -1745,6 +1745,29 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	assert.Equal(t, "aac", acodec)
 }
 
+func TestTranscoder_FramesFew(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	fname := path.Join(wd, "..", "data", "avc_5_frames.ts")
+	outName := path.Join(wd, "..", "data", "avc_5_frames-transcoded.ts")
+	prof := P720p30fps16x9
+	in := &TranscodeOptionsIn{Fname: fname}
+	out := []TranscodeOptions{{
+		Oname:   outName,
+		Profile: prof,
+	}}
+	res, err := Transcode3(in, out)
+	require.NoError(t, err)
+	outInfo, err := os.Stat(outName)
+	if os.IsNotExist(err) {
+		t.Error(err)
+	} else {
+		defer os.Remove(outName)
+	}
+	require.NotEqual(t, outInfo.Size(), 0, "Must produce output")
+	require.Equal(t, res.Encoded[0].Frames, 5, "Must produce 5 frames. is second frame duplicated?")
+}
+
 func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {
 	badSegment := make([]byte, 16*1024*1024)
 	res, err := HasZeroVideoFrameBytes(badSegment)
