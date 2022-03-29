@@ -358,7 +358,6 @@ int transcode(struct transcode_thread *h,
       } else if (has_frame) {
         ret = process_out(ictx, octx, encoder, ost, filter, dframe);
       } else if (filters_state == FILTERS_SHOULD_FLUSH) {
-        filters_state = FILTERS_FLUSHED;
         ret = process_out(ictx, octx, encoder, ost, filter, NULL);
       }
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
@@ -366,6 +365,10 @@ int transcode(struct transcode_thread *h,
     }
 whileloop_end:
     av_packet_unref(ipkt);
+  }
+
+  if(filters_state == FILTERS_SHOULD_FLUSH) {
+    filters_state = FILTERS_FLUSHED;
   }
 
   if (ictx->transmuxing) {
