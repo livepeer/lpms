@@ -1709,23 +1709,30 @@ func TestTranscoder_FramesSingle(t *testing.T) {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 	fname := path.Join(wd, "..", "data", "singleframe.ts")
-	outName := path.Join(wd, "..", "data", "singleframe-transcoded.ts")
-	prof := P720p30fps16x9
+	outNames := []string{
+		path.Join(wd, "..", "data", "singleframe-out-720.ts"),
+		path.Join(wd, "..", "data", "singleframe-out-360.ts"),
+		path.Join(wd, "..", "data", "singleframe-out-240.ts"),
+	}
+	// prof := P720p30fps16x9
 	in := &TranscodeOptionsIn{Fname: fname}
-	out := []TranscodeOptions{{
-		Oname:   outName,
-		Profile: prof,
-	}}
+	out := []TranscodeOptions{
+		{Oname: outNames[0], Profile: P720p30fps16x9},
+		{Oname: outNames[1], Profile: P360p30fps16x9},
+		{Oname: outNames[2], Profile: P240p30fps16x9},
+	}
 	res, err := Transcode3(in, out)
 	require.NoError(t, err)
-	outInfo, err := os.Stat(outName)
-	if os.IsNotExist(err) {
-		t.Error(err)
-	} else {
-		defer os.Remove(outName)
+	for i := 0; i < len(outNames); i++ {
+		outInfo, err := os.Stat(outNames[i])
+		if os.IsNotExist(err) {
+			t.Error(err)
+		} else {
+			defer os.Remove(outNames[i])
+		}
+		require.NotEqual(t, outInfo.Size(), 0, "must produce output %s", outNames[i])
+		require.Equal(t, res.Encoded[i].Frames, 1, "must produce single frame in output %s", outNames[i])
 	}
-	require.NotEqual(t, outInfo.Size(), 0, "must produce output")
-	require.Equal(t, res.Encoded[0].Frames, 1, "must produce single frame in output")
 }
 
 func TestTranscoder_GetCodecInfo(t *testing.T) {
