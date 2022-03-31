@@ -445,7 +445,7 @@ func TestServerDisconnect(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	cmd := "dd if=/dev/urandom count=1 ibs=2000 | nc -Nl " + port
+	cmd := "dd if=/dev/urandom count=1 ibs=2000 | nc -l " + port
 	go exec.CommandContext(ctx, "bash", "-c", cmd).Output()
 
 	err := RunRTMPToHLS(vs, ctx)
