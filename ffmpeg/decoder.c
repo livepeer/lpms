@@ -27,6 +27,8 @@ static int send_first_pkt(struct input_ctx *ictx)
   if (ictx->flushed) return 0;
   if (!ictx->first_pkt) return lpms_ERR_INPUT_NOKF;
 
+  //LPMS_WARN("sending flush packet NOW !");
+
   int ret = avcodec_send_packet(ictx->vc, ictx->first_pkt);
   ictx->sentinel_count++;
   if (ret < 0) {
@@ -85,28 +87,30 @@ dec_flush:
   // with video. If there's a nonzero response type, we know there are no more
   // video frames, so continue on to audio.
 
-  // Flush video decoder.
-  // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
+  // Flush video decoder
+    // To accommodate CUDA, we feed the decoder sentinel (flush) frames, till we
   // get back all sent frames, or we've made SENTINEL_MAX attempts to retrieve
   // buffered frames with no success.
   // TODO this is unnecessary for SW decoding! SW process should match audio
-  if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
-    ictx->flushing = 1;
-    ret = send_first_pkt(ictx);
-    if (ret < 0) {
-      ictx->flushed = 1;
-      return ret;
-    }
-    ret = lpms_receive_frame(ictx, ictx->vc, frame);
-    pkt->stream_index = ictx->vi;
-    // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
-    if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-      return 0; // ignore actual return value and keep flushing
-    } else {
-      ictx->flushed = 1;
-      if (!ret) return ret;
-    }
-  }
+  // last stable with Netint:
+  //if (ictx->hw_type != AV_HWDEVICE_TYPE_MEDIACODEC) {
+      if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
+        ictx->flushing = 1;
+        ret = send_first_pkt(ictx);
+        if (ret < 0) {
+          ictx->flushed = 1;
+          return ret;
+        }
+        ret = lpms_receive_frame(ictx, ictx->vc, frame);
+        pkt->stream_index = ictx->vi;
+        // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
+        if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
+          return 0; // ignore actual return value and keep flushing
+        } else {
+          ictx->flushed = 1;
+        }
+      }
+  //}
   // Flush audio decoder.
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
@@ -165,16 +169,6 @@ static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *vc, const enum AVPixelFo
   ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
   if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
   if (ret < 0) LPMS_ERR(pixfmt_cleanup, "Unable to initialize a hardware frame pool");
-
-/*
-fprintf(stderr, "selected format: hw %s sw %s\n",
-av_get_pix_fmt_name(frames->format), av_get_pix_fmt_name(frames->sw_format));
-const enum AVPixelFormat *p;
-for (p = pix_fmts; *p != -1; p++) {
-fprintf(stderr,"possible format: %s\n", av_get_pix_fmt_name(*p));
-}
-*/
-
   return frames->format;
 
 pixfmt_cleanup:
@@ -231,6 +225,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
 {
   int ret = 0;
   AVCodec *codec = NULL;
+  AVDictionary **opts = NULL;
   AVFormatContext *ic = ctx->ic;
   // open video decoder
   ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
@@ -253,6 +248,11 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
         ret = lpms_ERR_INPUT_PIXFMT;
         LPMS_ERR(open_decoder_err, "Non 4:2:0 pixel format detected in input");
       }
+    } else if (params->video.name && strlen(params->video.name) != 0) {
+      // Try to find user specified decoder by name
+      AVCodec *c = avcodec_find_decoder_by_name(params->video.name);
+      if (c) codec = c;
+      if (params->video.opts) opts = &params->video.opts;
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) LPMS_ERR(open_decoder_err, "Unable to alloc video codec");
@@ -261,16 +261,17 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to assign video params");
     vc->opaque = (void*)ctx;
     // XXX Could this break if the original device falls out of scope in golang?
-    if (params->hw_type != AV_HWDEVICE_TYPE_NONE) {
+    if (params->hw_type == AV_HWDEVICE_TYPE_CUDA) {
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
-      ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
     }
+    ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
-    ret = avcodec_open2(vc, codec, NULL);
+	av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
+    ret = avcodec_open2(vc, codec, opts);
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open video decoder");
   }
 

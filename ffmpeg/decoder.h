@@ -3,6 +3,7 @@
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/opt.h>
 #include "transcoder.h"
 
 struct input_ctx {
@@ -16,6 +17,7 @@ struct input_ctx {
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;
   char *device;
+  char *xcoderParams;
 
   // Decoder flush
   AVPacket *first_pkt;

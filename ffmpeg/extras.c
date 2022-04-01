@@ -11,7 +11,7 @@ struct match_info {
   int       height;
   uint64_t  bit_rate;
   int       packetcount; //video total packet count
-  uint64_t  timestamp;    //XOR sum of avpacket pts  
+  uint64_t  timestamp;    //XOR sum of avpacket pts
   int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
 };
 
@@ -183,10 +183,10 @@ close_format_context:
   return ret;
 }
 
-// compare two signature files whether those matches or not.
-// @param signpath1        full path of the first signature file.
-// @param signpath2        full path of the second signature file.
-// @return  <0: error 0: no matchiing 1: partial matching 2: whole matching.
+//// compare two signature files whether those matches or not.
+//// @param signpath1        full path of the first signature file.
+//// @param signpath2        full path of the second signature file.
+//// @return  <0: error 0: no matchiing 1: partial matching 2: whole matching.
 
 int lpms_compare_sign_bypath(char *signpath1, char *signpath2)
 {
@@ -268,7 +268,7 @@ static int read_packet(void *opaque, uint8_t *buf, int buf_size)
     return buf_size;
 }
 
-static int get_matchinfo(void *buffer, int len, struct match_info* info) 
+static int get_matchinfo(void *buffer, int len, struct match_info* info)
 {
   int ret = 0;
   AVFormatContext* ifmt_ctx = NULL;
@@ -292,7 +292,7 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
         LPMS_ERR(clean, "Error allocating buffer");
   }
 
-  avio_in = avio_alloc_context(avio_ctx_buffer, avio_ctx_buffer_size, 0, &bd, &read_packet, NULL, NULL);  
+  avio_in = avio_alloc_context(avio_ctx_buffer, avio_ctx_buffer_size, 0, &bd, &read_packet, NULL, NULL);
   if (!avio_ctx_buffer) {
         ret = AVERROR(ENOMEM);
         LPMS_ERR(clean, "Error allocating context");
@@ -304,15 +304,15 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
   }
   ifmt_ctx->pb = avio_in;
   ifmt_ctx->flags = AVFMT_FLAG_CUSTOM_IO;
-  
+
   if ((ret = avformat_open_input(&ifmt_ctx, "", NULL, NULL)) < 0) {
         LPMS_ERR(clean, "Cannot open input video file\n");
   }
-  
+
   if ((ret = avformat_find_stream_info(ifmt_ctx, NULL)) < 0) {
         LPMS_ERR(clean, "Cannot find stream information\n");
   }
-  
+
   for (int i = 0; i < ifmt_ctx->nb_streams; i++) {
     AVStream *stream;
     stream = ifmt_ctx->streams[i];
@@ -323,10 +323,10 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
       info->bit_rate = in_codecpar->bit_rate;
     }
     else if (in_codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-      audioid = i;      
+      audioid = i;
     }
   }
-  packet = av_packet_alloc();  
+  packet = av_packet_alloc();
   if (!packet) LPMS_ERR(clean, "Error allocating packet");
   while (1) {
     ret = av_read_frame(ifmt_ctx, packet);
@@ -334,7 +334,7 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
       ret = 0;
       break;
     }
-    else if (ret < 0) {      
+    else if (ret < 0) {
       LPMS_ERR(clean, "Unable to read input");
     }
     info->packetcount++;
@@ -345,8 +345,8 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
     }
     av_packet_unref(packet);
   }
-  
-clean:  
+
+clean:
   if(packet)
     av_packet_free(&packet);
   /* note: the internal buffer could have changed, and be != avio_ctx_buffer */
@@ -365,7 +365,7 @@ clean:
 // @return  <0: error =0: matching 1: no matching
 int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
-  int ret = 0; 
+  int ret = 0;
   struct match_info info1, info2;
 
   ret = get_matchinfo(buffer1,len1,&info1);
@@ -374,7 +374,7 @@ int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2
   ret = get_matchinfo(buffer2,len2,&info2);
   if(ret < 0) return ret;
   //compare two matching information
-  if (info1.width != info2.width || info1.height != info2.height || 
+  if (info1.width != info2.width || info1.height != info2.height ||
       info1.bit_rate != info2.bit_rate || info1.packetcount != info2.packetcount ||
       info1.timestamp != info2.timestamp || memcmp(info1.audiosum, info2.audiosum, 16)) {
       ret = 1;
