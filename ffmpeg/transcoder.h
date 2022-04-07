@@ -91,7 +91,6 @@ enum LPMSLogLevel {
 };
 
 void lpms_init(enum LPMSLogLevel max_level);
-void lpms_init_xcoder_params(char *ts_params);
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 struct transcode_thread* lpms_transcode_new();
 struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts);

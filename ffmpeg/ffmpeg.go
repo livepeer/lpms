@@ -514,7 +514,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("fname %s\n", input.Fname)
 	for _, p := range ps {
 		if p.From != 0 || p.To != 0 {
 			if p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy" {
@@ -859,12 +858,6 @@ const (
 
 func InitFFmpegWithLogLevel(level LogLevel) {
 	C.lpms_init(C.enum_LPMSLogLevel(level))
-}
-
-func InitFFmpegWithXcoderParams(param string) {
-	fmt.Println("InitFFmpegWithXcoderParams: ", param)
-	ts_param := C.CString(param)
-	C.lpms_init_xcoder_params(ts_param)
 }
 
 func InitFFmpeg() {

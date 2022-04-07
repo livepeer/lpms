@@ -155,7 +155,7 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && (octx->hw_type == AV_HWDEVICE_TYPE_NONE)) avcodec_free_context(&octx->vc);
+  if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
@@ -254,7 +254,6 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 	if(strcmp(ictx->xcoderParams,"")!=0){
 	    av_opt_set(vc->priv_data, "xcoder-params", ictx->xcoderParams, 0);
-		//printf("xcoder-params %s\n", ictx->xcoderParams);
 	}
 
     ret = avcodec_open2(vc, codec, &octx->video->opts);
@@ -358,7 +357,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
   }
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
-      (AV_HWDEVICE_TYPE_CUDA == octx->hw_type) && !frame) {
+      AV_HWDEVICE_TYPE_CUDA == octx->hw_type && !frame) {
     avcodec_flush_buffers(encoder);
   }
 

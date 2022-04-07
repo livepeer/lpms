@@ -86,11 +86,6 @@ void lpms_init(enum LPMSLogLevel max_level)
   av_log_set_level(max_level);
 }
 
-void lpms_init_xcoder_params(char *ts_params)
-{
-
-}
-
 //
 // Transcoder
 //
