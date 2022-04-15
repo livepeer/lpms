@@ -201,19 +201,35 @@ open_audio_err:
   return ret;
 }
 
-char* get_hw_decoder(int ff_codec_id)
+char* get_hw_decoder(int ff_codec_id, int hw_type)
 {
-    switch (ff_codec_id) {
-        case AV_CODEC_ID_H264:
-            return "h264_cuvid";
-        case AV_CODEC_ID_HEVC:
-            return "hevc_cuvid";
-        case AV_CODEC_ID_VP8:
-            return "vp8_cuvid";
-        case AV_CODEC_ID_VP9:
-            return "vp9_cuvid";
-        default:
-            return "";
+    switch (hw_type) {
+        case AV_HWDEVICE_TYPE_CUDA:
+            switch (ff_codec_id) {
+                case AV_CODEC_ID_H264:
+                    return "h264_cuvid";
+                case AV_CODEC_ID_HEVC:
+                    return "hevc_cuvid";
+                case AV_CODEC_ID_VP8:
+                    return "vp8_cuvid";
+                case AV_CODEC_ID_VP9:
+                    return "vp9_cuvid";
+                default:
+                    return "";
+            }
+        case AV_HWDEVICE_TYPE_MEDIACODEC:
+            switch (ff_codec_id) {
+                case AV_CODEC_ID_H264:
+                    return "h264_ni_dec";
+                case AV_CODEC_ID_HEVC:
+                    return "h265_ni_dec";
+                case AV_CODEC_ID_VP8:
+                    return "";
+                case AV_CODEC_ID_VP9:
+                    return "";
+                default:
+                    return "";
+            }
     }
 }
 
@@ -229,8 +245,8 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
   else if (ctx->vi < 0) {
     LPMS_WARN("No video stream found in input");
   } else {
-    if (AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
-      char* decoder_name = get_hw_decoder(codec->id);
+    if (params->hw_type > AV_HWDEVICE_TYPE_NONE) {
+      char* decoder_name = get_hw_decoder(codec->id, params->hw_type);
       if (!*decoder_name) {
         ret = lpms_ERR_INPUT_CODEC;
         LPMS_ERR(open_decoder_err, "Input codec does not support hardware acceleration");

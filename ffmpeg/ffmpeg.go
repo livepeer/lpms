@@ -81,10 +81,11 @@ type ComponentOptions struct {
 }
 
 type Transcoder struct {
-	handle  *C.struct_transcode_thread
-	stopped bool
-	started bool
-	mu      *sync.Mutex
+	handle      *C.struct_transcode_thread
+	stopped     bool
+	started     bool
+	mu          *sync.Mutex
+	input_codec string
 }
 
 type TranscodeOptionsIn struct {
@@ -477,19 +478,6 @@ func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw
 }
 
-func decoderOpts(accel Acceleration) (string, map[string]string, error) {
-	switch accel {
-	case Netint:
-		opts := map[string]string{}
-		// TODO add any netint decoder opts  NI decoder options
-		// opts["ffmpegflagkey"] = "flagvalue"
-		return "h264_ni_dec", opts, nil // TODO replace with actual netint decoder name
-		//return "", opts, nil // TODO replace with actual netint decoder name
-	default:
-		return "", map[string]string{}, ErrTranscoderInp
-	}
-}
-
 func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 	_, err := Transcode3(input, ps)
 	return err
@@ -543,6 +531,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			return nil, ErrTranscoderVid
 		}
 		// Stream is either OK or completely broken, let the transcoder handle it
+		t.input_codec = vcodec
 		t.started = true
 	}
 	params := make([]C.output_params, len(ps))
@@ -754,23 +743,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
 		handle: t.handle}
-	if input.Accel == Netint {
-		// Set decoder and AVOpts for NETINT
-		decoder, opts, err := decoderOpts(input.Accel)
-		if err != nil {
-			return nil, err
-		}
-		inp.video = C.component_opts{
-			name: C.CString(decoder),
-			opts: newAVOpts(opts),
-		}
-		defer C.free(unsafe.Pointer(inp.video.name))
-		defer func(param *C.input_params) {
-			if param.video.opts != nil {
-				C.av_dict_free(&param.video.opts)
-			}
-		}(inp)
-	}
 	if input.Transmuxing {
 		inp.transmuxe = 1
 	}
