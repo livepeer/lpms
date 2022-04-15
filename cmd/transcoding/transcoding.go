@@ -47,6 +47,8 @@ func main() {
 			}
 			if *hevc {
 				p.Encoder = ffmpeg.H265
+			} else {
+				p.Profile = ffmpeg.ProfileH264High
 			}
 			profs = append(profs, p)
 		}
