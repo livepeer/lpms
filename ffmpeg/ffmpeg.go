@@ -85,7 +85,6 @@ type Transcoder struct {
 	stopped     bool
 	started     bool
 	mu          *sync.Mutex
-	input_codec string
 }
 
 type TranscodeOptionsIn struct {
@@ -531,7 +530,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			return nil, ErrTranscoderVid
 		}
 		// Stream is either OK or completely broken, let the transcoder handle it
-		t.input_codec = vcodec
 		t.started = true
 	}
 	params := make([]C.output_params, len(ps))
