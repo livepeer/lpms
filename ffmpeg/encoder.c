@@ -155,7 +155,7 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && AV_HWDEVICE_TYPE_NONE == octx->hw_type) avcodec_free_context(&octx->vc);
+  if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
@@ -252,6 +252,9 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+	if(strcmp(octx->xcoderParams,"")!=0){
+	    av_opt_set(vc->priv_data, "xcoder-params", octx->xcoderParams, 0);
+	}
     ret = avcodec_open2(vc, codec, &octx->video->opts);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
     octx->hw_type = ictx->hw_type;
@@ -345,7 +348,8 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
 
   // We don't want to send NULL frames for HW encoding
   // because that closes the encoder: not something we want
-  if (AV_HWDEVICE_TYPE_NONE == octx->hw_type || AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type || frame) {
+  if (AV_HWDEVICE_TYPE_NONE == octx->hw_type || AV_HWDEVICE_TYPE_MEDIACODEC == octx->hw_type ||
+        AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type || frame) {
     ret = avcodec_send_frame(encoder, frame);
     if (AVERROR_EOF == ret) ; // continue ; drain encoder
     else if (ret < 0) LPMS_ERR(encode_cleanup, "Error sending frame to encoder");
@@ -527,6 +531,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         frame->pict_type = AV_PICTURE_TYPE_I;
         octx->next_kf_pts = frame->pts + octx->gop_pts_len;
     }
+
     if(octx->is_dnn_profile) {
       ret = getmetadatainf(frame, octx);
       if(ret == -1 && frame == NULL) {
@@ -544,8 +549,9 @@ skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
     // Return EOF in place of EAGAIN for to terminate the flush
-    if (frame == NULL && AV_HWDEVICE_TYPE_NONE != octx->hw_type &&
-        AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
+    if (frame == NULL && octx->hw_type > AV_HWDEVICE_TYPE_NONE &&
+            AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type &&
+            AVERROR(EAGAIN) == ret && !inf) return AVERROR_EOF;
     if (frame == NULL) return ret;
   }
 

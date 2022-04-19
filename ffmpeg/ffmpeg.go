@@ -48,7 +48,15 @@ const (
 	Software Acceleration = iota
 	Nvidia
 	Amd
+	Netint
 )
+
+var AccelerationNameLookup = map[Acceleration]string{
+	Software: "SW",
+	Nvidia:   "Nvidia",
+	Amd:      "Amd",
+	Netint:   "Netint",
+}
 
 var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
 	Software: {
@@ -60,6 +68,10 @@ var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
 	Nvidia: {
 		H264: "h264_nvenc",
 		H265: "hevc_nvenc",
+	},
+	Netint: {
+		H264: "h264_ni_enc",
+		H265: "h265_ni_enc",
 	},
 }
 
@@ -440,6 +452,14 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, 
 			}
 			return encoder, "scale_cuda", nil
 		}
+	case Netint:
+		switch outOpts.Accel {
+		case Software, Nvidia:
+			return "", "", ErrTranscoderDev // XXX don't allow mix-match between NETINT and sw/nv
+		case Netint:
+			// Use software scale filter
+			return encoder, "scale", nil
+		}
 	}
 	return "", "", ErrTranscoderHw
 }
@@ -449,7 +469,8 @@ func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 		return C.AV_HWDEVICE_TYPE_NONE, nil
 	case Nvidia:
 		return C.AV_HWDEVICE_TYPE_CUDA, nil
-
+	case Netint:
+		return C.AV_HWDEVICE_TYPE_MEDIACODEC, nil
 	}
 	return C.AV_HWDEVICE_TYPE_NONE, ErrTranscoderHw
 }
@@ -491,6 +512,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 	}
 	fname := C.CString(input.Fname)
+	xcoderParams := C.CString("")
+	defer C.free(unsafe.Pointer(xcoderParams))
 	defer C.free(unsafe.Pointer(fname))
 	if input.Transmuxing {
 		t.started = true
@@ -542,7 +565,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		// preserve aspect ratio along the larger dimension when rescaling
 		var filters string
 		filters = fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
-		if input.Accel != Software && p.Accel == Software {
+		if input.Accel == Nvidia && p.Accel == Software {
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ",hwdownload,format=nv12"
 		}
@@ -600,6 +623,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			defer C.free(unsafe.Pointer(muxOpts.name))
 		}
 		// Set video encoder options
+		// TODO understand how h264 profiles and GOP setting works for
+		// NETINT encoder, and make sure we change relevant things here
+		// Any other options for the encoder can also be added here
+		xcoderOutParamsStr := ""
 		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
 			p.VideoEncoder.Opts = map[string]string{
 				"forced-idr": "1",
@@ -609,8 +636,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
 				p.VideoEncoder.Opts["bf"] = "0"
 			case ProfileH264Main, ProfileH264High:
-				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
-				p.VideoEncoder.Opts["bf"] = "3"
+				if p.Accel != Netint {
+					p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+					p.VideoEncoder.Opts["bf"] = "3"
+				} else {
+					xcoderOutParamsStr = "profile=high"
+				}
 			case ProfileNone:
 				if p.Accel == Nvidia {
 					p.VideoEncoder.Opts["bf"] = "0"
@@ -630,6 +661,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				}
 			}
 		}
+		xcoderOutParams := C.CString(xcoderOutParamsStr)
+		defer C.free(unsafe.Pointer(xcoderOutParams))
 		gopMs := 0
 		if param.GOP != 0 {
 			if param.GOP <= GOPInvalid {
@@ -674,7 +707,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
 			muxer: muxOpts, audio: audioOpts, video: vidOpts,
-			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
+			vfilters: vfilt, sfilters: nil, is_dnn: isDNN, xcoderParams: xcoderOutParams}
 		if p.CalcSign {
 			//signfilter string
 			escapedOname := ffmpegStrEscape(p.Oname)
@@ -707,7 +740,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		device = C.CString(input.Device)
 		defer C.free(unsafe.Pointer(device))
 	}
-	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device,
+	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
 		handle: t.handle}
 	if input.Transmuxing {
 		inp.transmuxe = 1

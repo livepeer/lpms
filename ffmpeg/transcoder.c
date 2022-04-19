@@ -120,6 +120,7 @@ int transcode(struct transcode_thread *h,
 {
   int ret = 0, i = 0;
   struct input_ctx *ictx = &h->ictx;
+  ictx->xcoderParams = inp->xcoderParams;
   int reopen_decoders = !ictx->transmuxing;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
@@ -161,7 +162,7 @@ int transcode(struct transcode_thread *h,
 
   if (reopen_decoders) {
     // XXX check to see if we can also reuse decoder for sw decoding
-    if (AV_HWDEVICE_TYPE_CUDA != ictx->hw_type) {
+    if (ictx->hw_type == AV_HWDEVICE_TYPE_NONE) {
       ret = open_video_decoder(inp, ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video decoder");
     }
@@ -180,6 +181,7 @@ int transcode(struct transcode_thread *h,
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
       octx->sfilters = params[i].sfilters;
+      octx->xcoderParams = params[i].xcoderParams;
       if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
           octx->is_dnn_profile = params[i].is_dnn;
           octx->dnn_filtergraph = &h->dnn_filtergraph;
@@ -390,7 +392,7 @@ whileloop_end:
     }
     else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0) {
        for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
-         outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;         
+         outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;
        }
     }
   }
@@ -416,7 +418,7 @@ transcode_cleanup:
   if (ipkt) av_packet_free(&ipkt);  // needed for early exits
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
-  if (ictx->vc && AV_HWDEVICE_TYPE_NONE == ictx->hw_type) avcodec_free_context(&ictx->vc);
+  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
   for (i = 0; i < nb_outputs; i++) {
     //send EOF signal to signature filter
     if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {

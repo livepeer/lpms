@@ -165,16 +165,6 @@ static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *vc, const enum AVPixelFo
   ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
   if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
   if (ret < 0) LPMS_ERR(pixfmt_cleanup, "Unable to initialize a hardware frame pool");
-
-/*
-fprintf(stderr, "selected format: hw %s sw %s\n",
-av_get_pix_fmt_name(frames->format), av_get_pix_fmt_name(frames->sw_format));
-const enum AVPixelFormat *p;
-for (p = pix_fmts; *p != -1; p++) {
-fprintf(stderr,"possible format: %s\n", av_get_pix_fmt_name(*p));
-}
-*/
-
   return frames->format;
 
 pixfmt_cleanup:
@@ -211,19 +201,35 @@ open_audio_err:
   return ret;
 }
 
-char* get_hw_decoder(int ff_codec_id)
+char* get_hw_decoder(int ff_codec_id, int hw_type)
 {
-    switch (ff_codec_id) {
-        case AV_CODEC_ID_H264:
-            return "h264_cuvid";
-        case AV_CODEC_ID_HEVC:
-            return "hevc_cuvid";
-        case AV_CODEC_ID_VP8:
-            return "vp8_cuvid";
-        case AV_CODEC_ID_VP9:
-            return "vp9_cuvid";
-        default:
-            return "";
+    switch (hw_type) {
+        case AV_HWDEVICE_TYPE_CUDA:
+            switch (ff_codec_id) {
+                case AV_CODEC_ID_H264:
+                    return "h264_cuvid";
+                case AV_CODEC_ID_HEVC:
+                    return "hevc_cuvid";
+                case AV_CODEC_ID_VP8:
+                    return "vp8_cuvid";
+                case AV_CODEC_ID_VP9:
+                    return "vp9_cuvid";
+                default:
+                    return "";
+            }
+        case AV_HWDEVICE_TYPE_MEDIACODEC:
+            switch (ff_codec_id) {
+                case AV_CODEC_ID_H264:
+                    return "h264_ni_dec";
+                case AV_CODEC_ID_HEVC:
+                    return "h265_ni_dec";
+                case AV_CODEC_ID_VP8:
+                    return "";
+                case AV_CODEC_ID_VP9:
+                    return "";
+                default:
+                    return "";
+            }
     }
 }
 
@@ -231,6 +237,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
 {
   int ret = 0;
   AVCodec *codec = NULL;
+  AVDictionary **opts = NULL;
   AVFormatContext *ic = ctx->ic;
   // open video decoder
   ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
@@ -238,8 +245,8 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
   else if (ctx->vi < 0) {
     LPMS_WARN("No video stream found in input");
   } else {
-    if (AV_HWDEVICE_TYPE_CUDA == params->hw_type) {
-      char* decoder_name = get_hw_decoder(codec->id);
+    if (params->hw_type > AV_HWDEVICE_TYPE_NONE) {
+      char* decoder_name = get_hw_decoder(codec->id, params->hw_type);
       if (!*decoder_name) {
         ret = lpms_ERR_INPUT_CODEC;
         LPMS_ERR(open_decoder_err, "Input codec does not support hardware acceleration");
@@ -253,6 +260,11 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
         ret = lpms_ERR_INPUT_PIXFMT;
         LPMS_ERR(open_decoder_err, "Non 4:2:0 pixel format detected in input");
       }
+    } else if (params->video.name && strlen(params->video.name) != 0) {
+      // Try to find user specified decoder by name
+      AVCodec *c = avcodec_find_decoder_by_name(params->video.name);
+      if (c) codec = c;
+      if (params->video.opts) opts = &params->video.opts;
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) LPMS_ERR(open_decoder_err, "Unable to alloc video codec");
@@ -261,16 +273,17 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to assign video params");
     vc->opaque = (void*)ctx;
     // XXX Could this break if the original device falls out of scope in golang?
-    if (params->hw_type != AV_HWDEVICE_TYPE_NONE) {
+    if (params->hw_type == AV_HWDEVICE_TYPE_CUDA) {
       // First set the hw device then set the hw frame
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
-      ctx->hw_type = params->hw_type;
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
     }
+    ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
-    ret = avcodec_open2(vc, codec, NULL);
+    av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
+    ret = avcodec_open2(vc, codec, opts);
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open video decoder");
   }
 

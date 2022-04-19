@@ -3,6 +3,7 @@
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/opt.h>
 #include "transcoder.h"
 
 struct input_ctx {
@@ -16,6 +17,7 @@ struct input_ctx {
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;
   char *device;
+  char *xcoderParams;
 
   // Decoder flush
   AVPacket *first_pkt;
@@ -58,7 +60,7 @@ enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx);
 int open_input(input_params *params, struct input_ctx *ctx);
 int open_video_decoder(input_params *params, struct input_ctx *ctx);
 int open_audio_decoder(input_params *params, struct input_ctx *ctx);
-char* get_hw_decoder(int ff_codec_id);
+char* get_hw_decoder(int ff_codec_id, int hw_type);
 void free_input(struct input_ctx *inctx);
 
 // Utility functions
