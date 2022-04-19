@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
 	"testing"
 
 	"time"
@@ -421,7 +422,7 @@ func TestNoRTMPListener(t *testing.T) {
 	err := vs.RTMPToHLS(ctx, false)
 	if err == nil {
 		t.Errorf("error was unexpectedly nil; is something running on %v?", url)
-	} else if err.Error() != "Connection refused" {
+	} else if err.Error() != "Connection refused" && err.Error() != "Cannot assign requested address" {
 		t.Error("error was not nil; got ", err)
 	}
 }
@@ -437,7 +438,7 @@ func (s *ServerDisconnectStream) ReadRTMPFromStream(ctx context.Context, dst av.
 
 func TestServerDisconnect(t *testing.T) {
 	ffmpeg.InitFFmpeg()
-	port := "1938" // because we can't yet close the listener on 1935?
+	port := 1938 // because we can't yet close the listener on 1935?
 	strm := &ServerDisconnectStream{}
 	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, strm.GetStreamID())
 	opt := SegmenterOptions{SegLength: time.Second * 4}
@@ -445,7 +446,12 @@ func TestServerDisconnect(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-	cmd := "dd if=/dev/urandom count=1 ibs=2000 | nc -l " + port
+	nopt := "N"
+	if runtime.GOOS == `darwin` {
+		// N is invalid on MacOS
+		nopt = ""
+	}
+	cmd := fmt.Sprintf("dd if=/dev/urandom count=1 ibs=2000 | nc -%sl %d", nopt, port)
 	go exec.CommandContext(ctx, "bash", "-c", cmd).Output()
 
 	err := RunRTMPToHLS(vs, ctx)
