@@ -534,6 +534,10 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
 
     if(octx->is_dnn_profile) {
       ret = getmetadatainf(frame, octx);
+      if(ret == -1 && frame == NULL) {
+        // Return EOF in case of flushing procedure
+        ret = AVERROR_EOF;
+      }
     } else {
       if(is_video && frame != NULL && octx->sfilters != NULL) {
          ret = calc_signature(frame, octx);
