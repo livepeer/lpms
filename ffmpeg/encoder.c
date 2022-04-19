@@ -252,10 +252,9 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     }
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-	if(strcmp(ictx->xcoderParams,"")!=0){
-	    av_opt_set(vc->priv_data, "xcoder-params", ictx->xcoderParams, 0);
+	if(strcmp(octx->xcoderParams,"")!=0){
+	    av_opt_set(vc->priv_data, "xcoder-params", octx->xcoderParams, 0);
 	}
-
     ret = avcodec_open2(vc, codec, &octx->video->opts);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
     octx->hw_type = ictx->hw_type;

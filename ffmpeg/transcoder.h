@@ -32,11 +32,10 @@ typedef struct {
   int w, h, bitrate, gop_time, from, to;
   AVRational fps;
   int is_dnn;
-
+  char *xcoderParams;
   component_opts muxer;
   component_opts audio;
   component_opts video;
-
 } output_params;
 
 typedef struct {

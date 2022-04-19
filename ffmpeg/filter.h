@@ -71,7 +71,7 @@ struct output_ctx {
   int is_dnn_profile; //if not dnn profile: 0
 
   output_results  *res; // data to return for this output
-
+  char *xcoderParams;
 };
 
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx);

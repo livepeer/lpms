@@ -181,6 +181,7 @@ int transcode(struct transcode_thread *h,
       octx->video = &params[i].video;
       octx->vfilters = params[i].vfilters;
       octx->sfilters = params[i].sfilters;
+      octx->xcoderParams = params[i].xcoderParams;
       if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
           octx->is_dnn_profile = params[i].is_dnn;
           octx->dnn_filtergraph = &h->dnn_filtergraph;

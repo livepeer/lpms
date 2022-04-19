@@ -51,11 +51,11 @@ const (
 	Netint
 )
 
-var AccelerationNameLookup = map[Acceleration]string {
+var AccelerationNameLookup = map[Acceleration]string{
 	Software: "SW",
-	Nvidia: "Nvidia",
-	Amd: "Amd",
-	Netint: "Netint",
+	Nvidia:   "Nvidia",
+	Amd:      "Amd",
+	Netint:   "Netint",
 }
 
 var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
@@ -81,30 +81,28 @@ type ComponentOptions struct {
 }
 
 type Transcoder struct {
-	handle      *C.struct_transcode_thread
-	stopped     bool
-	started     bool
-	mu          *sync.Mutex
+	handle  *C.struct_transcode_thread
+	stopped bool
+	started bool
+	mu      *sync.Mutex
 }
 
 type TranscodeOptionsIn struct {
-	Fname        string
-	Accel        Acceleration
-	Device       string
-	XcoderParams string
-	Transmuxing  bool
+	Fname       string
+	Accel       Acceleration
+	Device      string
+	Transmuxing bool
 }
 
 type TranscodeOptions struct {
-	Oname        string
-	Profile      VideoProfile
-	Detector     DetectorProfile
-	Accel        Acceleration
-	Device       string
-	CalcSign     bool
-	From         time.Duration
-	To           time.Duration
-	XcoderParams string
+	Oname    string
+	Profile  VideoProfile
+	Detector DetectorProfile
+	Accel    Acceleration
+	Device   string
+	CalcSign bool
+	From     time.Duration
+	To       time.Duration
 
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
@@ -514,10 +512,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 	}
 	fname := C.CString(input.Fname)
-
-	xcoderParams := C.CString(input.XcoderParams)
-	defer C.free(unsafe.Pointer(fname))
+	xcoderParams := C.CString("")
 	defer C.free(unsafe.Pointer(xcoderParams))
+	defer C.free(unsafe.Pointer(fname))
 	if input.Transmuxing {
 		t.started = true
 	}
@@ -542,9 +539,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			p.Muxer = ComponentOptions{Name: "mpegts"}
 		}
 		oname := C.CString(p.Oname)
-		xcoderParams := C.CString(p.XcoderParams)
 		defer C.free(unsafe.Pointer(oname))
-		defer C.free(unsafe.Pointer(xcoderParams))
 
 		param := p.Profile
 		w, h, err := VideoProfileResolution(param)
@@ -631,7 +626,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		// TODO understand how h264 profiles and GOP setting works for
 		// NETINT encoder, and make sure we change relevant things here
 		// Any other options for the encoder can also be added here
-
+		xcoderOutParamsStr := ""
 		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
 			p.VideoEncoder.Opts = map[string]string{
 				"forced-idr": "1",
@@ -641,8 +636,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
 				p.VideoEncoder.Opts["bf"] = "0"
 			case ProfileH264Main, ProfileH264High:
-				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
-				p.VideoEncoder.Opts["bf"] = "3"
+				if p.Accel != Netint {
+					p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+					p.VideoEncoder.Opts["bf"] = "3"
+				} else {
+					xcoderOutParamsStr = "profile=high"
+				}
 			case ProfileNone:
 				if p.Accel == Nvidia {
 					p.VideoEncoder.Opts["bf"] = "0"
@@ -662,6 +661,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				}
 			}
 		}
+		xcoderOutParams := C.CString(xcoderOutParamsStr)
+		defer C.free(unsafe.Pointer(xcoderOutParams))
 		gopMs := 0
 		if param.GOP != 0 {
 			if param.GOP <= GOPInvalid {
@@ -706,7 +707,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
 			muxer: muxOpts, audio: audioOpts, video: vidOpts,
-			vfilters: vfilt, sfilters: nil, is_dnn: isDNN}
+			vfilters: vfilt, sfilters: nil, is_dnn: isDNN, xcoderParams: xcoderOutParams}
 		if p.CalcSign {
 			//signfilter string
 			escapedOname := ffmpegStrEscape(p.Oname)
