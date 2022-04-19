@@ -1565,5 +1565,5 @@ func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 }
 
 func TestTranscoder_DetectionFreq(t *testing.T) {
-	//detectionFreq(t, Software, "-1")
+	detectionFreq(t, Software, "-1")
 }
