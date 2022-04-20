@@ -422,7 +422,7 @@ func TestNoRTMPListener(t *testing.T) {
 	err := vs.RTMPToHLS(ctx, false)
 	if err == nil {
 		t.Errorf("error was unexpectedly nil; is something running on %v?", url)
-	} else if err.Error() != "Connection refused" {
+	} else if err.Error() != "Connection refused" && err.Error() != "Cannot assign requested address" {
 		t.Error("error was not nil; got ", err)
 	}
 }
