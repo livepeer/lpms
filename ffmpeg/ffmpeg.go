@@ -633,8 +633,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			}
 			switch p.Profile.Profile {
 			case ProfileH264Baseline, ProfileH264ConstrainedHigh:
-				p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
-				p.VideoEncoder.Opts["bf"] = "0"
+				if p.Accel != Netint {
+					p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
+					p.VideoEncoder.Opts["bf"] = "0"
+				} else {
+					xcoderOutParamsStr = "profile=high"
+				}
 			case ProfileH264Main, ProfileH264High:
 				if p.Accel != Netint {
 					p.VideoEncoder.Opts["profile"] = ProfileParameters[p.Profile.Profile]
