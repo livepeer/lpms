@@ -1,0 +1,52 @@
+name: Build LPMS in Linux
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+jobs:
+  build:
+    runs-on: lpms-linux-runner
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2 
+      with:
+        # Needed for commands that depend on git tags
+        fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
+
+    - name: Get the latest install_ffmpeg.sh from go-livepeer
+      run: |
+        rm install_ffmpeg.sh || true
+        curl -LO https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
+
+    - name: Cache packages
+      uses: actions/cache@v2
+      id: cache-packages
+      with:
+        path: |
+          /home/devops/nasm-2.14.02
+          /home/devops/x264
+          /home/devops/x265
+          /home/devops/libvpx
+          /home/devops/ffmpeg
+          /home/devops/compiled
+        key: ffmpeg-cache-v1-${{ hashFiles('**/install_ffmpeg.sh') }}
+
+    - name: Install ffmpeg
+      if: steps.cache-packages.outputs.cache-hit != 'true'
+      run: |
+        bash ./install_ffmpeg.sh
+
+    - name: Build LPMS
+      shell: bash
+      run: |
+        go get ./cmd/example
+        go build cmd/example/*.go
+
+    - name: Download ML model
+      run: |
+        curl -L https://github.com/livepeer/livepeer-ml/releases/latest/download/tasmodel.pb --output ./ffmpeg/tasmodel.pb
+
+    - name: Test
+      run: bash ./test.sh
