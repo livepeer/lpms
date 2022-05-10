@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.2.0-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:11.2.0-cudnn8-runtime-ubuntu20.04
 
 # set the github runner version
 ARG RUNNER_VERSION="2.287.1"
