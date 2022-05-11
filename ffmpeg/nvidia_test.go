@@ -1,3 +1,4 @@
+//go:build nvidia
 // +build nvidia
 
 package ffmpeg
@@ -8,8 +9,7 @@ import (
 	"testing"
 )
 
-func
-TestNvidia_Transcoding(t *testing.T) {
+func TestNvidia_Transcoding(t *testing.T) {
 	codecsComboTest(t, supportedCodecsCombinations([]Acceleration{Nvidia}))
 }
 

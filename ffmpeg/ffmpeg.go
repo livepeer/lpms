@@ -24,6 +24,7 @@ import (
 // #include <stdlib.h>
 // #include "transcoder.h"
 // #include "extras.h"
+// #include <libavutil/log.h>
 import "C"
 
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
@@ -41,6 +42,9 @@ var ErrDNNInitialize = errors.New("DetectorInitializationError")
 var ErrSignCompare = errors.New("InvalidSignData")
 var ErrTranscoderPixelformat = errors.New("TranscoderInvalidPixelformat")
 var ErrVideoCompare = errors.New("InvalidVideoData")
+
+// Switch to turn off logging transcoding errors, when doing test transcoding
+var LogTranscodeErrors = true
 
 type Acceleration int
 
@@ -761,7 +765,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
-		glog.Error("Transcoder Return : ", ErrorMap[ret])
+		if LogTranscodeErrors {
+			glog.Error("Transcoder Return : ", ErrorMap[ret])
+		}
 		if ret == int(C.lpms_ERR_UNRECOVERABLE) {
 			panic(ErrorMap[ret])
 		}
@@ -884,4 +890,12 @@ func ffmpegStrEscape(origStr string) string {
 	tmpStr := strings.ReplaceAll(origStr, "\\", "\\\\")
 	outStr := strings.ReplaceAll(tmpStr, ":", "\\:")
 	return outStr
+}
+
+func FfmpegSetLogLevel(level int) {
+	C.av_log_set_level(C.int(level))
+}
+
+func FfmpegGetLogLevel() int {
+	return int(C.av_log_get_level())
 }
