@@ -167,6 +167,8 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
       if(audio_present && pixel_format_missing && no_picture_height) {
         ret = GET_CODEC_NEEDS_BYPASS;
       }
+      out->width  = ic->streams[vstream]->codecpar->width;
+      out->height = ic->streams[vstream]->codecpar->height;
   } else {
       // Indicate failure to extract video codec from given container
       out->video_codec[0] = 0;

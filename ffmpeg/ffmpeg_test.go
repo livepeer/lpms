@@ -1741,9 +1741,9 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	fname := path.Join(wd, "..", "data", "zero-frame.ts")
-	status, acodec, vcodec, pixelFormat, err := GetCodecInfo(fname)
+	status, format, err := GetCodecInfo(fname)
 	isZeroFrame := status == CodecStatusNeedsBypass
-	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, format.Acodec, format.Vcodec, format.PixFormat, err)
 	if isZeroFrame != true {
 		t.Errorf("Expecting true, got %v fname=%s", isZeroFrame, fname)
 	}
@@ -1751,9 +1751,9 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	status, acodec, vcodec, pixelFormat, err = GetCodecInfoBytes(data)
+	status, format, err = GetCodecInfoBytes(data)
 	isZeroFrame = status == CodecStatusNeedsBypass
-	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
+	fmt.Printf("zero-frame.ts %t %s %s %d %v\n", isZeroFrame, format.Acodec, format.Vcodec, format.PixFormat, err)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1765,14 +1765,14 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 		t.Errorf("Unexpected error %v", err)
 	}
 	fname = path.Join(wd, "..", "data", "bunny.mp4")
-	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
+	status, format, err = GetCodecInfo(fname)
 	isZeroFrame = status == CodecStatusNeedsBypass
-	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", isZeroFrame, acodec, vcodec, pixelFormat, err)
+	fmt.Printf("bunny.mp4 %t %s %s %d %v\n", isZeroFrame, format.Acodec, format.Vcodec, format.PixFormat, err)
 	if isZeroFrame != false {
 		t.Errorf("Expecting false, got %v fname=%s", isZeroFrame, fname)
 	}
-	assert.Equal(t, "h264", vcodec)
-	assert.Equal(t, "aac", acodec)
+	assert.Equal(t, "h264", format.Vcodec)
+	assert.Equal(t, "aac", format.Acodec)
 }
 
 func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {
