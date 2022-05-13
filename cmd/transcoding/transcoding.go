@@ -21,12 +21,13 @@ func validRenditions() []string {
 func main() {
 	from := flag.Duration("from", 0, "Skip all frames before that timestamp, from start of the file")
 	hevc := flag.Bool("hevc", false, "Use H.265/HEVC for encoding")
+	new := flag.Bool("new", false, "Use new refactored code")
 	to := flag.Duration("to", 0, "Skip all frames after that timestamp, from start of the file")
 	flag.Parse()
 	var err error
 	args := append([]string{os.Args[0]}, flag.Args()...)
 	if len(args) <= 3 {
-		panic("Usage: [-hevc] [-from dur] [-to dur] <input file> <output renditions, comma separated> <sw/nv/nt>")
+		panic("Usage: [-new] [-hevc] [-from dur] [-to dur] <input file> <output renditions, comma separated> <sw/nv/nt>")
 	}
 	str2accel := func(inp string) (ffmpeg.Acceleration, string) {
 		if inp == "nv" {
@@ -88,11 +89,21 @@ func main() {
 
 	t := time.Now()
 	fmt.Printf("Setting fname %s encoding %d renditions with %v from %s to %s\n", fname, len(options), lbl, *from, *to)
-	res, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-		Fname:  fname,
-		Accel:  accel,
-		Device: dev,
-	}, options)
+	var res *ffmpeg.TranscodeResults
+	if *new {
+		fmt.Printf("Using new EXPERIMENTAL code\n")
+		res, err = ffmpeg.Transcode4(&ffmpeg.TranscodeOptionsIn{
+			Fname:  fname,
+			Accel:  accel,
+			Device: dev,
+		}, options)
+	} else {
+		res, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+			Fname:  fname,
+			Accel:  accel,
+			Device: dev,
+		}, options)
+	}
 	if err != nil {
 		panic(err)
 	}

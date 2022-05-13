@@ -23,6 +23,7 @@ import (
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale
 // #include <stdlib.h>
 // #include "transcoder.h"
+// #include "transcoder2.h"
 // #include "extras.h"
 import "C"
 
@@ -41,6 +42,9 @@ var ErrDNNInitialize = errors.New("DetectorInitializationError")
 var ErrSignCompare = errors.New("InvalidSignData")
 var ErrTranscoderPixelformat = errors.New("TranscoderInvalidPixelformat")
 var ErrVideoCompare = errors.New("InvalidVideoData")
+
+// Switch to turn off logging transcoding errors, when doing test transcoding
+var LogTranscodeErrors = true
 
 type Acceleration int
 
@@ -82,6 +86,14 @@ type ComponentOptions struct {
 
 type Transcoder struct {
 	handle  *C.struct_transcode_thread
+	stopped bool
+	started bool
+	mu      *sync.Mutex
+}
+
+type Transcoder2 struct {
+	// this is really a pointer to C++ instance
+	handle  unsafe.Pointer
 	stopped bool
 	started bool
 	mu      *sync.Mutex
@@ -488,6 +500,12 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 	return t.Transcode(input, ps)
 }
 
+func Transcode4(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	t := NewTranscoder2()
+	defer t.StopTranscoder2()
+	return t.Transcode2(input, ps)
+}
+
 // create C output params array and return it along with corresponding finalizer
 // function that makes sure there are no C memory leaks
 func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.output_params, func(), error) {
@@ -724,6 +742,7 @@ func destroyCOutputParams(params []C.output_params) {
 	}
 }
 
+// "Old" Transcode function
 func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -800,12 +819,131 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
-		glog.Error("Transcoder Return : ", ErrorMap[ret])
+		if LogTranscodeErrors {
+			glog.Error("Transcoder Return : ", ErrorMap[ret])
+		}
 		if ret == int(C.lpms_ERR_UNRECOVERABLE) {
 			panic(ErrorMap[ret])
 		}
 		return nil, ErrorMap[ret]
 	}
+	tr := make([]MediaInfo, len(ps))
+	for i, r := range results {
+		tr[i] = MediaInfo{
+			Frames: int(r.frames),
+			Pixels: int64(r.pixels),
+		}
+		// add detect result
+		if ps[i].Detector != nil {
+			switch ps[i].Detector.Type() {
+			case SceneClassification:
+				detector := ps[i].Detector.(*SceneClassificationProfile)
+				res := make(SceneClassificationData)
+				for j, class := range detector.Classes {
+					res[class.ID] = float64(r.probs[j])
+				}
+				tr[i].DetectData = res
+			}
+		}
+	}
+	dec := MediaInfo{
+		Frames: int(decoded.frames),
+		Pixels: int64(decoded.pixels),
+	}
+	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
+}
+
+// "New" Transcode function
+func (t *Transcoder2) Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped || t.handle == nil {
+		return nil, ErrTranscoderStp
+	}
+	if input == nil {
+		return nil, ErrTranscoderInp
+	}
+	hw_type, err := accelDeviceType(input.Accel)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range ps {
+		if p.From != 0 || p.To != 0 {
+			if p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy" {
+				glog.Warning("Could clip only when transcoding video")
+				return nil, ErrTranscoderClipConfig
+			}
+			if p.From < 0 || p.To > 0 && p.From > 0 && p.To < p.From {
+				glog.Warning("'To' should be after 'From'")
+				return nil, ErrTranscoderClipConfig
+			}
+		}
+	}
+	if input.Transmuxing {
+		t.started = true
+	}
+	if !t.started {
+		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
+		// NeedsBypass is state where video is present in container & vithout any frames
+		videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
+		if videoMissing {
+			// Audio-only segment, fail fast right here as we cannot handle them nicely
+			return nil, ErrTranscoderVid
+		}
+		// Stream is either OK or completely broken, let the transcoder handle it
+		t.started = true
+	}
+
+	// Output configuration
+	params, finalizer, err := createCOutputParams(input, ps)
+	// This prevents C memory leaks
+	defer finalizer()
+	// Only now can we do this
+	if err != nil {
+		return nil, err
+	}
+
+	// Input configuration
+	var device *C.char
+	if input.Device != "" {
+		device = C.CString(input.Device)
+		defer C.free(unsafe.Pointer(device))
+	}
+	fname := C.CString(input.Fname)
+	defer C.free(unsafe.Pointer(fname))
+	xcoderParams := C.CString("")
+	defer C.free(unsafe.Pointer(xcoderParams))
+	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams, handle: nil}
+	if input.Transmuxing {
+		inp.transmuxe = 1
+	}
+
+	// Results
+	results := make([]C.output_results, len(ps))
+	decoded := &C.output_results{}
+	var (
+		paramsPointer  *C.output_params
+		resultsPointer *C.output_results
+	)
+	if len(params) > 0 {
+		paramsPointer = (*C.output_params)(&params[0])
+		resultsPointer = (*C.output_results)(&results[0])
+	}
+
+	// Call into C code
+	ret := int(C.lpms_transcode2(t.handle, inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
+
+	if ret != 0 {
+		if LogTranscodeErrors {
+			glog.Error("Transcoder Return : ", ErrorMap[ret])
+		}
+		if ret == int(C.lpms_ERR_UNRECOVERABLE) {
+			panic(ErrorMap[ret])
+		}
+		return nil, ErrorMap[ret]
+	}
+
 	tr := make([]MediaInfo, len(ps))
 	for i, r := range results {
 		tr[i] = MediaInfo{
@@ -845,6 +983,13 @@ func NewTranscoder() *Transcoder {
 	}
 }
 
+func NewTranscoder2() *Transcoder2 {
+	return &Transcoder2{
+		handle: C.lpms_transcode2_new(),
+		mu:     &sync.Mutex{},
+	}
+}
+
 func (t *Transcoder) StopTranscoder() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -852,6 +997,17 @@ func (t *Transcoder) StopTranscoder() {
 		return
 	}
 	C.lpms_transcode_stop(t.handle)
+	t.handle = nil // prevent accidental reuse
+	t.stopped = true
+}
+
+func (t *Transcoder2) StopTranscoder2() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped {
+		return
+	}
+	C.lpms_transcode2_stop(t.handle)
 	t.handle = nil // prevent accidental reuse
 	t.stopped = true
 }
