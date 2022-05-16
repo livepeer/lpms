@@ -114,18 +114,51 @@ static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
   return av_write_trailer(octx->oc);
 }
 
-int transcode(struct transcode_thread *h,
-  input_params *inp, output_params *params,
-  output_results *results, output_results *decoded_results)
+int transcode_shutdown(struct transcode_thread *h, int ret)
 {
-  int ret = 0, i = 0;
+  struct input_ctx *ictx = &h->ictx;
+  struct output_ctx *outputs = h->outputs;
+  int nb_outputs = h->nb_outputs;
+  if (ictx->ic) {
+    // Only mpegts reuse the demuxer for subsequent segments.
+    // Close the demuxer for everything else.
+    // TODO might be reusable with fmp4 ; check!
+    if (!is_mpegts(ictx->ic)) avformat_close_input(&ictx->ic);
+    else if (ictx->ic->pb) {
+      // Reset leftovers from demuxer internals to prepare for next segment
+      avio_flush(ictx->ic->pb);
+      avformat_flush(ictx->ic);
+      avio_closep(&ictx->ic->pb);
+    }
+  }
+  ictx->flushed = 0;
+  ictx->flushing = 0;
+  ictx->pkt_diff = 0;
+  ictx->sentinel_count = 0;
+  if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
+  if (ictx->ac) avcodec_free_context(&ictx->ac);
+  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
+  for (int i = 0; i < nb_outputs; i++) {
+    //send EOF signal to signature filter
+    if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
+      av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
+      free_filter(&outputs[i].sf);
+    }
+    close_output(&outputs[i]);
+  }
+  return ret == AVERROR_EOF ? 0 : ret;
+
+}
+
+int transcode_init(struct transcode_thread *h, input_params *inp,
+                   output_params *params, output_results *results)
+{
+  int ret = 0;
   struct input_ctx *ictx = &h->ictx;
   ictx->xcoderParams = inp->xcoderParams;
   int reopen_decoders = !ictx->transmuxing;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
-  AVPacket *ipkt = NULL;
-  AVFrame *dframe = NULL;
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
 
@@ -171,51 +204,68 @@ int transcode(struct transcode_thread *h,
   }
 
   // populate output contexts
-  for (i = 0; i <  nb_outputs; i++) {
-      struct output_ctx *octx = &outputs[i];
-      octx->fname = params[i].fname;
-      octx->width = params[i].w;
-      octx->height = params[i].h;
-      octx->muxer = &params[i].muxer;
-      octx->audio = &params[i].audio;
-      octx->video = &params[i].video;
-      octx->vfilters = params[i].vfilters;
-      octx->sfilters = params[i].sfilters;
-      octx->xcoderParams = params[i].xcoderParams;
-      if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
-          octx->is_dnn_profile = params[i].is_dnn;
-          octx->dnn_filtergraph = &h->dnn_filtergraph;
-      }
-      if (params[i].bitrate) octx->bitrate = params[i].bitrate;
-      if (params[i].fps.den) octx->fps = params[i].fps;
-      if (params[i].gop_time) octx->gop_time = params[i].gop_time;
-      if (params[i].from) octx->clip_from = params[i].from;
-      if (params[i].to) octx->clip_to = params[i].to;
-      octx->dv = ictx->vi < 0 || is_drop(octx->video->name);
-      octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
-      octx->res = &results[i];
+  for (int i = 0; i <  nb_outputs; i++) {
+    struct output_ctx *octx = &outputs[i];
+    octx->fname = params[i].fname;
+    octx->width = params[i].w;
+    octx->height = params[i].h;
+    octx->muxer = &params[i].muxer;
+    octx->audio = &params[i].audio;
+    octx->video = &params[i].video;
+    octx->vfilters = params[i].vfilters;
+    octx->sfilters = params[i].sfilters;
+    octx->xcoderParams = params[i].xcoderParams;
+    if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
+      octx->is_dnn_profile = params[i].is_dnn;
+      octx->dnn_filtergraph = &h->dnn_filtergraph;
+    }
+    if (params[i].bitrate) octx->bitrate = params[i].bitrate;
+    if (params[i].fps.den) octx->fps = params[i].fps;
+    if (params[i].gop_time) octx->gop_time = params[i].gop_time;
+    if (params[i].from) octx->clip_from = params[i].from;
+    if (params[i].to) octx->clip_to = params[i].to;
+    octx->dv = ictx->vi < 0 || is_drop(octx->video->name);
+    octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
+    octx->res = &results[i];
 
-      // first segment of a stream, need to initalize output HW context
-      // XXX valgrind this line up
-      // when transmuxing we're opening output with first segment, but closing it
-      // only when lpms_transcode_stop called, so we don't want to re-open it
-      // on subsequent segments
-      if (!h->initialized || (AV_HWDEVICE_TYPE_NONE == octx->hw_type && !ictx->transmuxing)) {
-        ret = open_output(octx, ictx);
-        if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
-        if (ictx->transmuxing) {
-          octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
-          octx->oc->flush_packets = 1;
-        }
-        continue;
+    // first segment of a stream, need to initalize output HW context
+    // XXX valgrind this line up
+    // when transmuxing we're opening output with first segment, but closing it
+    // only when lpms_transcode_stop called, so we don't want to re-open it
+    // on subsequent segments
+    if (!h->initialized || (AV_HWDEVICE_TYPE_NONE == octx->hw_type && !ictx->transmuxing)) {
+      ret = open_output(octx, ictx);
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
+      if (ictx->transmuxing) {
+        octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
+        octx->oc->flush_packets = 1;
       }
+      continue;
+    }
 
-      if (!ictx->transmuxing) {
-        // non-first segment of a HW session
-        ret = reopen_output(octx, ictx);
+    if (!ictx->transmuxing) {
+      // non-first segment of a HW session
+      ret = reopen_output(octx, ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to re-open output for HW session");
-      }
+    }
   }
+
+  return 0;   // all ok
+
+transcode_cleanup:
+  return transcode_shutdown(h, ret);
+}
+
+int transcode(struct transcode_thread *h,
+  input_params *inp, output_params *params,
+  output_results *results, output_results *decoded_results)
+{
+  int ret = 0;
+  AVPacket *ipkt = NULL;
+  AVFrame *dframe = NULL;
+  struct input_ctx *ictx = &h->ictx;
+  struct output_ctx *outputs = h->outputs;
+  int nb_outputs = h->nb_outputs;
 
   ipkt = av_packet_alloc();
   if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
@@ -299,7 +349,7 @@ int transcode(struct transcode_thread *h,
     }
 
     // ENCODING & MUXING OF ALL OUTPUT RENDITIONS
-    for (i = 0; i < nb_outputs; i++) {
+    for (int i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];
       struct filter_ctx *filter = NULL;
       AVStream *ost = NULL;
@@ -374,7 +424,7 @@ whileloop_end:
   }
 
   if (ictx->transmuxing) {
-    for (i = 0; i < nb_outputs; i++) {
+    for (int i = 0; i < nb_outputs; i++) {
       av_interleaved_write_frame(outputs[i].oc, NULL); // flush muxer
     }
     if (ictx->ic) {
@@ -385,7 +435,7 @@ whileloop_end:
   }
 
   // flush outputs
-  for (i = 0; i < nb_outputs; i++) {
+  for (int i = 0; i < nb_outputs; i++) {
     if(outputs[i].is_dnn_profile == 0 && outputs[i].has_output > 0) {
       ret = flush_outputs(ictx, &outputs[i]);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
@@ -398,36 +448,9 @@ whileloop_end:
   }
 
 transcode_cleanup:
-  if (ictx->ic) {
-    // Only mpegts reuse the demuxer for subsequent segments.
-    // Close the demuxer for everything else.
-    // TODO might be reusable with fmp4 ; check!
-    if (!is_mpegts(ictx->ic)) avformat_close_input(&ictx->ic);
-    else if (ictx->ic->pb) {
-      // Reset leftovers from demuxer internals to prepare for next segment
-      avio_flush(ictx->ic->pb);
-      avformat_flush(ictx->ic);
-      avio_closep(&ictx->ic->pb);
-    }
-  }
   if (dframe) av_frame_free(&dframe);
-  ictx->flushed = 0;
-  ictx->flushing = 0;
-  ictx->pkt_diff = 0;
-  ictx->sentinel_count = 0;
   if (ipkt) av_packet_free(&ipkt);  // needed for early exits
-  if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
-  if (ictx->ac) avcodec_free_context(&ictx->ac);
-  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
-  for (i = 0; i < nb_outputs; i++) {
-    //send EOF signal to signature filter
-    if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
-      av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
-      free_filter(&outputs[i].sf);
-    }
-    close_output(&outputs[i]);
-  }
-  return ret == AVERROR_EOF ? 0 : ret;
+  return transcode_shutdown(h, ret);
 }
 
 int lpms_transcode(input_params *inp, output_params *params,
@@ -474,6 +497,11 @@ int lpms_transcode(input_params *inp, output_params *params,
     }
 #undef MAX
 #undef MIN
+  }
+
+  ret = transcode_init(h, inp, params, results);
+  if (ret < 0) {
+    return ret;
   }
 
   ret = transcode(h, inp, params, results, decoded_results);
