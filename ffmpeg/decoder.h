@@ -55,6 +55,9 @@ struct input_ctx {
 };
 
 // Exported methods
+int demux_in(struct input_ctx *ictx, AVPacket *pkt);
+int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame);
+int flush_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame);
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt);
 enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx);
 int open_input(input_params *params, struct input_ctx *ctx);
