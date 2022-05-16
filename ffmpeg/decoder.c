@@ -36,51 +36,61 @@ packet_cleanup:
   return ret;
 }
 
-int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
+int demux_in(struct input_ctx *ictx, AVPacket *pkt)
+{
+  return av_read_frame(ictx->ic, pkt);
+}
+
+int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame)
 {
   int ret = 0;
+  AVStream *ist = NULL;
+  AVCodecContext *decoder = NULL;
 
-  // Read a packet and attempt to decode it.
-  // If decoding was not possible, return the packet anyway for streamcopy
-  av_packet_unref(pkt);
-  while (1) {
-    AVStream *ist = NULL;
-    AVCodecContext *decoder = NULL;
-    ret = av_read_frame(ictx->ic, pkt);
-    if (ret == AVERROR_EOF) goto dec_flush;
-    else if (ret < 0) LPMS_ERR(dec_cleanup, "Unable to read input");
-    ist = ictx->ic->streams[pkt->stream_index];
-    if (ist->index == ictx->vi && ictx->vc) decoder = ictx->vc;
-    else if (ist->index == ictx->ai && ictx->ac) decoder = ictx->ac;
-    else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai || ictx->transmuxing) break;
-    else goto drop_packet; // could be an extra stream; skip
-
-    if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
-      ictx->first_pkt = av_packet_clone(pkt);
-      ictx->first_pkt->pts = -1;
-    }
-
-    ret = lpms_send_packet(ictx, decoder, pkt);
-    if (ret < 0) LPMS_ERR(dec_cleanup, "Error sending packet to decoder");
-    ret = lpms_receive_frame(ictx, decoder, frame);
-    if (ret == AVERROR(EAGAIN)) {
-      // Distinguish from EAGAIN that may occur with
-      // av_read_frame or avcodec_send_packet
-      ret = lpms_ERR_PACKET_ONLY;
-      break;
-    }
-    else if (ret < 0) LPMS_ERR(dec_cleanup, "Error receiving frame from decoder");
-    break;
-
-drop_packet:
+  ist = ictx->ic->streams[pkt->stream_index];
+  if (ist->index == ictx->vi && ictx->vc) {
+    // this is video packet to decode
+    decoder = ictx->vc;
+  } else if (ist->index == ictx->ai && ictx->ac) {
+    // this is audio packet to decode
+    decoder = ictx->ac;
+  } else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai || ictx->transmuxing) {
+    // MA: this is original code. I think the intention was
+    // if (audio or video) AND transmuxing
+    // so it is buggy, but nevermind, refactored code will handle things in
+    // different way (won't ever call decode on transmuxing channels)
+    return 0;
+  } else {
+    // otherwise this stream is not used for anything
     av_packet_unref(pkt);
+    return 0;
   }
 
-dec_cleanup:
-  return ret;
+  if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
+    ictx->first_pkt = av_packet_clone(pkt);
+    ictx->first_pkt->pts = -1;
+  }
 
-dec_flush:
+  ret = lpms_send_packet(ictx, decoder, pkt);
+  if (ret < 0) {
+    LPMS_ERR_RETURN("Error sending packet to decoder");
+  }
+  ret = lpms_receive_frame(ictx, decoder, frame);
+  if (ret == AVERROR(EAGAIN)) {
+    // This is not really an error. It may be that packet just fed into
+    // the decoder may be not enough to complete decoding. Upper level will
+    // get next packet and retry
+    return lpms_ERR_PACKET_ONLY;
+  } else if (ret < 0) {
+    LPMS_ERR_RETURN("Error receiving frame from decoder");
+  } else {
+    return ret;
+  }
+}
 
+int flush_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame)
+{
+  int ret = 0;
   // Attempt to read all frames that are remaining within the decoder, starting
   // with video. If there's a nonzero response type, we know there are no more
   // video frames, so continue on to audio.
@@ -98,6 +108,9 @@ dec_flush:
       return ret;
     }
     ret = lpms_receive_frame(ictx, ictx->vc, frame);
+    // MA: this is really bad - so we have no real input packet, because we are
+    // flushing, and we still set packet stream index to signal to the code that
+    // comes later in execution type of frame just received
     pkt->stream_index = ictx->vi;
     // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
     if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
@@ -111,10 +124,32 @@ dec_flush:
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
     ret = avcodec_receive_frame(ictx->ac, frame);
+    // MA: see comment above
     pkt->stream_index = ictx->ai;
     if (!ret) return ret;
   }
   return AVERROR_EOF;
+}
+
+int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
+{
+  int ret = 0;
+
+  av_packet_unref(pkt);
+
+  // Demux next packet
+  ret = demux_in(ictx, pkt);
+  // See if we got anything
+  if (ret == AVERROR_EOF) {
+    // no more packets, flush the decoder(s)
+    return flush_in(ictx, pkt, frame);
+  } else if (ret < 0) {
+    // demuxing error
+    LPMS_ERR_RETURN("Unable to read input");
+  } else {
+    // decode
+    return decode_in(ictx, pkt, frame);
+  }
 }
 
 // FIXME: name me and the other function better

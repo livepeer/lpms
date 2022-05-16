@@ -11,6 +11,15 @@ av_log(NULL, AV_LOG_ERROR, "ERROR: %s:%d] %s : %s\n", __FILE__, __LINE__, msg, e
 goto label; \
 }
 
+#define LPMS_ERR_RETURN(msg) {\
+char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
+if (!ret) ret = AVERROR(EINVAL); \
+if (ret <-1) av_strerror(ret, errstr, sizeof errstr); \
+av_log(NULL, AV_LOG_ERROR, "ERROR: %s:%d] %s : %s\n", __FILE__, __LINE__, msg, errstr); \
+return ret; \
+}
+
+
 #define LPMS_WARN(msg) {\
 av_log(NULL, AV_LOG_WARNING, "WARNING: %s:%d] %s\n", __FILE__, __LINE__, msg); \
 }
