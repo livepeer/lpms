@@ -272,23 +272,25 @@ int transcode(struct transcode_thread *h,
   dframe = av_frame_alloc();
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
 
-
   while (1) {
     // DEMUXING & DECODING
     int has_frame = 0;
     AVStream *ist = NULL;
     AVFrame *last_frame = NULL;
+    int stream_index = -1;
+
     av_frame_unref(dframe);
-    ret = process_in(ictx, dframe, ipkt);
-    if (ret == AVERROR_EOF) break;
-                            // Bail out on streams that appear to be broken
+    ret = process_in(ictx, dframe, ipkt, &stream_index);
+    if (ret == AVERROR_EOF) {
+      // no more processing, go for flushes
+      break;
+    }
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
     else if (lpms_ERR_INPUT_NOKF == ret) {
       LPMS_ERR(transcode_cleanup, "Could not decode; No keyframes in input");
     } else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
-    ist = ictx->ic->streams[ipkt->stream_index];
+    ist = ictx->ic->streams[stream_index];
     has_frame = lpms_ERR_PACKET_ONLY != ret;
-
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
       if (is_flush_frame(dframe)) goto whileloop_end;
       // width / height will be zero for pure streamcopy (no decoding)
@@ -299,6 +301,8 @@ int transcode(struct transcode_thread *h,
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
       has_frame = has_frame && dframe->nb_samples;
       if (has_frame) last_frame = ictx->last_frame_a;
+    } else {
+      has_frame = 0;  // bugfix
     }
     if (has_frame) {
       int64_t dur = 0;
@@ -314,25 +318,25 @@ int transcode(struct transcode_thread *h,
       av_frame_ref(last_frame, dframe);
     }
     if (ictx->transmuxing) {
-      ist = ictx->ic->streams[ipkt->stream_index];
+      ist = ictx->ic->streams[stream_index];
       if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
         decoded_results->frames++;
       }
-      if (ipkt->stream_index < MAX_OUTPUT_SIZE) {
-        if (ictx->discontinuity[ipkt->stream_index]) {
+      if (stream_index < MAX_OUTPUT_SIZE) {
+        if (ictx->discontinuity[stream_index]) {
           // calc dts diff
-          ictx->dts_diff[ipkt->stream_index] = ictx->last_dts[ipkt->stream_index] + ictx->last_duration[ipkt->stream_index] - ipkt->dts;
-          ictx->discontinuity[ipkt->stream_index] = 0;
+          ictx->dts_diff[stream_index] = ictx->last_dts[stream_index] + ictx->last_duration[stream_index] - ipkt->dts;
+          ictx->discontinuity[stream_index] = 0;
         }
-        ipkt->pts += ictx->dts_diff[ipkt->stream_index];
-        ipkt->dts += ictx->dts_diff[ipkt->stream_index];
-        if (ictx->last_dts[ipkt->stream_index] > -1 && ipkt->dts <= ictx->last_dts[ipkt->stream_index])  {
+        ipkt->pts += ictx->dts_diff[stream_index];
+        ipkt->dts += ictx->dts_diff[stream_index];
+        if (ictx->last_dts[stream_index] > -1 && ipkt->dts <= ictx->last_dts[stream_index])  {
           // skip packet if dts is equal or less than previous one
           goto whileloop_end;
         }
-        ictx->last_dts[ipkt->stream_index] = ipkt->dts;
+        ictx->last_dts[stream_index] = ipkt->dts;
         if (ipkt->duration) {
-          ictx->last_duration[ipkt->stream_index] = ipkt->duration;
+          ictx->last_duration[stream_index] = ipkt->duration;
         }
       }
     }
@@ -346,7 +350,7 @@ int transcode(struct transcode_thread *h,
       ret = 0; // reset to avoid any carry-through
 
       if (ictx->transmuxing)
-        ost = octx->oc->streams[ipkt->stream_index];
+        ost = octx->oc->streams[stream_index];
       else if (ist->index == ictx->vi) {
         if (octx->dv) continue; // drop video stream for this output
         ost = octx->oc->streams[0];
@@ -393,7 +397,6 @@ int transcode(struct transcode_thread *h,
         if (octx->clip_from && ist->index == ictx->ai) {
           pkt->pts -= octx->clip_audio_from_pts + octx->clip_audio_start_pts;
         }
-        octx->has_output = 1;
         ret = mux(pkt, ist->time_base, octx, ost);
         av_packet_free(&pkt);
       } else if (has_frame) {
@@ -419,7 +422,7 @@ whileloop_end:
 
   // flush outputs
   for (int i = 0; i < nb_outputs; i++) {
-    if(outputs[i].is_dnn_profile == 0 && outputs[i].has_output > 0) {
+    if(outputs[i].is_dnn_profile == 0/* && outputs[i].has_output > 0*/) {
       ret = flush_outputs(ictx, &outputs[i]);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
     }

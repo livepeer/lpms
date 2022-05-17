@@ -41,12 +41,13 @@ int demux_in(struct input_ctx *ictx, AVPacket *pkt)
   return av_read_frame(ictx->ic, pkt);
 }
 
-int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame)
+int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream_index)
 {
   int ret = 0;
   AVStream *ist = NULL;
   AVCodecContext *decoder = NULL;
 
+  *stream_index = pkt->stream_index;
   ist = ictx->ic->streams[pkt->stream_index];
   if (ist->index == ictx->vi && ictx->vc) {
     // this is video packet to decode
@@ -88,7 +89,7 @@ int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame)
   }
 }
 
-int flush_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame)
+int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
 {
   int ret = 0;
   // Attempt to read all frames that are remaining within the decoder, starting
@@ -108,10 +109,7 @@ int flush_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame)
       return ret;
     }
     ret = lpms_receive_frame(ictx, ictx->vc, frame);
-    // MA: this is really bad - so we have no real input packet, because we are
-    // flushing, and we still set packet stream index to signal to the code that
-    // comes later in execution type of frame just received
-    pkt->stream_index = ictx->vi;
+    *stream_index = ictx->vi;
     // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
     if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
       return 0; // ignore actual return value and keep flushing
@@ -124,14 +122,14 @@ int flush_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame)
   if (ictx->ac) {
     avcodec_send_packet(ictx->ac, NULL);
     ret = avcodec_receive_frame(ictx->ac, frame);
-    // MA: see comment above
-    pkt->stream_index = ictx->ai;
+    *stream_index = ictx->ai;
     if (!ret) return ret;
   }
   return AVERROR_EOF;
 }
 
-int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
+int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt,
+               int *stream_index)
 {
   int ret = 0;
 
@@ -142,13 +140,13 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt)
   // See if we got anything
   if (ret == AVERROR_EOF) {
     // no more packets, flush the decoder(s)
-    return flush_in(ictx, pkt, frame);
+    return flush_in(ictx, frame, stream_index);
   } else if (ret < 0) {
     // demuxing error
     LPMS_ERR_RETURN("Unable to read input");
   } else {
     // decode
-    return decode_in(ictx, pkt, frame);
+    return decode_in(ictx, pkt, frame, stream_index);
   }
 }
 
