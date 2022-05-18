@@ -43,7 +43,6 @@ func (t *PipedTranscoding) SetInput(input TranscodeOptionsIn) error {
 	}
 	// pass read pipe to ffmpeg
 	t.input.Options.Fname = fmt.Sprintf("pipe:%d", t.input.Read.Fd())
-	fmt.Printf("input name: %s;\n", t.input.Options.Fname)
 	// keep write pipe for passing input chunks
 	return nil
 }
@@ -62,7 +61,6 @@ func (t *PipedTranscoding) SetOutputs(outputs []TranscodeOptions) error {
 		}
 		// pass write pipe to ffmpeg
 		t.outputs[i].Options.Oname = fmt.Sprintf("pipe:%d", t.outputs[i].Write.Fd())
-		fmt.Printf("output %d name: %s;\n", i, t.outputs[i].Options.Oname)
 		// keep read pipe for receiving output chunks
 	}
 	return nil
@@ -73,7 +71,6 @@ func (t *PipedTranscoding) Transcode() (*TranscodeResults, error) {
 	for i := 0; i < len(t.outputs); i++ {
 		out[i] = *t.outputs[i].Options
 	}
-	fmt.Printf("\n> Transcode3\n>in:%v\n>out:%v\n", t.input.Options, out)
 	res, err := Transcode3(t.input.Options, out)
 	return res, err
 }

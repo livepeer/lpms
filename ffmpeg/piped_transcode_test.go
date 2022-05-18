@@ -4,6 +4,7 @@
 package ffmpeg
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -14,17 +15,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type SegmentInformation struct {
+	Acodec string
+	Vcodec string
+	Format PixelFormat
+	Valid  bool
+	Cached []byte
+}
+
+func (s *SegmentInformation) ProcessChunk(chunk []byte) bool {
+	if s.Valid {
+		// We got info, skip further processing
+		return false
+	}
+	s.Cached = append(s.Cached, chunk...)
+	status, acodec, vcodec, pixelFormat, _ := GetCodecInfoBytes(s.Cached)
+	if status == CodecStatusOk {
+		s.Acodec = acodec
+		s.Vcodec = vcodec
+		s.Format = pixelFormat
+		s.Valid = true
+		return true
+	}
+	return false
+}
+
 func streamInput(t *testing.T, fname string, transcoder *PipedTranscoding) {
 	defer transcoder.WriteClose()
+	info := &SegmentInformation{}
 	data, err := ioutil.ReadFile(fname)
 	require.NoError(t, err)
-	// partial write is possible in case of socket, unusual with pipe
 	for len(data) > 0 {
-		bytesWritten, err := transcoder.Write(data)
+		var chunkSize int = min(4096, len(data))
+		bytesWritten, err := transcoder.Write(data[:chunkSize])
+		if info.ProcessChunk(data[:bytesWritten]) {
+			fmt.Printf("D> got media info at %d A=%s; V=%s; pixfmt=%d;\n", len(info.Cached), info.Acodec, info.Vcodec, info.Format.RawValue)
+		}
 		require.NoError(t, err)
 		// handle partial write
 		data = data[bytesWritten:]
 	}
+	require.True(t, info.Valid, "GetCodecInfoBytes() failed to parse media")
 }
 
 func streamOutput(t *testing.T, fname string, reader *OutputReader) {
