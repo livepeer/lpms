@@ -637,7 +637,11 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 			}
 			muxName = p.Muxer.Name
 		case FormatMPEGTS:
-			muxName = "mpegts"
+			if p.Muxer.Name == "" {
+				muxName = "mpegts"
+			} else {
+				muxName = p.Muxer.Name
+			}
 		case FormatMP4:
 			muxName = "mp4"
 			muxOpts = C.component_opts{

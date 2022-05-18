@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/livepeer/lpms/ffmpeg"
 
 	"time"
 
@@ -71,11 +72,16 @@ func (b *streamBuffer) len() int64 {
 
 //We couldn't just use the m3u8 definition
 type HLSSegment struct {
-	SeqNo       uint64
-	Name        string
-	Data        []byte
-	Duration    float64
-	IsZeroFrame bool
+	SeqNo           uint64
+	Name            string
+	Data            []byte
+	Duration        float64
+	IsZeroFrame     bool
+	VideoCodec      ffmpeg.VideoCodec
+	PixelFormat		ffmpeg.PixelFormat
+	InputStreamUrl  string
+	OutputStreamUrl string
+	OutputProfileUrls []string
 }
 
 //Compare playlists by segments

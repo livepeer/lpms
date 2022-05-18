@@ -84,6 +84,33 @@ func TestAPI_SkippedSegment(t *testing.T) {
 
 }
 
+func TestTranscoderAPI_RtmpOut(t *testing.T) {
+	// Test pushing RTMP FLV output
+	// XXX some streaming server must be running
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	in := &TranscodeOptionsIn{}
+	out := []TranscodeOptions{{
+		Oname:        "rtmp://localhost:1935/live/out/P240p30fps16x9/1.ts",
+		Muxer:        ComponentOptions{Name: "flv"},
+		Profile: P360p30fps16x9,
+		AudioEncoder: ComponentOptions{Name: "aac"},
+	},
+		{
+			Oname:        "rtmp://localhost:1935/live/out/P360p30fps16x9/1.ts",
+			Muxer:        ComponentOptions{Name: "flv"},
+			Profile: VideoProfile{Name: "P360p30fps16x9", Bitrate: "1200k", Format: FormatMPEGTS, Framerate: 30, AspectRatio: "16:9", Resolution: "640x360"},
+			AudioEncoder: ComponentOptions{Name: "aac"},
+		},
+	}
+
+	in.Fname = "http://localhost:1935/vod/bbb_264.mp4/media_w1801455189_0.ts"
+	_, err := tc.Transcode(in, out)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func TestTranscoderAPI_InvalidFile(t *testing.T) {
 	// Test the following file open results on input: fail, success, fail, success
 
