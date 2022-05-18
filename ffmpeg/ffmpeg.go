@@ -761,12 +761,15 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		t.started = true
 	}
 	if !t.started {
-		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
-		// NeedsBypass is state where video is present in container & vithout any frames
-		videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
-		if videoMissing {
-			// Audio-only segment, fail fast right here as we cannot handle them nicely
-			return nil, ErrTranscoderVid
+		inputIsPipe := strings.HasPrefix(input.Fname, "pipe:")
+		if !inputIsPipe {
+			status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
+			// NeedsBypass is state where video is present in container & vithout any frames
+			videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
+			if videoMissing {
+				// Audio-only segment, fail fast right here as we cannot handle them nicely
+				return nil, ErrTranscoderVid
+			}
 		}
 		// Stream is either OK or completely broken, let the transcoder handle it
 		t.started = true
