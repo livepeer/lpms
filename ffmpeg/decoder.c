@@ -63,6 +63,7 @@ int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream
     return 0;
   } else {
     // otherwise this stream is not used for anything
+    // TODO: but this is also done in transcode() loop, no?
     av_packet_unref(pkt);
     return 0;
   }
