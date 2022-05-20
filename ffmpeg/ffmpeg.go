@@ -510,6 +510,17 @@ type CodingSizeLimit struct {
 	WidthMax, HeightMax int
 }
 
+type Size struct {
+	W, H int
+}
+
+func (s *Size) Valid(l *CodingSizeLimit) bool {
+	if s.W < l.WidthMin || s.W > l.WidthMax || s.H < l.HeightMin || s.H > l.HeightMax {
+		return false
+	}
+	return true
+}
+
 func clamp(val, min, max int) int {
 	if val <= min {
 		return min
@@ -533,17 +544,21 @@ func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
 		w, h = h, w
 	}
 	// Adjust to minimal encode dimensions keeping aspect ratio
-	landscapeW := clamp(w, l.WidthMin, l.WidthMax)
-	landscapeH := format.ScaledHeight(landscapeW)
-	portraitH := clamp(h, l.HeightMin, l.HeightMax)
-	portraitW := format.ScaledWidth(portraitH)
-	// Choose larger option
-	if landscapeW*landscapeH > portraitH*portraitW {
-		p.Resolution = fmt.Sprintf("%dx%d", landscapeW, landscapeH)
-	} else {
-		p.Resolution = fmt.Sprintf("%dx%d", portraitW, portraitH)
+
+	var adjustedWidth, adjustedHeight Size
+	adjustedWidth.W = clamp(w, l.WidthMin, l.WidthMax)
+	adjustedWidth.H = format.ScaledHeight(adjustedWidth.W)
+	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
+	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
+	if adjustedWidth.Valid(l) {
+		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
+		return nil
 	}
-	return nil
+	if adjustedHeight.Valid(l) {
+		p.Resolution = fmt.Sprintf("%dx%d", adjustedHeight.W, adjustedHeight.H)
+		return nil
+	}
+	return fmt.Errorf("profile %dx%d size out of bounds %dx%d-%dx%d", w, h, l.WidthMin, l.WidthMin, l.WidthMax, l.HeightMax)
 }
 
 // 7th Gen NVENC limits:
@@ -552,7 +567,7 @@ var nvidiaCodecSizeLimts = map[VideoCodec]CodingSizeLimit{
 	H265: {132, 40, 8192, 8192},
 }
 
-func checkEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) error {
+func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) error {
 	// not using range to be able to make inplace modifications to outputs elements
 	for i := 0; i < len(outputs); i++ {
 		if outputs[i].Accel == Nvidia {
@@ -575,7 +590,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		return nil, err
 	}
 	if status == CodecStatusOk {
-		err := checkEncoderLimits(ps, format)
+		err := ensureEncoderLimits(ps, format)
 		if err != nil {
 			return nil, err
 		}

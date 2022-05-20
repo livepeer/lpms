@@ -1838,3 +1838,62 @@ func TestTranscoder_Clip2(t *testing.T) {
 	assert.Equal(t, 601, res.Encoded[0].Frames)
 	assert.Equal(t, int64(22155264), res.Encoded[0].Pixels)
 }
+
+func TestResolution_Clamp(t *testing.T) {
+	// expect no error
+	checkError := require.NoError
+	test := func(limit CodingSizeLimit, profile, input, expected Size) {
+		p := &VideoProfile{Resolution: fmt.Sprintf("%dx%d", profile.W, profile.H)}
+		m := MediaFormatInfo{Width: input.W, Height: input.H}
+		// call function we are testing:
+		err := limit.Clamp(p, m)
+		checkError(t, err)
+		var resultW, resultH int
+		_, err = fmt.Sscanf(p.Resolution, "%dx%d", &resultW, &resultH)
+		require.NoError(t, err)
+		assert.Equal(t, expected, Size{resultW, resultH})
+	}
+
+	l := CodingSizeLimit{
+		WidthMin:  70,
+		HeightMin: 50,
+		WidthMax:  700,
+		HeightMax: 500,
+	}
+	// use aspect ratio == 2 to easily check calculation
+	portrait := Size{900, 1800}
+	landscape := Size{1800, 900}
+
+	// no change, fits within hw limits
+	test(l, Size{120, 60}, landscape, Size{120, 60})
+	// h=40 too small must be 50
+	test(l, Size{80, 40}, landscape, Size{100, 50})
+	// In portrait mode our profile 80x40 is interpreted as 40x80, increasing h=70
+	test(l, Size{80, 40}, portrait, Size{70, 140})
+	// portrait 60x120 used with landscape source, rotated to 120x60, within limits
+	test(l, Size{60, 120}, landscape, Size{120, 60})
+	// portrait 60x120 profile on portrait source does not rotate, increasing w=70
+	test(l, Size{60, 120}, portrait, Size{70, 140})
+
+	// test choice between adjustedWidth adjustedHeight variants:
+	test(l, Size{30, 60}, portrait, Size{70, 140})
+	test(l, Size{30, 60}, landscape, Size{100, 50})
+
+	// Test max values:
+	test(l, Size{1000, 500}, landscape, Size{700, 350})
+	test(l, Size{1000, 500}, portrait, Size{250, 500})
+	test(l, Size{500, 1000}, landscape, Size{700, 350})
+	test(l, Size{600, 300}, portrait, Size{250, 500})
+	test(l, Size{300, 600}, portrait, Size{250, 500})
+
+	// Test impossible limits for aspect ratio == 2
+	l = CodingSizeLimit{
+		WidthMin:  500,
+		HeightMin: 500,
+		WidthMax:  600,
+		HeightMax: 600,
+	}
+	// expect error
+	checkError = require.Error
+	test(l, Size{300, 600}, portrait, Size{300, 600})
+}
