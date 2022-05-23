@@ -222,10 +222,6 @@ int transcode(struct transcode_thread *h,
   dframe = av_frame_alloc();
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
 
-#define FILTERS_NORMAL       0
-#define FILTERS_SHOULD_FLUSH 1
-#define FILTERS_FLUSHED      2
-  int filters_state = FILTERS_NORMAL;
 
   while (1) {
     // DEMUXING & DECODING
@@ -234,15 +230,8 @@ int transcode(struct transcode_thread *h,
     AVFrame *last_frame = NULL;
     av_frame_unref(dframe);
     ret = process_in(ictx, dframe, ipkt);
-    if (ret == AVERROR_EOF) {
-      if(filters_state == FILTERS_NORMAL && ictx->flushing) {
-        // Here we need to flush the filtergraph and encoders
-        filters_state = FILTERS_SHOULD_FLUSH;
-      } else {
-        // Bail out on streams that appear to be broken
-        break;
-      }
-    }
+    if (ret == AVERROR_EOF) break;
+                            // Bail out on streams that appear to be broken
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
     else if (lpms_ERR_INPUT_NOKF == ret) {
       LPMS_ERR(transcode_cleanup, "Could not decode; No keyframes in input");
@@ -359,18 +348,12 @@ int transcode(struct transcode_thread *h,
         av_packet_free(&pkt);
       } else if (has_frame) {
         ret = process_out(ictx, octx, encoder, ost, filter, dframe);
-      } else if (filters_state == FILTERS_SHOULD_FLUSH) {
-        ret = process_out(ictx, octx, encoder, ost, filter, NULL);
       }
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
       else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
     }
 whileloop_end:
     av_packet_unref(ipkt);
-  }
-
-  if(filters_state == FILTERS_SHOULD_FLUSH) {
-    filters_state = FILTERS_FLUSHED;
   }
 
   if (ictx->transmuxing) {
