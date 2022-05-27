@@ -113,7 +113,7 @@ int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
     *stream_index = ictx->vi;
     // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
     if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
-      return 0; // ignore actual return value and keep flushing
+      return ret;
     } else {
       ictx->flushed = 1;
       if (!ret) return ret;

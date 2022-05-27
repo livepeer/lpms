@@ -806,7 +806,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		paramsPointer = (*C.output_params)(&params[0])
 		resultsPointer = (*C.output_results)(&results[0])
 	}
-	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
+	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded, 0))
 	if ret != 0 {
 		if LogTranscodeErrors {
 			glog.Error("Transcoder Return : ", ErrorMap[ret])

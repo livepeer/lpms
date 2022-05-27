@@ -101,13 +101,13 @@ static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
   int ret = 0;
   if (octx->vc) { // flush video
     while (!ret || ret == AVERROR(EAGAIN)) {
-      ret = process_out(ictx, octx, octx->vc, octx->oc->streams[octx->vi], &octx->vf, NULL);
+      ret = process_out(ictx, octx, octx->vc, octx->oc->streams[0], &octx->vf, NULL);
     }
   }
   ret = 0;
   if (octx->ac) { // flush audio
     while (!ret || ret == AVERROR(EAGAIN)) {
-      ret = process_out(ictx, octx, octx->ac, octx->oc->streams[octx->ai], &octx->af, NULL);
+      ret = process_out(ictx, octx, octx->ac, octx->oc->streams[octx->dv ? 0 : 1], &octx->af, NULL);
     }
   }
   av_interleaved_write_frame(octx->oc, NULL); // flush muxer
@@ -311,7 +311,8 @@ int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results
 
     if (octx->ac) {
       int ret = process_out(ictx, octx, octx->ac,
-                            octx->oc->streams[octx->dv ? 0 : 1], &octx->vf, dframe);
+                            octx->oc->streams[octx->dv ? 0 : 1], &octx->af, dframe);
+      if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue; // this is ok
       if (ret < 0) LPMS_ERR_RETURN("Error encoding audio");
     }
   }
@@ -350,6 +351,7 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
         
     if (octx->vc) {
       int ret = process_out(ictx, octx, octx->vc, octx->oc->streams[0], &octx->vf, dframe);
+      if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue; // this is ok
       if (ret < 0) {
         LPMS_ERR_RETURN("Error encoding video");
       }
@@ -415,7 +417,6 @@ int handle_audio_packet(struct transcode_thread *h, output_results *decoded_resu
       if (octx->clip_from && ist->index == ictx->ai) {
         opkt->pts -= octx->clip_audio_from_pts + octx->clip_audio_start_pts;
       }
-      octx->has_output = 1;
       ret = mux(pkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Audio packet muxing error");
@@ -490,7 +491,6 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
     if (ost) {
       // need to mux in the packet
       AVPacket *opkt = av_packet_clone(pkt);
-      octx->has_output = 1;
       ret = mux(pkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Video packet muxing error");
@@ -501,12 +501,12 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
   if (ictx->vi != pkt->stream_index) return 0;
 
   // Try to decode
-  ret = avcodec_send_packet(ictx->ac, pkt);
+  ret = avcodec_send_packet(ictx->vc, pkt);
   if (ret < 0) {
     LPMS_ERR_RETURN("Error sending video packet to decoder");
   }
   ictx->pkt_diff++;
-  ret = avcodec_receive_frame(ictx->ac, frame);
+  ret = avcodec_receive_frame(ictx->vc, frame);
   if (ret == AVERROR(EAGAIN)) {
     // This is not really an error. It may be that packet just fed into
     // the decoder may be not enough to complete decoding. Upper level will
@@ -552,7 +552,6 @@ int handle_other_packet(struct transcode_thread *h, AVPacket *pkt)
       ost = octx->oc->streams[pkt->stream_index];
       // need to mux in the packet
       AVPacket *opkt = av_packet_clone(pkt);
-      octx->has_output = 1;
       ret = mux(pkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Other packet muxing error");
@@ -574,7 +573,7 @@ int flush_all_outputs(struct transcode_thread *h)
       // just flush muxer, but do not write trailer and close
       av_interleaved_write_frame(h->outputs[i].oc, NULL);
     } else {
-      if(h->outputs[i].is_dnn_profile == 0 && h->outputs[i].has_output > 0) {
+      if(h->outputs[i].is_dnn_profile == 0) {
         // this will flush video and audio streams, flush muxer, write trailer
         // and close
         ret = flush_outputs(ictx, h->outputs + i);
@@ -642,11 +641,15 @@ int transcode2(struct transcode_thread *h,
   while (1) {
     int stream_index;
     ret = flush_in(ictx, iframe, &stream_index);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Flushing failed");
     if (AVERROR_EOF == ret) {
       // No more frames, can break
       break;
     }
+    if (AVERROR(EAGAIN) == ret) {
+      // retry
+      continue;
+    }
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Flushing failed");
     ist = ictx->ic->streams[stream_index];
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
       handle_video_frame(h, ist, decoded_results, iframe);
@@ -659,6 +662,8 @@ int transcode2(struct transcode_thread *h,
   // be frames buffered in the filters, and we need to flush them
   // IMPORTANT: no handle_*_frame calls here because there is no more input
   // frames.
+  // NOTE: this is "flush filters, flush decoders, flush muxers" all in one,
+  // it will get broken down in future
   flush_all_outputs(h);
 
   // Processing finished
@@ -707,6 +712,7 @@ int transcode(struct transcode_thread *h,
       break;
     }
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
+    else if (ret == AVERROR(EAGAIN)) ;  // this is a-ok
     else if (lpms_ERR_INPUT_NOKF == ret) {
       LPMS_ERR(transcode_cleanup, "Could not decode; No keyframes in input");
     } else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
@@ -805,7 +811,7 @@ int transcode(struct transcode_thread *h,
         }
       } else if (ist->index == ictx->ai) {
         if (octx->da) continue; // drop audio stream for this output
-        ost = octx->oc->streams[!octx->dv]; // audio index depends on whether video exists
+        ost = octx->oc->streams[octx->dv ? 0 : 1]; // audio index depends on whether video exists
         if (ictx->ac) {
           encoder = octx->ac;
           filter = &octx->af;
@@ -884,8 +890,10 @@ transcode_cleanup:
   return transcode_shutdown(h, ret);
 }
 
+// MA: this should probably be merged with transcode_init, as it basically is a
+// part of initialization
 int lpms_transcode(input_params *inp, output_params *params,
-  output_results *results, int nb_outputs, output_results *decoded_results)
+  output_results *results, int nb_outputs, output_results *decoded_results, int use_new)
 {
   int ret = 0;
   struct transcode_thread *h = inp->handle;
@@ -912,10 +920,27 @@ int lpms_transcode(input_params *inp, output_params *params,
     }
   }
 
+  // MA: Note that here difference of configurations here is based upon number
+  // of outputs alone. But what if the number of outputs is the same, but they
+  // are of different types? What if the number and types of outputs are the
+  // same but there is a different permutation?
   if (h->nb_outputs != nb_outputs) {
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
     bool only_detector_diff = true;
+    // MA: we have a problem here. Consider first configuration with 1 output,
+    // and second one with 2 outputs. When transcode_thread was created
+    // (in lpms_transcode_new) all the outputs were cleared with zeros. Then,
+    // only outputs described in first configuration were actually initialized.
+    // Thus, for loop below will execute for i = 1 and so it will access
+    // the output not initialized before. is_dnn_profile values will be both
+    // zeros (so false), and so only_detector_diff will be set to false as well
+    // So we will get lpms_ERR_OUTPUTS. But suppose that new output in second
+    // configuration is the detector output. Shouldn't that be allowed?
+    // To sum things up, this approach works if "new" configuration has less
+    // outputs than old one, and the "removed" outputs were dnn outputs. This
+    // approach doesn't work if the "new" configuration has more outputs than
+    // old one, even if "added" outputs are actually dnn outputs.
     // make sure only detection related outputs are changed
     for (int i = MIN(nb_outputs, h->nb_outputs); i < MAX(nb_outputs, h->nb_outputs); i++) {
       if (!h->outputs[i].is_dnn_profile)
@@ -931,13 +956,14 @@ int lpms_transcode(input_params *inp, output_params *params,
   }
 
   ret = transcode_init(h, inp, params, results);
-  if (ret < 0) {
-    return ret;
+  if (ret < 0) return ret;
+
+  if (use_new) {
+    ret = transcode2(h, inp, params, results, decoded_results);
+  } else {
+    ret = transcode(h, inp, params, results, decoded_results);
   }
-
-  ret = transcode(h, inp, params, results, decoded_results);
   h->initialized = 1;
-
   return ret;
 }
 
