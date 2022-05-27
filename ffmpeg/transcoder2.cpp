@@ -16,7 +16,7 @@ public:
         output_results *decoded_results)
     {
         inp->handle = implementation;
-        return lpms_transcode(inp, params, results, nb_outputs,decoded_results);
+        return lpms_transcode(inp, params, results, nb_outputs, decoded_results, 1);
     }
     void stop()
     {
