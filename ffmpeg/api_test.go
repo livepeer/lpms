@@ -438,12 +438,14 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if res.Decoded.Frames != 120 {
-			t.Error("Did not get decoded frames", res.Decoded.Frames)
-		}
-		if res.Encoded[1].Frames != res.Encoded[2].Frames {
-			t.Error("Mismatched frame count for hw/nv")
-		}
+    if res != nil {
+		  if res.Decoded.Frames != 120 {
+			  t.Error("Did not get decoded frames", res.Decoded.Frames)
+		  }
+		  if res.Encoded[1].Frames != res.Encoded[2].Frames {
+			  t.Error("Mismatched frame count for hw/nv")
+      }
+    }
 	}
 	cmd := `
     function check {
