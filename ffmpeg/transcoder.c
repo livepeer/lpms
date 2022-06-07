@@ -417,7 +417,7 @@ int handle_audio_packet(struct transcode_thread *h, output_results *decoded_resu
       if (octx->clip_from && ist->index == ictx->ai) {
         opkt->pts -= octx->clip_audio_from_pts + octx->clip_audio_start_pts;
       }
-      ret = mux(pkt, ist->time_base, octx, ost);
+      ret = mux(opkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Audio packet muxing error");
     }
@@ -425,6 +425,7 @@ int handle_audio_packet(struct transcode_thread *h, output_results *decoded_resu
 
   // Packet processing finished, check if we should decode a frame
   if (ictx->ai != pkt->stream_index) return 0;
+  if (!ictx->ac) return 0;
 
   // Try to decode
   ret = avcodec_send_packet(ictx->ac, pkt);
@@ -491,7 +492,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
     if (ost) {
       // need to mux in the packet
       AVPacket *opkt = av_packet_clone(pkt);
-      ret = mux(pkt, ist->time_base, octx, ost);
+      ret = mux(opkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Video packet muxing error");
     }
@@ -499,6 +500,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
 
   // Packet processing finished, check if we should decode a frame
   if (ictx->vi != pkt->stream_index) return 0;
+  if (!ictx->vc) return 0;
 
   // Try to decode
   ret = avcodec_send_packet(ictx->vc, pkt);
@@ -552,7 +554,7 @@ int handle_other_packet(struct transcode_thread *h, AVPacket *pkt)
       ost = octx->oc->streams[pkt->stream_index];
       // need to mux in the packet
       AVPacket *opkt = av_packet_clone(pkt);
-      ret = mux(pkt, ist->time_base, octx, ost);
+      ret = mux(opkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Other packet muxing error");
     }
@@ -591,7 +593,7 @@ int flush_all_outputs(struct transcode_thread *h)
 
 int transcode2(struct transcode_thread *h,
   input_params *inp, output_params *params,
-  output_results *results, output_results *decoded_results)
+  output_results *decoded_results)
 {
   struct input_ctx *ictx = &h->ictx;
   AVStream *ist = NULL;
@@ -684,7 +686,7 @@ transcode_cleanup:
 
 int transcode(struct transcode_thread *h,
   input_params *inp, output_params *params,
-  output_results *results, output_results *decoded_results)
+  output_results *decoded_results)
 {
   int ret = 0;
   AVPacket *ipkt = NULL;
@@ -959,9 +961,9 @@ int lpms_transcode(input_params *inp, output_params *params,
   if (ret < 0) return ret;
 
   if (use_new) {
-    ret = transcode2(h, inp, params, results, decoded_results);
+    ret = transcode2(h, inp, params, decoded_results);
   } else {
-    ret = transcode(h, inp, params, results, decoded_results);
+    ret = transcode(h, inp, params, decoded_results);
   }
   h->initialized = 1;
   return ret;
