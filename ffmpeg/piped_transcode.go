@@ -34,6 +34,15 @@ type PipedTranscoding struct {
 	outputs []PipedOutput
 }
 
+func (t *PipedTranscoding) ClosePipes() {
+	t.input.Read.Close()
+	t.input.Write.Close()
+	for i := 0; i < len(t.outputs); i++ {
+		t.outputs[i].Read.Close()
+		t.outputs[i].Write.Close()
+	}
+}
+
 func (t *PipedTranscoding) SetInput(input TranscodeOptionsIn) error {
 	t.input.Options = &input
 	var err error
