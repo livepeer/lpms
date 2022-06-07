@@ -57,7 +57,8 @@ type LPMSOpts struct {
 	// If set, HttpPort and HttpDisabled are ignored.
 	HttpMux *http.ServeMux
 
-	HttpDebugHeaders    vidplayer.VidPlayerDebug
+	// Used to tag HTTP headers with useful debug info.
+	HttpDebug    vidplayer.VidPlayerDebug
 }
 
 func defaultLPMSOpts(opts *LPMSOpts) {
@@ -80,7 +81,7 @@ func New(opts *LPMSOpts) *LPMS {
 	if !opts.HttpDisabled && opts.HttpMux == nil {
 		httpAddr = opts.HttpAddr
 	}
-	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux, opts.HttpDebugHeaders)
+	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux, opts.HttpDebug)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
 	return &LPMS{vidPlayer: player, vidListener: listener, workDir: opts.WorkDir, rtmpAddr: opts.RtmpAddr, httpAddr: httpAddr}
 }
