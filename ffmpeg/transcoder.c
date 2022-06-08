@@ -614,22 +614,22 @@ int transcode2(struct transcode_thread *h,
       break;
     } else if (ret < 0) {
       // demuxing error
-      LPMS_ERR(transcode_cleanup, "Unable to read input");
+      LPMS_ERR_BREAK("Unable to read input");
     }
     // all is fine, handle packet just received
     ist = ictx->ic->streams[ipkt->stream_index];
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
       // video packet
       ret = handle_video_packet(h, decoded_results, ipkt, iframe);
-      if (ret < 0) goto transcode_cleanup;
+      if (ret < 0) break;
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
       // audio packet
       ret = handle_audio_packet(h, decoded_results, ipkt, iframe);
-      if (ret < 0) goto transcode_cleanup;
+      if (ret < 0) break;
     } else {
       // other types of packets (used only for transmuxing)
       handle_other_packet(h, ipkt);
-      if (ret < 0) goto transcode_cleanup;
+      if (ret < 0) break;
     }
     av_packet_unref(ipkt);
   }
@@ -651,7 +651,7 @@ int transcode2(struct transcode_thread *h,
       // retry
       continue;
     }
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Flushing failed");
+    if (ret < 0) LPMS_ERR_BREAK("Flushing failed");
     ist = ictx->ic->streams[stream_index];
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
       handle_video_frame(h, ist, decoded_results, iframe);
