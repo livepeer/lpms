@@ -446,7 +446,9 @@ func newAVOpts(opts map[string]string) *C.AVDictionary {
 }
 
 // return encoding specific options for the given accel
-func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions, inDev, outDev string) (string, string, error) {
+func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string, string, error) {
+	inDev := inOpts.Device
+	outDev := outOpts.Device
 	encoder := FfEncoderLookup[outOpts.Accel][outOpts.Profile.Encoder]
 	switch inOpts.Accel {
 	case Software:
@@ -583,61 +585,11 @@ func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) err
 	return nil
 }
 
-func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
-	// here we require input size and aspect ratio
-	status, format, err := GetCodecInfo(input.Fname)
-	if err != nil {
-		return nil, err
-	}
-	if status == CodecStatusOk {
-		err := ensureEncoderLimits(ps, format)
-		if err != nil {
-			return nil, err
-		}
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.stopped || t.handle == nil {
-		return nil, ErrTranscoderStp
-	}
-	if input == nil {
-		return nil, ErrTranscoderInp
-	}
-	hw_type, err := accelDeviceType(input.Accel)
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range ps {
-		if p.From != 0 || p.To != 0 {
-			if p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy" {
-				glog.Warning("Could clip only when transcoding video")
-				return nil, ErrTranscoderClipConfig
-			}
-			if p.From < 0 || p.To > 0 && p.From > 0 && p.To < p.From {
-				glog.Warning("'To' should be after 'From'")
-				return nil, ErrTranscoderClipConfig
-			}
-		}
-	}
-	fname := C.CString(input.Fname)
-	xcoderParams := C.CString("")
-	defer C.free(unsafe.Pointer(xcoderParams))
-	defer C.free(unsafe.Pointer(fname))
-	if input.Transmuxing {
-		t.started = true
-	}
-	if !t.started {
-		status, format, _ := GetCodecInfo(input.Fname)
-		// NeedsBypass is state where video is present in container & vithout any frames
-		videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""
-		if videoMissing {
-			// Audio-only segment, fail fast right here as we cannot handle them nicely
-			return nil, ErrTranscoderVid
-		}
-		// Stream is either OK or completely broken, let the transcoder handle it
-		t.started = true
-	}
+// create C output params array and return it along with corresponding finalizer
+// function that makes sure there are no C memory leaks
+func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.output_params, func(), error) {
 	params := make([]C.output_params, len(ps))
+	finalizer := func() { destroyCOutputParams(params) }
 	for i, p := range ps {
 		if p.Detector != nil {
 			// We don't do any encoding for detector profiles
@@ -646,28 +598,26 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			p.Profile = P144p30fps16x9
 			p.Muxer = ComponentOptions{Name: "mpegts"}
 		}
-		oname := C.CString(p.Oname)
-		defer C.free(unsafe.Pointer(oname))
 
 		param := p.Profile
 		w, h, err := VideoProfileResolution(param)
 		if err != nil {
 			if p.VideoEncoder.Name != "drop" && p.VideoEncoder.Name != "copy" {
-				return nil, err
+				return params, finalizer, err
 			}
 		}
 		br := strings.Replace(param.Bitrate, "k", "000", 1)
 		bitrate, err := strconv.Atoi(br)
 		if err != nil {
 			if p.VideoEncoder.Name != "drop" && p.VideoEncoder.Name != "copy" {
-				return nil, err
+				return params, finalizer, err
 			}
 		}
 		encoder, scale_filter := p.VideoEncoder.Name, "scale"
 		if encoder == "" {
-			encoder, scale_filter, err = configEncoder(input, p, input.Device, p.Device)
+			encoder, scale_filter, err = configEncoder(input, p)
 			if err != nil {
-				return nil, err
+				return params, finalizer, err
 			}
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
@@ -707,29 +657,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				}
 			}
 		}
-		var muxOpts C.component_opts
-		var muxName string
-		switch p.Profile.Format {
-		case FormatNone:
-			muxOpts = C.component_opts{
-				// don't free this bc of avformat_write_header API
-				opts: newAVOpts(p.Muxer.Opts),
-			}
-			muxName = p.Muxer.Name
-		case FormatMPEGTS:
-			muxName = "mpegts"
-		case FormatMP4:
-			muxName = "mp4"
-			muxOpts = C.component_opts{
-				opts: newAVOpts(map[string]string{"movflags": "faststart"}),
-			}
-		default:
-			return nil, ErrTranscoderFmt
-		}
-		if muxName != "" {
-			muxOpts.name = C.CString(muxName)
-			defer C.free(unsafe.Pointer(muxOpts.name))
-		}
 		// Set video encoder options
 		// TODO understand how h264 profiles and GOP setting works for
 		// NETINT encoder, and make sure we change relevant things here
@@ -761,7 +688,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 					p.VideoEncoder.Opts["bf"] = "3"
 				}
 			default:
-				return nil, ErrTranscoderPrf
+				return params, finalizer, ErrTranscoderPrf
 			}
 			if p.Profile.Framerate == 0 && p.Accel == Nvidia {
 				// When the decoded video contains non-monotonic increases in PTS (common with OBS)
@@ -773,12 +700,11 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				}
 			}
 		}
-		xcoderOutParams := C.CString(xcoderOutParamsStr)
-		defer C.free(unsafe.Pointer(xcoderOutParams))
+
 		gopMs := 0
 		if param.GOP != 0 {
 			if param.GOP <= GOPInvalid {
-				return nil, ErrTranscoderGOP
+				return params, finalizer, ErrTranscoderGOP
 			}
 			// Check for intra-only
 			if param.GOP == GOPIntraOnly {
@@ -792,6 +718,30 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 					gopMs = int(param.GOP.Milliseconds())
 				}
 			}
+		}
+
+		var muxOpts C.component_opts
+		var muxName string
+		switch p.Profile.Format {
+		case FormatNone:
+			muxOpts = C.component_opts{
+				// don't free this bc of avformat_write_header API
+				opts: newAVOpts(p.Muxer.Opts),
+			}
+			muxName = p.Muxer.Name
+		case FormatMPEGTS:
+			muxName = "mpegts"
+		case FormatMP4:
+			muxName = "mp4"
+			muxOpts = C.component_opts{
+				opts: newAVOpts(map[string]string{"movflags": "faststart"}),
+			}
+		default:
+			return params, finalizer, ErrTranscoderFmt
+		}
+
+		if muxName != "" {
+			muxOpts.name = C.CString(muxName)
 		}
 		vidOpts := C.component_opts{
 			name: C.CString(encoder),
@@ -808,13 +758,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		fromMs := int(p.From.Milliseconds())
 		toMs := int(p.To.Milliseconds())
 		vfilt := C.CString(filters)
-		defer C.free(unsafe.Pointer(vidOpts.name))
-		defer C.free(unsafe.Pointer(audioOpts.name))
-		defer C.free(unsafe.Pointer(vfilt))
 		isDNN := C.int(0)
 		if p.Detector != nil {
 			isDNN = C.int(1)
 		}
+		oname := C.CString(p.Oname)
+		xcoderOutParams := C.CString(xcoderOutParamsStr)
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
@@ -830,28 +779,125 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			}
 			sfilt := C.CString(signfilter)
 			params[i].sfilters = sfilt
-			defer C.free(unsafe.Pointer(sfilt))
 		}
-		defer func(param *C.output_params) {
-			// Work around the ownership rules:
-			// ffmpeg normally takes ownership of the following AVDictionary options
-			// However, if we don't pass these opts to ffmpeg, then we need to free
-			if param.muxer.opts != nil {
-				C.av_dict_free(&param.muxer.opts)
-			}
-			if param.audio.opts != nil {
-				C.av_dict_free(&param.audio.opts)
-			}
-			if param.video.opts != nil {
-				C.av_dict_free(&param.video.opts)
-			}
-		}(&params[i])
 	}
+
+	return params, finalizer, nil
+}
+
+func destroyCOutputParams(params []C.output_params) {
+	for _, p := range params {
+		// Note that _all_ memory is relased conditionally. This is because
+		// creation process may fail at any point, and so params array may be
+		// partially filled
+		if p.fname != nil {
+			C.free(unsafe.Pointer(p.fname))
+		}
+		if p.xcoderParams != nil {
+			C.free(unsafe.Pointer(p.xcoderParams))
+		}
+		if p.audio.name != nil {
+			C.free(unsafe.Pointer(p.audio.name))
+		}
+		if p.video.name != nil {
+			C.free(unsafe.Pointer(p.video.name))
+		}
+		if p.vfilters != nil {
+			C.free(unsafe.Pointer(p.vfilters))
+		}
+		if p.muxer.name != nil {
+			C.free(unsafe.Pointer(p.muxer.name))
+		}
+		if p.sfilters != nil {
+			C.free(unsafe.Pointer(p.sfilters))
+		}
+
+		// dictionaries are freed with special function
+		if p.audio.opts != nil {
+			C.av_dict_free(&p.audio.opts)
+		}
+		if p.muxer.opts != nil {
+			C.av_dict_free(&p.muxer.opts)
+		}
+		if p.video.opts != nil {
+			C.av_dict_free(&p.video.opts)
+		}
+	}
+}
+
+func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	// here we require input size and aspect ratio
+	status, format, err := GetCodecInfo(input.Fname)
+	if err != nil {
+		return nil, err
+	}
+	if status == CodecStatusOk {
+		// We dont return error in case status != CodecStatusOk because proper error would be returned later in the logic.
+		// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
+		err = ensureEncoderLimits(ps, format)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped || t.handle == nil {
+		return nil, ErrTranscoderStp
+	}
+	if input == nil {
+		return nil, ErrTranscoderInp
+	}
+	hw_type, err := accelDeviceType(input.Accel)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range ps {
+		if p.From != 0 || p.To != 0 {
+			if p.VideoEncoder.Name == "drop" || p.VideoEncoder.Name == "copy" {
+				glog.Warning("Could clip only when transcoding video")
+				return nil, ErrTranscoderClipConfig
+			}
+			if p.From < 0 || p.To > 0 && p.From > 0 && p.To < p.From {
+				glog.Warning("'To' should be after 'From'")
+				return nil, ErrTranscoderClipConfig
+			}
+		}
+	}
+	if input.Transmuxing {
+		t.started = true
+	}
+	if !t.started {
+		status, format, _ := GetCodecInfo(input.Fname)
+		// NeedsBypass is state where video is present in container & vithout any frames
+		videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""
+		if videoMissing {
+			// Audio-only segment, fail fast right here as we cannot handle them nicely
+			return nil, ErrTranscoderVid
+		}
+		// Stream is either OK or completely broken, let the transcoder handle it
+		t.started = true
+	}
+
+	// Output configuration
+	params, finalizer, err := createCOutputParams(input, ps)
+	// This prevents C memory leaks
+	defer finalizer()
+	// Only now can we do this
+	if err != nil {
+		return nil, err
+	}
+
+	// Input configuration
 	var device *C.char
 	if input.Device != "" {
 		device = C.CString(input.Device)
 		defer C.free(unsafe.Pointer(device))
 	}
+	fname := C.CString(input.Fname)
+	defer C.free(unsafe.Pointer(fname))
+	xcoderParams := C.CString("")
+	defer C.free(unsafe.Pointer(xcoderParams))
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
 		handle: t.handle}
 	if input.Transmuxing {
