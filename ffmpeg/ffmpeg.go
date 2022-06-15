@@ -115,9 +115,14 @@ type TranscodeOptions struct {
 }
 
 type MediaInfo struct {
-	Frames     int
-	Pixels     int64
-	DetectData DetectData
+	Frames       int
+	Pixels       int64
+	VideoFrames  int
+	AudioFrames  int
+	VideoPackets int
+	AudioPackets int
+	OtherPackets int
+	DetectData   DetectData
 }
 
 type TranscodeResults struct {
@@ -959,19 +964,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			return nil, ErrorMap[ret]
 		}
 	}
-  // This version of the code has two internal transcoder implementations, original
-  // and a refactored version. By default, we want to run the former, to stay on the
-  // safe side, but then we want to progressively enable the latter, "risky".
-  // It will be done by means of environment variable LPMS_USE_NEW_TRANSCODE
-  _, ok := os.LookupEnv("LPMS_USE_NEW_TRANSCODE")
-  var use_new_transcode C.int
-  if ok {
-    use_new_transcode = 1
-  } else {
-    use_new_transcode = 0
-  }
-
-	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded, use_new_transcode))
+	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		if LogTranscodeErrors {
 			glog.Error("Transcoder Return : ", ErrorMap[ret])
@@ -984,8 +977,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	tr := make([]MediaInfo, len(ps))
 	for i, r := range results {
 		tr[i] = MediaInfo{
-			Frames: int(r.frames),
-			Pixels: int64(r.pixels),
+			Frames:       int(r.frames),
+			Pixels:       int64(r.pixels),
+			VideoFrames:  int(r.video_frames),
+			AudioFrames:  int(r.audio_frames),
+			VideoPackets: int(r.video_packets),
+			AudioPackets: int(r.audio_packets),
+			OtherPackets: int(r.other_packets),
 		}
 		// add detect result
 		if ps[i].Detector != nil {
@@ -1001,8 +999,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 	}
 	dec := MediaInfo{
-		Frames: int(decoded.frames),
-		Pixels: int64(decoded.pixels),
+		Frames:       int(decoded.frames),
+		Pixels:       int64(decoded.pixels),
+		VideoFrames:  int(decoded.video_frames),
+		AudioFrames:  int(decoded.audio_frames),
+		VideoPackets: int(decoded.video_packets),
+		AudioPackets: int(decoded.audio_packets),
+		OtherPackets: int(decoded.other_packets),
 	}
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
 }

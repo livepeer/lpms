@@ -75,6 +75,12 @@ typedef struct {
     int64_t pixels;
     //for scene classification  
     float probs[MAX_CLASSIFY_SIZE];//probability
+    // new stats
+    int video_frames;
+    int audio_frames;
+    int video_packets;
+    int audio_packets;
+    int other_packets;
 } output_results;
 
 enum LPMSLogLevel {
@@ -90,7 +96,7 @@ enum LPMSLogLevel {
 };
 
 void lpms_init(enum LPMSLogLevel max_level);
-int lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results, int use_new);
+int lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 int lpms_transcode_reopen_demux(input_params *inp);
 struct transcode_thread* lpms_transcode_new();
 struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts);

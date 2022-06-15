@@ -4,13 +4,6 @@
 
 #include <libavutil/pixfmt.h>
 
-static int lpms_send_packet(struct input_ctx *ictx, AVCodecContext *dec, AVPacket *pkt)
-{
-    int ret = avcodec_send_packet(dec, pkt);
-    if (ret == 0 && dec == ictx->vc) ictx->pkt_diff++; // increase buffer count for video packets
-    return ret;
-}
-
 static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFrame *frame)
 {
     int ret = avcodec_receive_frame(dec, frame);
@@ -36,60 +29,7 @@ packet_cleanup:
   return ret;
 }
 
-int demux_in(struct input_ctx *ictx, AVPacket *pkt)
-{
-  return av_read_frame(ictx->ic, pkt);
-}
-
-int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream_index)
-{
-  int ret = 0;
-  AVStream *ist = NULL;
-  AVCodecContext *decoder = NULL;
-
-  *stream_index = pkt->stream_index;
-  ist = ictx->ic->streams[pkt->stream_index];
-  if (ist->index == ictx->vi && ictx->vc) {
-    // this is video packet to decode
-    decoder = ictx->vc;
-  } else if (ist->index == ictx->ai && ictx->ac) {
-    // this is audio packet to decode
-    decoder = ictx->ac;
-  } else if (pkt->stream_index == ictx->vi || pkt->stream_index == ictx->ai || ictx->transmuxing) {
-    // MA: this is original code. I think the intention was
-    // if (audio or video) AND transmuxing
-    // so it is buggy, but nevermind, refactored code will handle things in
-    // different way (won't ever call decode on transmuxing channels)
-    return 0;
-  } else {
-    // otherwise this stream is not used for anything
-    // TODO: but this is also done in transcode() loop, no?
-    av_packet_unref(pkt);
-    return 0;
-  }
-
-  if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
-    ictx->first_pkt = av_packet_clone(pkt);
-    ictx->first_pkt->pts = -1;
-  }
-
-  ret = lpms_send_packet(ictx, decoder, pkt);
-  if (ret < 0) {
-    LPMS_ERR_RETURN("Error sending packet to decoder");
-  }
-  ret = lpms_receive_frame(ictx, decoder, frame);
-  if (ret == AVERROR(EAGAIN)) {
-    // This is not really an error. It may be that packet just fed into
-    // the decoder may be not enough to complete decoding. Upper level will
-    // get next packet and retry
-    return lpms_ERR_PACKET_ONLY;
-  } else if (ret < 0) {
-    LPMS_ERR_RETURN("Error receiving frame from decoder");
-  } else {
-    return ret;
-  }
-}
-
+// TODO: split this into flush video/flush audio
 int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
 {
   int ret = 0;
@@ -127,28 +67,6 @@ int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
     if (!ret) return ret;
   }
   return AVERROR_EOF;
-}
-
-int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt,
-               int *stream_index)
-{
-  int ret = 0;
-
-  av_packet_unref(pkt);
-
-  // Demux next packet
-  ret = demux_in(ictx, pkt);
-  // See if we got anything
-  if (ret == AVERROR_EOF) {
-    // no more packets, flush the decoder(s)
-    return flush_in(ictx, frame, stream_index);
-  } else if (ret < 0) {
-    // demuxing error
-    LPMS_ERR_RETURN("Unable to read input");
-  } else {
-    // decode
-    return decode_in(ictx, pkt, frame, stream_index);
-  }
 }
 
 // FIXME: name me and the other function better
