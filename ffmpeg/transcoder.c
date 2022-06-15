@@ -324,8 +324,8 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
 {
   struct input_ctx *ictx = &h->ictx;
 
-  // TODO: this was removed, but need to investigate if safe
-  //    if (is_flush_frame(dframe)) goto whileloop_end;
+  // MA: "sentinel frames" stuff, will be removed
+  if (is_flush_frame(dframe)) return 0;
   // if we are here, we know there is a frame
   ++decoded_results->frames;
   decoded_results->pixels += dframe->width * dframe->height;
@@ -401,6 +401,7 @@ int handle_audio_packet(struct transcode_thread *h, output_results *decoded_resu
           octx->clip_audio_start_pts = pkt->pts;
           octx->clip_audio_start_pts_found = 1;
         }
+        // similar to clipping in encoder.c
         if (octx->clip_to && octx->clip_audio_start_pts_found && pkt->pts > octx->clip_audio_to_pts + octx->clip_audio_start_pts) {
           continue;
         }
@@ -520,7 +521,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
     // TODO: this whole sentinel frame business and packet count is broken,
     // because it assumes 1-to-1 relationship between packets and frames, and
     // it won't be so in multislice streams. Also what if first packet is just
-    // parameter set and encoder doesn't have to decode when receiving one
+    // parameter set? the decoder doesn't have to decode when receiving one
     if (!is_flush_frame(frame)) {
       ictx->pkt_diff--; // decrease buffer count for non-sentinel video frames
       if (ictx->flushing) ictx->sentinel_count = 0;
@@ -591,7 +592,7 @@ int flush_all_outputs(struct transcode_thread *h)
   return 0;
 }
 
-int transcode2(struct transcode_thread *h,
+int transcode(struct transcode_thread *h,
   input_params *inp, output_params *params,
   output_results *decoded_results)
 {
@@ -607,7 +608,7 @@ int transcode2(struct transcode_thread *h,
 
   // Main demuxing loop: process input packets till EOF in the input stream
   while (1) {
-    ret = demux_in(ictx, ipkt);
+    ret = av_read_frame(ictx->ic, ipkt);
     // See what we got
     if (ret == AVERROR_EOF) {
       // no more input packets
@@ -664,13 +665,12 @@ int transcode2(struct transcode_thread *h,
   // be frames buffered in the filters, and we need to flush them
   // IMPORTANT: no handle_*_frame calls here because there is no more input
   // frames.
-  // NOTE: this is "flush filters, flush decoders, flush muxers" all in one,
+  // NOTE: this is "flush filters, flush encoders, flush muxers" all in one,
   // it will get broken down in future
   flush_all_outputs(h);
 
   // Processing finished
 
-transcode_cleanup:
   if (ipkt) av_packet_free(&ipkt);
   if (iframe) av_frame_free(&iframe);
 
@@ -684,218 +684,10 @@ transcode_cleanup:
   } else return transcode_shutdown(h, ret);
 }
 
-int transcode(struct transcode_thread *h,
-  input_params *inp, output_params *params,
-  output_results *decoded_results)
-{
-  int ret = 0;
-  AVPacket *ipkt = NULL;
-  AVFrame *dframe = NULL;
-  struct input_ctx *ictx = &h->ictx;
-  struct output_ctx *outputs = h->outputs;
-  int nb_outputs = h->nb_outputs;
-
-  ipkt = av_packet_alloc();
-  if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
-  dframe = av_frame_alloc();
-  if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
-
-  while (1) {
-    // DEMUXING & DECODING
-    int has_frame = 0;
-    AVStream *ist = NULL;
-    AVFrame *last_frame = NULL;
-    int stream_index = -1;
-
-    av_frame_unref(dframe);
-    ret = process_in(ictx, dframe, ipkt, &stream_index);
-    if (ret == AVERROR_EOF) {
-      // no more processing, go for flushes
-      break;
-    }
-    else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
-    else if (ret == AVERROR(EAGAIN)) ;  // this is a-ok
-    else if (lpms_ERR_INPUT_NOKF == ret) {
-      LPMS_ERR(transcode_cleanup, "Could not decode; No keyframes in input");
-    } else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
-
-    // So here we have several possibilities:
-    // ipkt: usually it will be here, but if we are decoding, and if we reached
-    // end of stream, it may be so that draining of the decoder produces frames
-    // without packets
-    // dframe: if there is no decoding (because of transmuxing, or because of
-    // copying), it won't be set
-
-    ist = ictx->ic->streams[stream_index];
-
-    // This is for the case when we _are_ decoding but frame is not complete yet
-    // So for example multislice h.264 picture without all slices fed in.
-    // IMPORTANT: this should also be false if we are transmuxing, and it is not
-    // so, at least not automatically, because then process_in returns 0 and not
-    // lpms_ERR_PACKET_ONLY
-    has_frame = lpms_ERR_PACKET_ONLY != ret;
-
-    // Now apart from if (is_flush_frame(dframe)) goto whileloop_end; statement
-    // this code just updates has_frame properly for video and audio, updates
-    // statistics for video and ausio and sets last_frame
-    if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
-      if (is_flush_frame(dframe)) goto whileloop_end;
-      // width / height will be zero for pure streamcopy (no decoding)
-      decoded_results->frames += dframe->width && dframe->height;
-      decoded_results->pixels += dframe->width * dframe->height;
-      has_frame = has_frame && dframe->width && dframe->height;
-      if (has_frame) last_frame = ictx->last_frame_v;
-    } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
-      has_frame = has_frame && dframe->nb_samples;
-      if (has_frame) last_frame = ictx->last_frame_a;
-    } else {
-      has_frame = 0;  // bugfix
-    }
-    // if there is frame, update duration and put this frame in place as last_frame
-    if (has_frame) {
-      int64_t dur = 0;
-      if (dframe->pkt_duration) dur = dframe->pkt_duration;
-      else if (ist->r_frame_rate.den) {
-        dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
-      } else {
-        // TODO use better heuristics for this; look at how ffmpeg does it
-        LPMS_WARN("Could not determine next pts; filter might drop");
-      }
-      dframe->pkt_duration = dur;
-      av_frame_unref(last_frame);
-      av_frame_ref(last_frame, dframe);
-    }
-    // similar but for transmuxing case - update number of frames
-    if (ictx->transmuxing) {
-      if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
-        decoded_results->frames++;  // Michal: this is packets, not frames, may be wrong with multislice!
-      }
-      if (stream_index < MAX_OUTPUT_SIZE) {
-        if (ictx->discontinuity[stream_index]) {
-          // calc dts diff
-          ictx->dts_diff[stream_index] = ictx->last_dts[stream_index] + ictx->last_duration[stream_index] - ipkt->dts;
-          ictx->discontinuity[stream_index] = 0;
-        }
-        ipkt->pts += ictx->dts_diff[stream_index];
-        ipkt->dts += ictx->dts_diff[stream_index];
-        // Michal: this is dangerous, may damage the stream due to dropping critical
-        // packet - one could do that to frames, but not packets. Some formats
-        // allow dropping packets (like nonref picture slices in h.264 or frames
-        // other than keyframes in vp8), but it needs to be done with care and
-        // understanding of the packet role, not arbitrarily
-        if (ictx->last_dts[stream_index] > -1 && ipkt->dts <= ictx->last_dts[stream_index])  {
-          // skip packet if dts is equal or less than previous one
-          goto whileloop_end;
-        }
-        ictx->last_dts[stream_index] = ipkt->dts;
-        if (ipkt->duration) {
-          ictx->last_duration[stream_index] = ipkt->duration;
-        }
-      }
-    }
-
-    // ENCODING & MUXING OF ALL OUTPUT RENDITIONS
-    for (int i = 0; i < nb_outputs; i++) {
-      struct output_ctx *octx = &outputs[i];
-      struct filter_ctx *filter = NULL;
-      AVStream *ost = NULL;
-      AVCodecContext *encoder = NULL;
-      ret = 0; // reset to avoid any carry-through
-
-      if (ictx->transmuxing)
-        ost = octx->oc->streams[stream_index];  // because all streams are copied 1:1
-      else if (ist->index == ictx->vi) {
-        if (octx->dv) continue; // drop video stream for this output
-        ost = octx->oc->streams[0]; // because video stream is always stream 0
-        if (ictx->vc) {
-          encoder = octx->vc;
-          filter = &octx->vf;
-        }
-      } else if (ist->index == ictx->ai) {
-        if (octx->da) continue; // drop audio stream for this output
-        ost = octx->oc->streams[octx->dv ? 0 : 1]; // audio index depends on whether video exists
-        if (ictx->ac) {
-          encoder = octx->ac;
-          filter = &octx->af;
-        }
-      } else continue; // dropped or unrecognized stream
-
-      if (!encoder && ost) {
-        // stream copy
-        AVPacket *pkt;
-
-        // we hit this case when decoder is flushing; will be no input packet
-        // (we don't need decoded frames since this stream is doing a copy)
-        if (ipkt->pts == AV_NOPTS_VALUE) continue;
-
-        if (ist->index == ictx->ai) {
-          if (!octx->clip_audio_start_pts_found) {
-            octx->clip_audio_start_pts = ipkt->pts;
-            octx->clip_audio_start_pts_found = 1;
-          }
-          if (octx->clip_to && octx->clip_audio_start_pts_found && ipkt->pts > octx->clip_audio_to_pts + octx->clip_audio_start_pts) {
-            continue;
-          }
-          if (octx->clip_from && !octx->clip_started) {
-            // we want first frame to be video frame
-            continue;
-          }
-          if (octx->clip_from && ipkt->pts < octx->clip_audio_from_pts + octx->clip_audio_start_pts) {
-            continue;
-          }
-        }
-
-        pkt = av_packet_clone(ipkt);
-        if (!pkt) LPMS_ERR(transcode_cleanup, "Error allocating packet for copy");
-        if (octx->clip_from && ist->index == ictx->ai) {
-          pkt->pts -= octx->clip_audio_from_pts + octx->clip_audio_start_pts;
-        }
-        ret = mux(pkt, ist->time_base, octx, ost);
-        av_packet_free(&pkt);
-      } else if (has_frame) {
-        ret = process_out(ictx, octx, encoder, ost, filter, dframe);
-      }
-      if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
-      else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
-    }
-whileloop_end:
-    av_packet_unref(ipkt);
-  }
-
-  if (ictx->transmuxing) {
-    for (int i = 0; i < nb_outputs; i++) {
-      av_interleaved_write_frame(outputs[i].oc, NULL); // flush muxer
-    }
-    if (ictx->ic) {
-        avformat_close_input(&ictx->ic);
-        ictx->ic = NULL;
-    }
-    return 0;
-  }
-
-  // flush outputs
-  for (int i = 0; i < nb_outputs; i++) {
-    if(outputs[i].is_dnn_profile == 0/* && outputs[i].has_output > 0*/) {
-      ret = flush_outputs(ictx, &outputs[i]);
-      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
-    }
-    else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0) {
-       for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
-         outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;
-       }
-    }
-  }
-
-transcode_cleanup:
-  if (dframe) av_frame_free(&dframe);
-  if (ipkt) av_packet_free(&ipkt);  // needed for early exits
-  return transcode_shutdown(h, ret);
-}
-
 // MA: this should probably be merged with transcode_init, as it basically is a
 // part of initialization
 int lpms_transcode(input_params *inp, output_params *params,
-  output_results *results, int nb_outputs, output_results *decoded_results, int use_new)
+  output_results *results, int nb_outputs, output_results *decoded_results)
 {
   int ret = 0;
   struct transcode_thread *h = inp->handle;
@@ -959,12 +751,7 @@ int lpms_transcode(input_params *inp, output_params *params,
 
   ret = transcode_init(h, inp, params, results);
   if (ret < 0) return ret;
-
-  if (use_new) {
-    ret = transcode2(h, inp, params, decoded_results);
-  } else {
-    ret = transcode(h, inp, params, decoded_results);
-  }
+  ret = transcode(h, inp, params, decoded_results);
   h->initialized = 1;
   return ret;
 }
