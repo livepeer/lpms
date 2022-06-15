@@ -542,9 +542,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected frame counts from stream copy")
 			t.Error(res)
@@ -575,9 +573,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
 		}
