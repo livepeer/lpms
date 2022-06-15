@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAPI_SkippedSegment(t *testing.T) {
@@ -1530,6 +1532,7 @@ func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 
 	InitFFmpeg()
 	tc, err := NewTranscoderWithDetector(&DSceneAdultSoccer, deviceid)
+	require.NotNil(t, tc, "look for `Failed to load native model` logs above")
 	if err != nil {
 		t.Error(err)
 	}
