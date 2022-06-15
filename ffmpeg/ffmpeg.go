@@ -574,9 +574,14 @@ func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) err
 	for i := 0; i < len(outputs); i++ {
 		if outputs[i].Accel == Nvidia {
 			limits, haveLimits := nvidiaCodecSizeLimts[outputs[i].Profile.Encoder]
-			if haveLimits {
+			resolutionSpecified := outputs[i].Profile.Resolution != ""
+			// Sometimes rendition Resolution is not specified. We skip this rendition.
+			if haveLimits && resolutionSpecified {
 				err := limits.Clamp(&outputs[i].Profile, format)
 				if err != nil {
+					// if err == ErrTranscoderRes {
+					// 	return fmt.Errorf("Found profile [%d] without resolution %v", i, outputs[i])
+					// }
 					return err
 				}
 			}
