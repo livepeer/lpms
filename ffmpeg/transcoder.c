@@ -290,6 +290,7 @@ int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results
 {
   struct input_ctx *ictx = &h->ictx;
 
+  ++decoded_results->audio_frames;
   // frame duration update
   int64_t dur = 0;
   if (dframe->pkt_duration) {
@@ -329,6 +330,7 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
   // if we are here, we know there is a frame
   ++decoded_results->frames;
   decoded_results->pixels += dframe->width * dframe->height;
+  ++decoded_results->video_frames;
 
   // frame duration update
   int64_t dur = 0;
@@ -364,6 +366,7 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
 int handle_audio_packet(struct transcode_thread *h, output_results *decoded_results,
                         AVPacket *pkt, AVFrame *frame)
 {
+  ++decoded_results->audio_packets;
   // Packet processing part
   struct input_ctx *ictx = &h->ictx;
   AVStream *ist = ictx->ic->streams[pkt->stream_index];
@@ -421,6 +424,7 @@ int handle_audio_packet(struct transcode_thread *h, output_results *decoded_resu
       ret = mux(opkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Audio packet muxing error");
+      ++octx->res->audio_packets;
     }
   }
 
@@ -450,6 +454,7 @@ int handle_audio_packet(struct transcode_thread *h, output_results *decoded_resu
 int handle_video_packet(struct transcode_thread *h, output_results *decoded_results,
                         AVPacket *pkt, AVFrame *frame)
 {
+  ++decoded_results->video_packets;
   // Packet processing part
   struct input_ctx *ictx = &h->ictx;
   AVStream *ist = ictx->ic->streams[pkt->stream_index];
@@ -496,6 +501,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
       ret = mux(opkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Video packet muxing error");
+      ++octx->res->video_packets;
     }
   }
 
@@ -531,8 +537,10 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
   }
 }
 
-int handle_other_packet(struct transcode_thread *h, AVPacket *pkt)
+int handle_other_packet(struct transcode_thread *h,
+                        output_results *decoded_results, AVPacket *pkt)
 {
+  ++decoded_results->other_packets;
   struct input_ctx *ictx = &h->ictx;
   AVStream *ist = ictx->ic->streams[pkt->stream_index];
   int ret = 0;
@@ -558,6 +566,7 @@ int handle_other_packet(struct transcode_thread *h, AVPacket *pkt)
       ret = mux(opkt, ist->time_base, octx, ost);
       av_packet_free(&opkt);
       if (ret < 0) LPMS_ERR_RETURN("Other packet muxing error");
+      ++octx->res->other_packets;
     }
   }
 
@@ -629,7 +638,7 @@ int transcode(struct transcode_thread *h,
       if (ret < 0) break;
     } else {
       // other types of packets (used only for transmuxing)
-      handle_other_packet(h, ipkt);
+      handle_other_packet(h, decoded_results, ipkt);
       if (ret < 0) break;
     }
     av_packet_unref(ipkt);
