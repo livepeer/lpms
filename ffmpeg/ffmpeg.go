@@ -241,8 +241,22 @@ const (
 	CodecStatusMissing       CodecStatus = 2
 )
 
-func GetCodecInfo(fname string) (CodecStatus, string, string, PixelFormat, error) {
-	var acodec, vcodec string
+type MediaFormatInfo struct {
+	Acodec, Vcodec string
+	PixFormat      PixelFormat
+	Width, Height  int
+}
+
+func (f *MediaFormatInfo) ScaledHeight(width int) int {
+	return int(float32(width) * float32(f.Height) / float32(f.Width))
+}
+
+func (f *MediaFormatInfo) ScaledWidth(height int) int {
+	return int(float32(height) * float32(f.Width) / float32(f.Height))
+}
+
+func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
+	format := MediaFormatInfo{}
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
 	acodec_c := C.CString(strings.Repeat("0", 255))
@@ -255,20 +269,21 @@ func GetCodecInfo(fname string) (CodecStatus, string, string, PixelFormat, error
 	params_c.pixel_format = C.AV_PIX_FMT_NONE
 	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
 	if C.strlen(acodec_c) < 255 {
-		acodec = C.GoString(acodec_c)
+		format.Acodec = C.GoString(acodec_c)
 	}
 	if C.strlen(vcodec_c) < 255 {
-		vcodec = C.GoString(vcodec_c)
+		format.Vcodec = C.GoString(vcodec_c)
 	}
-	pixelFormat := PixelFormat{int(params_c.pixel_format)}
-	return status, acodec, vcodec, pixelFormat, nil
+	format.PixFormat = PixelFormat{int(params_c.pixel_format)}
+	format.Width = int(params_c.width)
+	format.Height = int(params_c.height)
+	return status, format, nil
 }
 
 // GetCodecInfo opens the segment and attempts to get video and audio codec names. Additionally, first return value
 // indicates whether the segment has zero video frames
-func GetCodecInfoBytes(data []byte) (CodecStatus, string, string, PixelFormat, error) {
-	var acodec, vcodec string
-	var pixelFormat PixelFormat
+func GetCodecInfoBytes(data []byte) (CodecStatus, MediaFormatInfo, error) {
+	format := MediaFormatInfo{}
 	status := CodecStatusInternalError
 	or, ow, err := os.Pipe()
 	go func() {
@@ -277,11 +292,11 @@ func GetCodecInfoBytes(data []byte) (CodecStatus, string, string, PixelFormat, e
 		ow.Close()
 	}()
 	if err != nil {
-		return status, acodec, vcodec, pixelFormat, ErrEmptyData
+		return status, format, ErrEmptyData
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
-	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
-	return status, acodec, vcodec, pixelFormat, err
+	status, format, err = GetCodecInfo(fname)
+	return status, format, err
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -299,7 +314,7 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	status, _, _, _, err := GetCodecInfo(fname)
+	status, _, err := GetCodecInfo(fname)
 	ow.Close()
 	return status == CodecStatusNeedsBypass, err
 }
@@ -490,6 +505,89 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 	t := NewTranscoder()
 	defer t.StopTranscoder()
 	return t.Transcode(input, ps)
+}
+
+type CodingSizeLimit struct {
+	WidthMin, HeightMin int
+	WidthMax, HeightMax int
+}
+
+type Size struct {
+	W, H int
+}
+
+func (s *Size) Valid(l *CodingSizeLimit) bool {
+	if s.W < l.WidthMin || s.W > l.WidthMax || s.H < l.HeightMin || s.H > l.HeightMax {
+		return false
+	}
+	return true
+}
+
+func clamp(val, min, max int) int {
+	if val <= min {
+		return min
+	}
+	if val >= max {
+		return max
+	}
+	return val
+}
+
+func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
+	w, h, err := VideoProfileResolution(*p)
+	if err != nil {
+		return err
+	}
+	// detect correct rotation
+	outputAr := float32(w) / float32(h)
+	inputAr := float32(format.Width) / float32(format.Height)
+	if (inputAr > 1.0) != (outputAr > 1.0) {
+		// comparing landscape to portrait, apply rotate on chosen resolution
+		w, h = h, w
+	}
+	// Adjust to minimal encode dimensions keeping aspect ratio
+
+	var adjustedWidth, adjustedHeight Size
+	adjustedWidth.W = clamp(w, l.WidthMin, l.WidthMax)
+	adjustedWidth.H = format.ScaledHeight(adjustedWidth.W)
+	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
+	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
+	if adjustedWidth.Valid(l) {
+		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
+		return nil
+	}
+	if adjustedHeight.Valid(l) {
+		p.Resolution = fmt.Sprintf("%dx%d", adjustedHeight.W, adjustedHeight.H)
+		return nil
+	}
+	return fmt.Errorf("profile %dx%d size out of bounds %dx%d-%dx%d", w, h, l.WidthMin, l.WidthMin, l.WidthMax, l.HeightMax)
+}
+
+// 7th Gen NVENC limits:
+var nvidiaCodecSizeLimts = map[VideoCodec]CodingSizeLimit{
+	H264: {146, 50, 4096, 4096},
+	H265: {132, 40, 8192, 8192},
+}
+
+func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) error {
+	// not using range to be able to make inplace modifications to outputs elements
+	for i := 0; i < len(outputs); i++ {
+		if outputs[i].Accel == Nvidia {
+			limits, haveLimits := nvidiaCodecSizeLimts[outputs[i].Profile.Encoder]
+			resolutionSpecified := outputs[i].Profile.Resolution != ""
+			// Sometimes rendition Resolution is not specified. We skip this rendition.
+			if haveLimits && resolutionSpecified {
+				err := limits.Clamp(&outputs[i].Profile, format)
+				if err != nil {
+					// if err == ErrTranscoderRes {
+					// 	return fmt.Errorf("Found profile [%d] without resolution %v", i, outputs[i])
+					// }
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // create C output params array and return it along with corresponding finalizer
@@ -733,6 +831,20 @@ func destroyCOutputParams(params []C.output_params) {
 }
 
 func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
+	// here we require input size and aspect ratio
+	status, format, err := GetCodecInfo(input.Fname)
+	if err != nil {
+		return nil, err
+	}
+	if status == CodecStatusOk {
+		// We dont return error in case status != CodecStatusOk because proper error would be returned later in the logic.
+		// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
+		err = ensureEncoderLimits(ps, format)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.stopped || t.handle == nil {
@@ -761,9 +873,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		t.started = true
 	}
 	if !t.started {
-		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
+		status, format, _ := GetCodecInfo(input.Fname)
 		// NeedsBypass is state where video is present in container & vithout any frames
-		videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
+		videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""
 		if videoMissing {
 			// Audio-only segment, fail fast right here as we cannot handle them nicely
 			return nil, ErrTranscoderVid

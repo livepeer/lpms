@@ -6,7 +6,10 @@ package ffmpeg
 import (
 	"fmt"
 	"os"
+	"path"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNvidia_Transcoding(t *testing.T) {
@@ -726,6 +729,37 @@ func TestNvidia_CompareVideo(t *testing.T) {
 
 func TestNvidia_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Nvidia, "0")
+}
+
+func TestTranscoder_Portrait(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	fname := path.Join(wd, "..", "data", "portrait.ts")
+	outNames := []string{
+		path.Join(wd, "..", "data", "singleframe-out-360.ts"),
+		path.Join(wd, "..", "data", "singleframe-out-240.ts"),
+		path.Join(wd, "..", "data", "singleframe-out-144.ts"),
+	}
+	// prof := P720p30fps16x9
+	in := &TranscodeOptionsIn{Fname: fname, Accel: Nvidia}
+	hevc := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
+	out := []TranscodeOptions{
+		{Oname: outNames[0], Profile: P360p30fps16x9, Accel: Nvidia},
+		{Oname: outNames[1], Profile: hevc, Accel: Nvidia},
+		{Oname: outNames[2], Profile: P144p30fps16x9, Accel: Nvidia},
+	}
+	res, err := Transcode3(in, out)
+	require.NoError(t, err)
+	for i := 0; i < len(outNames); i++ {
+		outInfo, err := os.Stat(outNames[i])
+		if os.IsNotExist(err) {
+			t.Error(err)
+		} else {
+			defer os.Remove(outNames[i])
+		}
+		require.NotEqual(t, outInfo.Size(), 0, "must produce output %s", outNames[i])
+		require.Equal(t, res.Encoded[i].Frames, 30, "must produce 30 frames in output %s", outNames[i])
+	}
 }
 
 // XXX test bframes or delayed frames

@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAPI_SkippedSegment(t *testing.T) {
@@ -540,9 +542,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected frame counts from stream copy")
 			t.Error(res)
@@ -573,9 +573,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
 		}
@@ -1530,6 +1528,7 @@ func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 
 	InitFFmpeg()
 	tc, err := NewTranscoderWithDetector(&DSceneAdultSoccer, deviceid)
+	require.NotNil(t, tc, "look for `Failed to load native model` logs above")
 	if err != nil {
 		t.Error(err)
 	}
