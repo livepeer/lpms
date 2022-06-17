@@ -127,6 +127,14 @@ type TranscodeResults struct {
 type PixelFormat struct {
 	RawValue int
 }
+type VideoInfo struct {
+	width       int
+	height      int
+	bit_rate    int64
+	packetcount int   //video total packet count
+	timestamp   int64 //XOR sum of avpacket pts
+	audiosum    []int //XOR sum of audio data's md5(16 bytes)
+}
 
 const (
 	PixelFormatNone        int = C.AV_PIX_FMT_NONE
@@ -339,6 +347,55 @@ func CompareSignatureByBuffer(data1 []byte, data2 []byte) (bool, error) {
 		return false, nil
 	} else {
 		return false, ErrSignCompare
+	}
+}
+
+func GetDiffInfo(info1, info2 VideoInfo, linestr *[]string) {
+
+	wdiff := strconv.Itoa(info1.width - info2.width)
+	*linestr = append(*linestr, wdiff)
+
+	hdiff := strconv.Itoa(info1.height - info2.height)
+	*linestr = append(*linestr, hdiff)
+
+	bitratediff := strconv.Itoa(int(info1.bit_rate - info2.bit_rate))
+	*linestr = append(*linestr, bitratediff)
+
+	packetcountdiff := strconv.Itoa(info1.packetcount - info2.packetcount)
+	*linestr = append(*linestr, packetcountdiff)
+
+	timestampdiff := strconv.Itoa(int(info1.timestamp - info2.timestamp))
+	*linestr = append(*linestr, timestampdiff)
+
+	audiodiff := ""
+	for i := 0; i < 4; i++ {
+		audiodiff += strconv.Itoa(info1.audiosum[i]-info2.audiosum[i]) + "_"
+	}
+	*linestr = append(*linestr, audiodiff)
+}
+
+func GetVideoInfoByPath(fname1 string) (VideoInfo, error) {
+	var vinfo VideoInfo
+
+	cfpath1 := C.CString(fname1)
+	defer C.free(unsafe.Pointer(cfpath1))
+
+	var info1 C.match_info
+	res := int(C.lpms_get_matchinfo(cfpath1, &info1))
+
+	if res == 0 {
+		vinfo.width = int(info1.width)
+		vinfo.height = int(info1.height)
+		vinfo.bit_rate = int64(info1.bit_rate)
+		vinfo.packetcount = int(info1.packetcount)
+		vinfo.timestamp = int64(info1.timestamp)
+		//audiosum:
+		for i := 0; i < 4; i++ {
+			vinfo.audiosum = append(vinfo.audiosum, int(info1.audiosum[i]))
+		}
+		return vinfo, nil
+	} else {
+		return vinfo, nil
 	}
 }
 

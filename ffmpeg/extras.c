@@ -6,15 +6,6 @@
 #include "extras.h"
 #include "logging.h"
 
-struct match_info {
-  int       width;
-  int       height;
-  uint64_t  bit_rate;
-  int       packetcount; //video total packet count
-  uint64_t  timestamp;    //XOR sum of avpacket pts
-  int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
-};
-
 struct buffer_data {
     uint8_t *ptr;
     size_t size; ///< size left in the buffer
@@ -268,19 +259,19 @@ static int read_packet(void *opaque, uint8_t *buf, int buf_size)
     return buf_size;
 }
 
-static int get_matchinfo(void *buffer, int len, struct match_info* info)
+int get_matchinfo(void *buffer, int len, match_info* info)
 {
   int ret = 0;
   AVFormatContext* ifmt_ctx = NULL;
   AVIOContext *avio_in = NULL;
   AVPacket *packet = NULL;
   int audioid = -1;
-  int md5tmp[4];
+  int md5tmp[4] = {0,};
   uint8_t *avio_ctx_buffer = NULL;
   size_t  avio_ctx_buffer_size = 4096;
   struct buffer_data bd = { 0 };
   //initialize matching information
-  memset(info, 0x00, sizeof(struct match_info));
+  memset(info, 0x00, sizeof(match_info));
 
    /* fill opaque structure used by the AVIOContext read callback */
   bd.ptr  = buffer;
@@ -357,6 +348,20 @@ clean:
   return ret;
 }
 
+int lpms_get_matchinfo(char *vpath1, match_info* info)
+{
+  int len1,  ret;
+  uint8_t *buffer1;
+  buffer1 = get_filebuffer(vpath1, &len1);
+  if(buffer1 == NULL) return AVERROR(ENOMEM);
+
+  ret = get_matchinfo(buffer1,len1,info);
+  if(ret < 0) return ret;
+
+  if(buffer1 != NULL)
+      av_freep(&buffer1);
+  return 0;
+}
 // compare two video buffers whether those matches or not.
 // @param buffer1         the pointer of the first video buffer.
 // @param buffer2         the pointer of the second video buffer.
@@ -366,7 +371,7 @@ clean:
 int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
   int ret = 0;
-  struct match_info info1, info2;
+  match_info info1, info2;
 
   ret = get_matchinfo(buffer1,len1,&info1);
   if(ret < 0) return ret;
@@ -374,9 +379,9 @@ int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2
   ret = get_matchinfo(buffer2,len2,&info2);
   if(ret < 0) return ret;
   //compare two matching information
-  if (info1.width != info2.width || info1.height != info2.height ||
+  if ( info1.width != info2.width /*|| info1.height != info2.height ||
       info1.bit_rate != info2.bit_rate || info1.packetcount != info2.packetcount ||
-      info1.timestamp != info2.timestamp || memcmp(info1.audiosum, info2.audiosum, 16)) {
+      info1.timestamp != info2.timestamp || memcmp(info1.audiosum, info2.audiosum, 16)*/) {
       ret = 1;
   }
 
