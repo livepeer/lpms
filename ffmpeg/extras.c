@@ -376,9 +376,7 @@ int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2
   ret = get_matchinfo(buffer2,len2,&info2);
   if(ret < 0) return ret;
   //compare two matching information
-  if (info1.width != info2.width || info1.height != info2.height ||
-      info1.bit_rate != info2.bit_rate || info1.packetcount != info2.packetcount ||
-      info1.timestamp != info2.timestamp || memcmp(info1.audiosum, info2.audiosum, 16)) {
+  if (info1.width != info2.width || info1.height != info2.height || memcmp(info1.audiosum, info2.audiosum, 16)) {
       ret = 1;
   }
 
