@@ -233,20 +233,12 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     // when transmuxing we're opening output with first segment, but closing it
     // only when lpms_transcode_stop called, so we don't want to re-open it
     // on subsequent segments
-    if (!h->initialized || (AV_HWDEVICE_TYPE_NONE == octx->hw_type && !ictx->transmuxing)) {
+    // TODO: basically this means "open every time, unless we are transmuxing
+    // and output muxer remains open". Which should be moved into open_output()
+    // anyway...
+    if (!h->initialized || !ictx->transmuxing) {
       ret = open_output(octx, ictx);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
-      if (ictx->transmuxing) {
-        octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
-        octx->oc->flush_packets = 1;
-      }
-      continue;
-    }
-
-    if (!ictx->transmuxing) {
-      // non-first segment of a HW session
-      ret = reopen_output(octx, ictx);
-      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to re-open output for HW session");
     }
   }
 
