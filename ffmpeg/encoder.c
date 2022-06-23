@@ -108,7 +108,7 @@ add_audio_err:
   return ret;
 }
 
-static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
+static int open_audio_encoder(struct input_ctx *ictx, struct output_ctx *octx,
   AVOutputFormat *fmt)
 {
   int ret = 0;
@@ -145,6 +145,57 @@ static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
 
 audio_output_err:
   // TODO clean up anything here?
+  return ret;
+}
+
+static int open_video_encoder(struct input_ctx *ictx, struct output_ctx *octx,
+                              AVOutputFormat *fmt)
+{
+  AVCodecContext *vc  = NULL;
+  AVCodec *codec      = NULL;
+  int ret = 0;
+  // add video encoder if a decoder exists and this output requires one
+  if (ictx->vc && needs_decoder(octx->video->name)) {
+    if (octx->dnn_filtergraph && !ictx->vc->hw_frames_ctx) {
+      // swap filtergraph with the pre-initialized DNN filtergraph for SW
+      // for HW we handle it later during filter re-init
+      octx->vf.graph = *octx->dnn_filtergraph;
+    }
+    ret = init_video_filters(ictx, octx);
+    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
+
+    codec = avcodec_find_encoder_by_name(octx->video->name);
+    if (!codec) LPMS_ERR(open_output_err, "Unable to find encoder");
+
+    // open video encoder
+    // XXX use avoptions rather than manual enumeration
+    vc = avcodec_alloc_context3(codec);
+    if (!vc) LPMS_ERR(open_output_err, "Unable to alloc video encoder");
+    octx->vc = vc;
+    vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
+    vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
+    if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
+    else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->framerate = ictx->vc->framerate;
+    else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate;
+    if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
+    else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
+    else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
+    if (octx->bitrate) vc->rc_min_rate = vc->bit_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+    if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
+      vc->hw_frames_ctx =
+        av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
+      if (!vc->hw_frames_ctx) LPMS_ERR(open_output_err, "Unable to alloc hardware context");
+    }
+    vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
+    if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+  if(strcmp(octx->xcoderParams,"")!=0){
+      av_opt_set(vc->priv_data, "xcoder-params", octx->xcoderParams, 0);
+  }
+    ret = avcodec_open2(vc, codec, &octx->video->opts);
+    if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
+    octx->hw_type = ictx->hw_type;
+  }
+open_output_err:
   return ret;
 }
 
@@ -210,8 +261,6 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   AVOutputFormat *fmt = NULL;
   AVFormatContext *oc = NULL;
-  AVCodecContext *vc  = NULL;
-  AVCodec *codec      = NULL;
 
   // open muxer
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
@@ -220,47 +269,7 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   if (ret < 0) LPMS_ERR(open_output_err, "Unable to alloc output context");
   octx->oc = oc;
 
-  // add video encoder if a decoder exists and this output requires one
-  if (ictx->vc && needs_decoder(octx->video->name)) {
-    if (octx->dnn_filtergraph && !ictx->vc->hw_frames_ctx) {
-      // swap filtergraph with the pre-initialized DNN filtergraph for SW
-      // for HW we handle it later during filter re-init
-      octx->vf.graph = *octx->dnn_filtergraph;
-    }
-    ret = init_video_filters(ictx, octx);
-    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
-
-    codec = avcodec_find_encoder_by_name(octx->video->name);
-    if (!codec) LPMS_ERR(open_output_err, "Unable to find encoder");
-
-    // open video encoder
-    // XXX use avoptions rather than manual enumeration
-    vc = avcodec_alloc_context3(codec);
-    if (!vc) LPMS_ERR(open_output_err, "Unable to alloc video encoder");
-    octx->vc = vc;
-    vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
-    vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
-    if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
-    else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->framerate = ictx->vc->framerate;
-    else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate;
-    if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
-    else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
-    else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
-    if (octx->bitrate) vc->rc_min_rate = vc->bit_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
-    if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
-      vc->hw_frames_ctx =
-        av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
-      if (!vc->hw_frames_ctx) LPMS_ERR(open_output_err, "Unable to alloc hardware context");
-    }
-    vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
-    if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-	if(strcmp(octx->xcoderParams,"")!=0){
-	    av_opt_set(vc->priv_data, "xcoder-params", octx->xcoderParams, 0);
-	}
-    ret = avcodec_open2(vc, codec, &octx->video->opts);
-    if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
-    octx->hw_type = ictx->hw_type;
-  }
+  ret = open_video_encoder(ictx, octx, fmt);
 
   if (!ictx->transmuxing) {
     // add video stream if input contains video
@@ -270,7 +279,7 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
       if (ret < 0) LPMS_ERR(open_output_err, "Error adding video stream");
     }
 
-    ret = open_audio_output(ictx, octx, fmt);
+    ret = open_audio_encoder(ictx, octx, fmt);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening audio output");
   } else {
     ret = open_remux_output(ictx, octx);
@@ -315,7 +324,7 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
   } else LPMS_INFO("No video stream!?");
 
   // re-attach audio encoder
-  ret = open_audio_output(ictx, octx, fmt);
+  ret = open_audio_encoder(ictx, octx, fmt);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add audio stream");
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
