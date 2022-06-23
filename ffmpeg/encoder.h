@@ -6,7 +6,6 @@
 #include "filter.h"
 
 int open_output(struct output_ctx *octx, struct input_ctx *ictx);
-int reopen_output(struct output_ctx *octx, struct input_ctx *ictx);
 void close_output(struct output_ctx *octx);
 void free_output(struct output_ctx *octx);
 int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
