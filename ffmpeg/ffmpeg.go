@@ -518,6 +518,7 @@ type Size struct {
 
 func (s *Size) Valid(l *CodingSizeLimit) bool {
 	if s.W < l.WidthMin || s.W > l.WidthMax || s.H < l.HeightMin || s.H > l.HeightMax {
+		glog.Warningf("[not valid] profile %dx%d\n", s.W, s.H)
 		return false
 	}
 	return true
@@ -553,14 +554,18 @@ func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
 	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
 	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
 	if adjustedWidth.Valid(l) {
+		glog.Infof("[valid] profile %dx%d input=%dx%d accepted %dx%d\n", w, h, format.Width, format.Height, adjustedWidth.W, adjustedWidth.H)
 		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
 		return nil
 	}
 	if adjustedHeight.Valid(l) {
+		glog.Infof("[valid] profile %dx%d input=%dx%d accepted %dx%d\n", w, h, format.Width, format.Height, adjustedHeight.W, adjustedHeight.H)
 		p.Resolution = fmt.Sprintf("%dx%d", adjustedHeight.W, adjustedHeight.H)
 		return nil
 	}
-	return fmt.Errorf("profile %dx%d size out of bounds %dx%d-%dx%d", w, h, l.WidthMin, l.WidthMin, l.WidthMax, l.HeightMax)
+	// Improve error message to include calculation context
+	return fmt.Errorf("profile %dx%d size out of bounds %dx%d-%dx%d input=%dx%d adjusted %dx%d or %dx%d",
+		w, h, l.WidthMin, l.WidthMin, l.WidthMax, l.HeightMax, format.Width, format.Height, adjustedWidth.W, adjustedWidth.H, adjustedHeight.W, adjustedHeight.H)
 }
 
 // 7th Gen NVENC limits:

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -731,35 +732,60 @@ func TestNvidia_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Nvidia, "0")
 }
 
-func TestTranscoder_Portrait(t *testing.T) {
+func portraitTest(t *testing.T, input string, checkResults bool, profiles []VideoProfile) error {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	fname := path.Join(wd, "..", "data", "portrait.ts")
-	outNames := []string{
-		path.Join(wd, "..", "data", "singleframe-out-360.ts"),
-		path.Join(wd, "..", "data", "singleframe-out-240.ts"),
-		path.Join(wd, "..", "data", "singleframe-out-144.ts"),
+	outName := func(index int, resolution string) string {
+		return path.Join(wd, "..", "data", fmt.Sprintf("%s_%d_%s.ts", strings.ReplaceAll(input, ".", "_"), index, resolution))
 	}
-	// prof := P720p30fps16x9
+	fname := path.Join(wd, "..", "data", input)
 	in := &TranscodeOptionsIn{Fname: fname, Accel: Nvidia}
-	hevc := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
-	out := []TranscodeOptions{
-		{Oname: outNames[0], Profile: P360p30fps16x9, Accel: Nvidia},
-		{Oname: outNames[1], Profile: hevc, Accel: Nvidia},
-		{Oname: outNames[2], Profile: P144p30fps16x9, Accel: Nvidia},
+	out := make([]TranscodeOptions, 0, len(profiles))
+	outFilenames := make([]string, 0, len(profiles))
+	for index, profile := range profiles {
+		filename := outName(index, profile.Resolution)
+		os.Remove(filename) // remove previous result if it exists
+		out = append(out, TranscodeOptions{
+			Oname:   filename,
+			Profile: profile,
+			Accel:   Nvidia,
+		})
+		outFilenames = append(outFilenames, filename)
 	}
-	res, err := Transcode3(in, out)
-	require.NoError(t, err)
-	for i := 0; i < len(outNames); i++ {
-		outInfo, err := os.Stat(outNames[i])
-		if os.IsNotExist(err) {
-			t.Error(err)
-		} else {
-			defer os.Remove(outNames[i])
+	_, resultErr := Transcode3(in, out)
+	if resultErr == nil && checkResults {
+		for _, filename := range outFilenames {
+			outInfo, err := os.Stat(filename)
+			if os.IsNotExist(err) {
+				require.NoError(t, err, fmt.Sprintf("output missing %s", filename))
+			} else {
+				defer os.Remove(filename)
+			}
+			require.NotEqual(t, outInfo.Size(), 0, "must produce output %s", filename)
 		}
-		require.NotEqual(t, outInfo.Size(), 0, "must produce output %s", outNames[i])
-		require.Equal(t, res.Encoded[i].Frames, 30, "must produce 30 frames in output %s", outNames[i])
 	}
+	return resultErr
+}
+
+func TestTranscoder_Portrait(t *testing.T) {
+	hevc := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
+
+	// Usuall portrait input sample
+	require.NoError(t, portraitTest(t, "portrait.ts", true, []VideoProfile{
+		P360p30fps16x9, hevc, P144p30fps16x9,
+	}))
+
+	// Reported as not working sample, but transcoding works as expected
+	require.NoError(t, portraitTest(t, "videotest.mp4", true, []VideoProfile{
+		P360p30fps16x9, hevc, P144p30fps16x9,
+	}))
+
+	// Created one sample that is impossible to resize and fit within encoder limits and still keep aspect ratio:
+	notPossible := VideoProfile{Name: "P8K1x250", Bitrate: "6000k", Framerate: 30, AspectRatio: "1:250", Resolution: "250x62500", Encoder: H264}
+	err := portraitTest(t, "vertical-sample.ts", true, []VideoProfile{notPossible})
+	// We expect error
+	require.Error(t, err)
+	// Error should be `profile 250x62500 size out of bounds 146x146-4096x4096 input=16x4000 adjusted 250x62500 or 16x4096`
 }
 
 // XXX test bframes or delayed frames
