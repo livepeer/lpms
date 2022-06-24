@@ -3,11 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -46,21 +44,27 @@ func main() {
 	sort.Strings(infiles)
 
 	fmt.Println("Task starting.")
+	missaudio := 0
 
 	for i := 0; i < len(infiles); i++ {
 
 		var vinfo ffmpeg.VideoInfo
 
 		vinfo, _ = ffmpeg.GetVideoInfoByPath(infiles[i])
-		fmt.Printf("%v - info %v", i, vinfo)
-		sl := strings.Split(infiles[i], "-")
-		newname := sl[0] + "-" + sl[len(sl)-2] + sl[len(sl)-1]
-
-		e := os.Rename(infiles[i], newname)
-		if e != nil {
-			log.Fatal(e)
+		if vinfo.Audiosum[0] == 0 && vinfo.Audiosum[1] == 0 && vinfo.Audiosum[2] == 0 && vinfo.Audiosum[3] == 0 {
+			missaudio++
 		}
+		/*
+			sl := strings.Split(infiles[i], "-")
+			newname := sl[0] + "-" + sl[len(sl)-2] + sl[len(sl)-1]
+
+			e := os.Rename(infiles[i], newname)
+			if e != nil {
+				log.Fatal(e)
+			}
+		*/
 	}
+	fmt.Printf("Missing audio count is %d", missaudio)
 
 	fmt.Printf("Task completed!")
 

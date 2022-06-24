@@ -128,12 +128,12 @@ type PixelFormat struct {
 	RawValue int
 }
 type VideoInfo struct {
-	width       int
-	height      int
-	bit_rate    int64
-	packetcount int   //video total packet count
-	timestamp   int64 //XOR sum of avpacket pts
-	audiosum    []int //XOR sum of audio data's md5(16 bytes)
+	Width       int
+	Height      int
+	Bit_rate    int64
+	Packetcount int   //video total packet count
+	Timestamp   int64 //XOR sum of avpacket pts
+	Audiosum    []int //XOR sum of audio data's md5(16 bytes)
 }
 
 const (
@@ -352,24 +352,24 @@ func CompareSignatureByBuffer(data1 []byte, data2 []byte) (bool, error) {
 
 func GetDiffInfo(info1, info2 VideoInfo, linestr *[]string) {
 
-	wdiff := strconv.Itoa(info1.width - info2.width)
+	wdiff := strconv.Itoa(info1.Width - info2.Width)
 	*linestr = append(*linestr, wdiff)
 
-	hdiff := strconv.Itoa(info1.height - info2.height)
+	hdiff := strconv.Itoa(info1.Height - info2.Height)
 	*linestr = append(*linestr, hdiff)
 
-	bitratediff := strconv.Itoa(int(info1.bit_rate - info2.bit_rate))
+	bitratediff := strconv.Itoa(int(info1.Bit_rate - info2.Bit_rate))
 	*linestr = append(*linestr, bitratediff)
 
-	packetcountdiff := strconv.Itoa(info1.packetcount - info2.packetcount)
+	packetcountdiff := strconv.Itoa(info1.Packetcount - info2.Packetcount)
 	*linestr = append(*linestr, packetcountdiff)
 
-	timestampdiff := strconv.Itoa(int(info1.timestamp - info2.timestamp))
+	timestampdiff := strconv.Itoa(int(info1.Timestamp - info2.Timestamp))
 	*linestr = append(*linestr, timestampdiff)
 
 	audiodiff := ""
 	for i := 0; i < 4; i++ {
-		audiodiff += strconv.Itoa(info1.audiosum[i]-info2.audiosum[i]) + "_"
+		audiodiff += strconv.Itoa(info1.Audiosum[i]-info2.Audiosum[i]) + "_"
 	}
 	*linestr = append(*linestr, audiodiff)
 }
@@ -384,14 +384,14 @@ func GetVideoInfoByPath(fname1 string) (VideoInfo, error) {
 	res := int(C.lpms_get_matchinfo(cfpath1, &info1))
 
 	if res == 0 {
-		vinfo.width = int(info1.width)
-		vinfo.height = int(info1.height)
-		vinfo.bit_rate = int64(info1.bit_rate)
-		vinfo.packetcount = int(info1.packetcount)
-		vinfo.timestamp = int64(info1.timestamp)
+		vinfo.Width = int(info1.width)
+		vinfo.Height = int(info1.height)
+		vinfo.Bit_rate = int64(info1.bit_rate)
+		vinfo.Packetcount = int(info1.packetcount)
+		vinfo.Timestamp = int64(info1.timestamp)
 		//audiosum:
 		for i := 0; i < 4; i++ {
-			vinfo.audiosum = append(vinfo.audiosum, int(info1.audiosum[i]))
+			vinfo.Audiosum = append(vinfo.Audiosum, int(info1.audiosum[i]))
 		}
 		return vinfo, nil
 	} else {
