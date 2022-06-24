@@ -780,6 +780,11 @@ func TestTranscoder_Portrait(t *testing.T) {
 		P360p30fps16x9, hevc, P144p30fps16x9,
 	}))
 
+	// concatenated 8 times videotest.mp4 without re-encoding:
+	require.NoError(t, portraitTest(t, "working_portrait.mp4", true, []VideoProfile{
+		P360p30fps16x9, hevc, P144p30fps16x9,
+	}))
+
 	// Created one sample that is impossible to resize and fit within encoder limits and still keep aspect ratio:
 	notPossible := VideoProfile{Name: "P8K1x250", Bitrate: "6000k", Framerate: 30, AspectRatio: "1:250", Resolution: "250x62500", Encoder: H264}
 	err := portraitTest(t, "vertical-sample.ts", true, []VideoProfile{notPossible})
