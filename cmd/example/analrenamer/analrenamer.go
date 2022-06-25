@@ -1,11 +1,11 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -27,11 +27,9 @@ func selectFile(files *[]string) filepath.WalkFunc {
 func main() {
 	glog.Info("hi")
 
-	flag.Parse()
-
 	//indir := os.Args[0]
-	//indir := "/home/gpu/tvideo/fastverifyfaildata1/"
-	indir := "/home/gpu/tmp/"
+	indir := "/home/gpu/tvideo/fastverifyfaildata/"
+	//indir := "/home/gpu/tmp/"
 	if indir == "" {
 		panic("Usage: <input directory>")
 	}
@@ -54,15 +52,17 @@ func main() {
 		if vinfo.Audiosum[0] == 0 && vinfo.Audiosum[1] == 0 && vinfo.Audiosum[2] == 0 && vinfo.Audiosum[3] == 0 {
 			missaudio++
 		}
-		/*
-			sl := strings.Split(infiles[i], "-")
-			newname := sl[0] + "-" + sl[len(sl)-2] + sl[len(sl)-1]
+
+		sl := strings.Split(infiles[i], "-")
+
+		if len(sl) > 4 {
+			newname := sl[0] + "-" + sl[1] + "-" + sl[len(sl)-2] + sl[len(sl)-1]
 
 			e := os.Rename(infiles[i], newname)
 			if e != nil {
-				log.Fatal(e)
+				fmt.Printf("error %s.", newname)
 			}
-		*/
+		}
 	}
 	fmt.Printf("Missing audio count is %d", missaudio)
 
