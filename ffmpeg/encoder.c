@@ -269,7 +269,9 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   if (!fmt) LPMS_ERR(open_output_err, "Unable to guess output format");
 
   // Encoders block - video and audio
-  // add video encoder if needed and don't have one yet
+  // add video encoder if needed and don't have one yet - this is because
+  // for HW contexts we do not destroy video encoder - see close_output()
+  // above for details
   if (ictx->vc && needs_decoder(octx->video->name) && !octx->vc) {
     ret = open_video_encoder(ictx, octx, fmt);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening video output");
@@ -280,6 +282,11 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = open_audio_encoder(ictx, octx, fmt);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening audio output");
   }
+
+  // If we have muxer, we don't have to proceed further. This is when doing
+  // transcoding, it won't be closed between the transcode calls to facilitate
+  // joining of several segments into one transmuxed output
+  if (octx->oc) return 0;
 
   // Now that the encoders are available, muxer can be created
   ret = avformat_alloc_output_context2(&octx->oc, fmt, NULL, octx->fname);

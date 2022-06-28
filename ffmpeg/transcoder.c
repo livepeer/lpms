@@ -140,11 +140,14 @@ int transcode_shutdown(struct transcode_thread *h, int ret)
   if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
   for (int i = 0; i < nb_outputs; i++) {
     //send EOF signal to signature filter
-    if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
+    if (outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
       av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
       free_filter(&outputs[i].sf);
     }
-    close_output(&outputs[i]);
+    // TODO: one day this will be per-output setting and not a global one
+    if (!ictx->transmuxing) {
+      close_output(&outputs[i]);
+    }
   }
   return ret == AVERROR_EOF ? 0 : ret;
 
@@ -228,18 +231,8 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
     octx->res = &results[i];
 
-    // first segment of a stream, need to initalize output HW context
-    // XXX valgrind this line up
-    // when transmuxing we're opening output with first segment, but closing it
-    // only when lpms_transcode_stop called, so we don't want to re-open it
-    // on subsequent segments
-    // TODO: basically this means "open every time, unless we are transmuxing
-    // and output muxer remains open". Which should be moved into open_output()
-    // anyway...
-    if (!h->initialized || !ictx->transmuxing) {
-      ret = open_output(octx, ictx);
-      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
-    }
+    ret = open_output(octx, ictx);
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
   }
 
   return 0;   // all ok
@@ -671,18 +664,10 @@ int transcode(struct transcode_thread *h,
   flush_all_outputs(h);
 
   // Processing finished
-
   if (ipkt) av_packet_free(&ipkt);
   if (iframe) av_frame_free(&iframe);
 
-  if (ictx->transmuxing) {
-    // transcode_shutdown() is not to be called when transmuxing
-    if (ictx->ic) {
-        avformat_close_input(&ictx->ic);
-        ictx->ic = NULL;
-    }
-    return 0;
-  } else return transcode_shutdown(h, ret);
+  return transcode_shutdown(h, ret);
 }
 
 // MA: this should probably be merged with transcode_init, as it basically is a
@@ -757,20 +742,6 @@ int lpms_transcode(input_params *inp, output_params *params,
   return ret;
 }
 
-struct transcode_thread* lpms_transcode_new() {
-  struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
-  if (!h) return NULL;
-  memset(h, 0, sizeof *h);
-  // initialize video stream pixel format.
-  h->ictx.last_format = AV_PIX_FMT_NONE;
-  // keep track of last dts in each stream.
-  // used while transmuxing, to skip packets with invalid dts.
-  for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
-    h->ictx.last_dts[i] = -1;
-  }
-  return h;
-}
-
 void lpms_transcode_stop(struct transcode_thread *handle) {
   // not threadsafe as-is; calling function must ensure exclusivity!
 
@@ -831,6 +802,22 @@ create_dnn_error:
   return NULL;
 }
 
+struct transcode_thread* lpms_transcode_new() {
+  struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
+  if (!h) return NULL;
+  memset(h, 0, sizeof *h);
+  // initialize video stream pixel format.
+  h->ictx.last_format = AV_PIX_FMT_NONE;
+  // keep track of last dts in each stream.
+  // used while transmuxing, to skip packets with invalid dts.
+  for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
+    h->ictx.last_dts[i] = -1;
+  }
+  return h;
+}
+
+// TODO: perhaps could merge together with previous one, giving NULL as
+// dnn_opts when dnn filtergraph is not desired
 struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts)
 {
   struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
