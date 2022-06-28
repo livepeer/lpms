@@ -1291,15 +1291,19 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 }
 
 func TestTranscoderAPI_ClipInvalidConfig(t *testing.T) {
+	run, dir := setupTest(t)
+	cmd := `
+		cp "$1"/../transcoder/test.ts .`
+	run(cmd)
+	defer os.RemoveAll(dir)
 	tc := NewTranscoder()
 	defer tc.StopTranscoder()
-	in := &TranscodeOptionsIn{}
+	in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test.ts", dir)}
 	out := []TranscodeOptions{{
 		Oname:        "-",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 		From:         time.Second,
 	}}
-
 	_, err := tc.Transcode(in, out)
 	if err == nil || err != ErrTranscoderClipConfig {
 		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)

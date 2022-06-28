@@ -554,12 +554,10 @@ func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
 	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
 	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
 	if adjustedWidth.Valid(l) {
-		glog.Infof("[valid] profile %dx%d input=%dx%d accepted %dx%d\n", w, h, format.Width, format.Height, adjustedWidth.W, adjustedWidth.H)
 		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
 		return nil
 	}
 	if adjustedHeight.Valid(l) {
-		glog.Infof("[valid] profile %dx%d input=%dx%d accepted %dx%d\n", w, h, format.Width, format.Height, adjustedHeight.W, adjustedHeight.H)
 		p.Resolution = fmt.Sprintf("%dx%d", adjustedHeight.W, adjustedHeight.H)
 		return nil
 	}
@@ -836,20 +834,6 @@ func destroyCOutputParams(params []C.output_params) {
 }
 
 func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
-	// here we require input size and aspect ratio
-	status, format, err := GetCodecInfo(input.Fname)
-	if err != nil {
-		return nil, err
-	}
-	if status == CodecStatusOk {
-		// We dont return error in case status != CodecStatusOk because proper error would be returned later in the logic.
-		// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
-		err = ensureEncoderLimits(ps, format)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.stopped || t.handle == nil {
@@ -857,6 +841,32 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	if input == nil {
 		return nil, ErrTranscoderInp
+	}
+	// don't read metadata for pipe input, because it can't seek back and av_find_input_format in the decoder will fail
+	if !strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
+		status, format, err := GetCodecInfo(input.Fname)
+		if err != nil {
+			return nil, err
+		}
+		if status == CodecStatusOk {
+			// We don't return error in case status != CodecStatusOk because proper error would be returned later in the logic.
+			// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
+			// here we require input size and aspect ratio
+			err = ensureEncoderLimits(ps, format)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !t.started {
+			// NeedsBypass is state where video is present in container & without any frames
+			videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""
+			if videoMissing {
+				// Audio-only segment, fail fast right here as we cannot handle them nicely
+				return nil, ErrTranscoderVid
+			}
+			// Stream is either OK or completely broken, let the transcoder handle it
+			t.started = true
+		}
 	}
 	hw_type, err := accelDeviceType(input.Accel)
 	if err != nil {
@@ -877,18 +887,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if input.Transmuxing {
 		t.started = true
 	}
-	if !t.started {
-		status, format, _ := GetCodecInfo(input.Fname)
-		// NeedsBypass is state where video is present in container & vithout any frames
-		videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""
-		if videoMissing {
-			// Audio-only segment, fail fast right here as we cannot handle them nicely
-			return nil, ErrTranscoderVid
-		}
-		// Stream is either OK or completely broken, let the transcoder handle it
-		t.started = true
-	}
-
 	// Output configuration
 	params, finalizer, err := createCOutputParams(input, ps)
 	// This prevents C memory leaks
