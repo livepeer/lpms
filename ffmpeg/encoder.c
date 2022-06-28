@@ -5,30 +5,56 @@
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
 
+static AVStream *add_stream_copy(struct output_ctx *octx, AVStream *ist)
+{
+  int ret = 0;
+  if (!ist) LPMS_ERR(add_copy_err, "Input stream for copy not available");
+  AVStream *st = avformat_new_stream(octx->oc, NULL);
+  if (!st) LPMS_ERR(add_copy_err, "Unable to alloc copy stream");
+  octx->vi = st->index;
+  if (octx->fps.den) st->avg_frame_rate = octx->fps;
+  else st->avg_frame_rate = ist->r_frame_rate;
+  st->time_base = ist->time_base;
+  ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
+  if (ret < 0) LPMS_ERR(add_copy_err, "Error copying params from input stream");
+  // Sometimes the codec tag is wonky for some reason, so correct it
+  ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
+  avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
+  return st;
+
+add_copy_err:
+  return NULL;
+}
+
+static AVStream *add_stream_for_encoder(struct output_ctx *octx, AVCodecContext *encoder)
+{
+  int ret = 0;
+  AVStream *st = avformat_new_stream(octx->oc, NULL);
+  if (!st) LPMS_ERR(add_encoder_err, "Unable to alloc encoder stream");
+
+  st->time_base = encoder->time_base;
+  ret = avcodec_parameters_from_context(st->codecpar, encoder);
+  if (ret < 0) LPMS_ERR(add_encoder_err, "Error setting stream params from encoder");
+  return st;
+
+add_encoder_err:
+  return NULL;
+}
+
 static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
 {
   // video stream to muxer
   int ret = 0;
-  AVStream *st = avformat_new_stream(octx->oc, NULL);
-  if (!st) LPMS_ERR(add_video_err, "Unable to alloc video stream");
-  octx->vi = st->index;
-  if (octx->fps.den) st->avg_frame_rate = octx->fps;
-  else st->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
+  AVStream *st = NULL;
   if (is_copy(octx->video->name)) {
-    // "copy block", identical in audio
-    AVStream *ist = ictx->ic->streams[ictx->vi];
-    if (ictx->vi < 0 || !ist) LPMS_ERR(add_video_err, "Input video stream does not exist");
-    st->time_base = ist->time_base;
-    ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0) LPMS_ERR(add_video_err, "Error copying video params from input stream");
-    // Sometimes the codec tag is wonky for some reason, so correct it
-    ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
-    avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
+    // create stream as a copy of existing one
+    if (ictx->vi < 0) LPMS_ERR(add_video_err, "Input video stream does not exist");
+    st = add_stream_copy(octx, ictx->ic->streams[ictx->vi]);
+    if (!st) LPMS_ERR(add_video_err, "Error adding video copy stream");
   } else if (octx->vc) {
-    // "init from encoder" block, similar in audio but without time rescaling
-    st->time_base = octx->vc->time_base;
-    ret = avcodec_parameters_from_context(st->codecpar, octx->vc);
-    if (ret < 0) LPMS_ERR(add_video_err, "Error setting video params from encoder");
+    // create stream from encoder
+    st = add_stream_for_encoder(octx, octx->vc);
+    if (!st) LPMS_ERR(add_video_err, "Error adding video encoder stream");
     // Video has rescale here. Audio is slightly different
     // Rescale the gop/clip time to the expected timebase after filtering.
     // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
@@ -48,7 +74,7 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
       octx->clip_to_pts = av_rescale_q(octx->clip_to, ms_tb, dest_tb);
     }
   } else if (is_drop(octx->video->name)) {
-    LPMS_ERR(add_video_err, "Shouldn't ever happen here");
+    LPMS_ERR(add_video_err, "add_video_stream called for dropped video!");
   } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
   return 0;
 
@@ -59,6 +85,7 @@ add_video_err:
 
 static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 {
+  // TODO: remove this? already handled in create_output
   if (ictx->ai < 0 || octx->da) {
     // Don't need to add an audio stream if no input audio exists,
     // or we're dropping the output audio stream
@@ -67,30 +94,23 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 
   // audio stream to muxer
   int ret = 0;
-  AVStream *st = avformat_new_stream(octx->oc, NULL);
-  if (!st) LPMS_ERR(add_audio_err, "Unable to alloc audio stream");
+  AVStream *st = NULL;
   if (is_copy(octx->audio->name)) {
-    // "copy block" identical in video
-    AVStream *ist = ictx->ic->streams[ictx->ai];
-    if (ictx->ai < 0 || !ist) LPMS_ERR(add_audio_err, "Input audio stream does not exist");
-    st->time_base = ist->time_base;
-    ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0) LPMS_ERR(add_audio_err, "Error copying audio params from input stream");
-    // Sometimes the codec tag is wonky for some reason, so correct it
-    ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
-    avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
+    // create stream as a copy of existing one
+    if (ictx->ai < 0) LPMS_ERR(add_audio_err, "Input audio stream does not exist");
+    st = add_stream_copy(octx, ictx->ic->streams[ictx->ai]);
   } else if (octx->ac) {
-    // "init from encoder" block, similar in video
-    st->time_base = octx->ac->time_base;
-    ret = avcodec_parameters_from_context(st->codecpar, octx->ac);
-    if (ret < 0) LPMS_ERR(add_audio_err, "Error setting audio params from encoder");
+    // create stream from encoder
+    st = add_stream_for_encoder(octx, octx->ac);
     // Video has rescale here
   } else if (is_drop(octx->audio->name)) {
     // Supposed to exit this function early if there's a drop
-    LPMS_ERR(add_audio_err, "Shouldn't ever happen here");
+    LPMS_ERR(add_audio_err, "add_audio_stream called for dropped audio!");
   } else {
     LPMS_ERR(add_audio_err, "No audio encoder; not a copy; what is this?");
   }
+
+  if (!st) LPMS_ERR(add_audio_err, "Error adding video copy stream");
   octx->ai = st->index;
 
   // Audio has rescale here. Video version is slightly different
@@ -115,45 +135,17 @@ add_audio_err:
   return ret;
 }
 
-// TODO: try to find common ground between this function here and add_*_stream
-// Basically, there are two ways of adding streams. Copy or transmuxe way is
-// to just copy info coming from demultiplexer. The other way is to generate
-// the info using existing encoder (audio or video) which will have to be
-// abstracted away in the future (fe to allow CUDA nvenc to work with ffmpeg
-// muxer)
-// Also, there is the question which streams to add. For transmuxing all the
-// streams are copied (audio, video or else), otherwise up to one video and
-// up to one audio stream is copied
+// Add all streams provided by the demuxer. This is used in transmuxing
+// scenarios
 int add_remux_streams(struct input_ctx *ictx, struct output_ctx *octx)
 {
-  int ret = 0;
   octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
   octx->oc->flush_packets = 1;
   for (int i = 0; i < ictx->ic->nb_streams; i++) {
-    ret = 0;
-    AVStream *st = avformat_new_stream(octx->oc, NULL);
-    if (!st) LPMS_ERR(add_remux_err, "Unable to alloc stream");
-    if (octx->fps.den)
-      st->avg_frame_rate = octx->fps;
-    else
-      st->avg_frame_rate = ictx->ic->streams[i]->r_frame_rate;
-
-    // very similar to "copy block" in the above add audio/video
-    AVStream *ist = ictx->ic->streams[i];
-    st->time_base = ist->time_base;
-    ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0)
-      LPMS_ERR(add_remux_err, "Error copying params from input stream");
-    // Sometimes the codec tag is wonky for some reason, so correct it
-    ret = av_codec_get_tag2(octx->oc->oformat->codec_tag,
-                            st->codecpar->codec_id, &st->codecpar->codec_tag);
-    avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist,
-                                                  AVFMT_TBCF_DEMUXER);
-
+    AVStream *st = add_stream_copy(octx, ictx->ic->streams[i]);
+    if (!st) return -1; // error logged in add_stream_copy
   }
   return 0;
-add_remux_err:
-  return ret;
 }
 
 
