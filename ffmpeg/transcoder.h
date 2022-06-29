@@ -56,6 +56,7 @@ typedef struct {
   component_opts video;
 
   int transmuxe;
+  int reopendemux;
 } input_params;
 
 #define MAX_CLASSIFY_SIZE 10
