@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"testing"
 )
@@ -18,6 +19,50 @@ import (
 // on every video packet while transmuxing). Remaining terminology, such as
 // getting the number of video _frames_ (not packets) via ffprobe remains the
 // same, since for given test streams it all adds up
+
+func TestTransmuxer_Pipe(t *testing.T) {
+	run, dir := setupTest(t)
+
+	run("cp \"$1\"/../data/transmux.ts .")
+	ir, iw, err := os.Pipe()
+	fname := fmt.Sprintf("%s/transmux.ts", dir)
+	_, err = os.Stat(fname)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	var bytesWritten int64
+	go func(iw *os.File) {
+		defer iw.Close()
+		f, _ := os.Open(fname)
+		b, _ := io.Copy(iw, f)
+		bytesWritten += b
+	}(iw)
+	fpipe := fmt.Sprintf("pipe:%d", ir.Fd())
+	oname := fmt.Sprintf("%s/test_out.ts", dir)
+	in := &TranscodeOptionsIn{
+		Fname:       fpipe,
+		Transmuxing: true,
+	}
+	tc := NewTranscoder()
+	out := []TranscodeOptions{
+		{
+			Oname: oname,
+			VideoEncoder: ComponentOptions{
+				Name: "copy",
+			},
+			AudioEncoder: ComponentOptions{
+				Name: "copy",
+			},
+			Profile: VideoProfile{Format: FormatNone},
+		},
+	}
+	_, err = tc.Transcode(in, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTransmuxer_Join(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)

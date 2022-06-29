@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAPI_SkippedSegment(t *testing.T) {
@@ -542,9 +544,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected frame counts from stream copy")
 			t.Error(res)
@@ -575,9 +575,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
 		}
@@ -1295,15 +1293,19 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 }
 
 func TestTranscoderAPI_ClipInvalidConfig(t *testing.T) {
+	run, dir := setupTest(t)
+	cmd := `
+		cp "$1"/../transcoder/test.ts .`
+	run(cmd)
+	defer os.RemoveAll(dir)
 	tc := NewTranscoder()
 	defer tc.StopTranscoder()
-	in := &TranscodeOptionsIn{}
+	in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test.ts", dir)}
 	out := []TranscodeOptions{{
 		Oname:        "-",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 		From:         time.Second,
 	}}
-
 	_, err := tc.Transcode(in, out)
 	if err == nil || err != ErrTranscoderClipConfig {
 		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
@@ -1532,6 +1534,7 @@ func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 
 	InitFFmpeg()
 	tc, err := NewTranscoderWithDetector(&DSceneAdultSoccer, deviceid)
+	require.NotNil(t, tc, "look for `Failed to load native model` logs above")
 	if err != nil {
 		t.Error(err)
 	} else {

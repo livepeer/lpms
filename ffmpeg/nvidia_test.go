@@ -6,7 +6,11 @@ package ffmpeg
 import (
 	"fmt"
 	"os"
+	"path"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNvidia_Transcoding(t *testing.T) {
@@ -726,6 +730,62 @@ func TestNvidia_CompareVideo(t *testing.T) {
 
 func TestNvidia_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Nvidia, "0")
+}
+
+func portraitTest(t *testing.T, input string, checkResults bool, profiles []VideoProfile) error {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	outName := func(index int, resolution string) string {
+		return path.Join(wd, "..", "data", fmt.Sprintf("%s_%d_%s.ts", strings.ReplaceAll(input, ".", "_"), index, resolution))
+	}
+	fname := path.Join(wd, "..", "data", input)
+	in := &TranscodeOptionsIn{Fname: fname, Accel: Nvidia}
+	out := make([]TranscodeOptions, 0, len(profiles))
+	outFilenames := make([]string, 0, len(profiles))
+	for index, profile := range profiles {
+		filename := outName(index, profile.Resolution)
+		os.Remove(filename) // remove previous result if it exists
+		out = append(out, TranscodeOptions{
+			Oname:   filename,
+			Profile: profile,
+			Accel:   Nvidia,
+		})
+		outFilenames = append(outFilenames, filename)
+	}
+	_, resultErr := Transcode3(in, out)
+	if resultErr == nil && checkResults {
+		for _, filename := range outFilenames {
+			outInfo, err := os.Stat(filename)
+			if os.IsNotExist(err) {
+				require.NoError(t, err, fmt.Sprintf("output missing %s", filename))
+			} else {
+				defer os.Remove(filename)
+			}
+			require.NotEqual(t, outInfo.Size(), 0, "must produce output %s", filename)
+		}
+	}
+	return resultErr
+}
+
+func TestTranscoder_Portrait(t *testing.T) {
+	hevc := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
+
+	// Usuall portrait input sample
+	require.NoError(t, portraitTest(t, "portrait.ts", true, []VideoProfile{
+		P360p30fps16x9, hevc, P144p30fps16x9,
+	}))
+
+	// Reported as not working sample, but transcoding works as expected
+	require.NoError(t, portraitTest(t, "videotest.mp4", true, []VideoProfile{
+		P360p30fps16x9, hevc, P144p30fps16x9,
+	}))
+
+	// Created one sample that is impossible to resize and fit within encoder limits and still keep aspect ratio:
+	notPossible := VideoProfile{Name: "P8K1x250", Bitrate: "6000k", Framerate: 30, AspectRatio: "1:250", Resolution: "250x62500", Encoder: H264}
+	err := portraitTest(t, "vertical-sample.ts", true, []VideoProfile{notPossible})
+	// We expect error
+	require.Error(t, err)
+	// Error should be `profile 250x62500 size out of bounds 146x146-4096x4096 input=16x4000 adjusted 250x62500 or 16x4096`
 }
 
 // XXX test bframes or delayed frames
