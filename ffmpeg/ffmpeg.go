@@ -883,7 +883,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		} else {
 			//check if we need to reopen demuxer because added audio in video
 			if format.Acodec != "" && !isAudioAllDrop(ps) {
-				if (t.lastacodec == "") || (len(t.lastacodec) > 0 && t.lastacodec != format.Acodec) {
+				if (t.lastacodec == "") || (t.lastacodec != "" && t.lastacodec != format.Acodec) {
 					reopendemux = 1
 					t.lastacodec = format.Acodec
 				}
