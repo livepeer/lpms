@@ -227,6 +227,7 @@ static int open_video_encoder(struct input_ctx *ictx, struct output_ctx *octx,
   }
   ret = avcodec_open2(vc, codec, &octx->video->opts);
   if (ret < 0) LPMS_ERR(video_encoder_err, "Error opening video encoder");
+  // TODO: move this up to open_output or similar
   octx->hw_type = ictx->hw_type;
 video_encoder_err:
   return ret;

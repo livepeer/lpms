@@ -124,18 +124,12 @@ pixfmt_cleanup:
 }
 
 
-int open_audio_decoder(input_params *params, struct input_ctx *ctx)
+int open_audio_decoder(struct input_ctx *ctx, AVCodec *codec)
 {
   int ret = 0;
-  AVCodec *codec = NULL;
   AVFormatContext *ic = ctx->ic;
 
   // open audio decoder
-  ctx->ai = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
-  if (ctx->da) ; // skip decoding audio
-  else if (ctx->ai < 0) {
-    LPMS_INFO("No audio stream found in input");
-  } else {
     AVCodecContext * ac = avcodec_alloc_context3(codec);
     if (!ac) LPMS_ERR(open_audio_err, "Unable to alloc audio codec");
     if (ctx->ac) LPMS_WARN("An audio context was already open!");
@@ -144,7 +138,6 @@ int open_audio_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_audio_err, "Unable to assign audio params");
     ret = avcodec_open2(ac, codec, NULL);
     if (ret < 0) LPMS_ERR(open_audio_err, "Unable to open audio decoder");
-  }
 
   return 0;
 
@@ -182,23 +175,19 @@ char* get_hw_decoder(int ff_codec_id, int hw_type)
                 default:
                     return "";
             }
+      default:
+        return "";
     }
 }
 
-int open_video_decoder(input_params *params, struct input_ctx *ctx)
+int open_video_decoder(struct input_ctx *ctx, AVCodec *codec)
 {
   int ret = 0;
-  AVCodec *codec = NULL;
   AVDictionary **opts = NULL;
   AVFormatContext *ic = ctx->ic;
   // open video decoder
-  ctx->vi = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
-  if (ctx->dv) ; // skip decoding video
-  else if (ctx->vi < 0) {
-    LPMS_WARN("No video stream found in input");
-  } else {
-    if (params->hw_type > AV_HWDEVICE_TYPE_NONE) {
-      char* decoder_name = get_hw_decoder(codec->id, params->hw_type);
+    if (ctx->hw_type > AV_HWDEVICE_TYPE_NONE) {
+      char* decoder_name = get_hw_decoder(codec->id, ctx->hw_type);
       if (!*decoder_name) {
         ret = lpms_ERR_INPUT_CODEC;
         LPMS_ERR(open_decoder_err, "Input codec does not support hardware acceleration");
@@ -212,11 +201,6 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
         ret = lpms_ERR_INPUT_PIXFMT;
         LPMS_ERR(open_decoder_err, "Non 4:2:0 pixel format detected in input");
       }
-    } else if (params->video.name && strlen(params->video.name) != 0) {
-      // Try to find user specified decoder by name
-      AVCodec *c = avcodec_find_decoder_by_name(params->video.name);
-      if (c) codec = c;
-      if (params->video.opts) opts = &params->video.opts;
     }
     AVCodecContext *vc = avcodec_alloc_context3(codec);
     if (!vc) LPMS_ERR(open_decoder_err, "Unable to alloc video codec");
@@ -225,19 +209,17 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to assign video params");
     vc->opaque = (void*)ctx;
     // XXX Could this break if the original device falls out of scope in golang?
-    if (params->hw_type == AV_HWDEVICE_TYPE_CUDA) {
+    if (ctx->hw_type == AV_HWDEVICE_TYPE_CUDA) {
       // First set the hw device then set the hw frame
-      ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
+      ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, ctx->hw_type, ctx->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
     }
-    ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
     av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
     ret = avcodec_open2(vc, codec, opts);
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open video decoder");
-  }
 
   return 0;
 
@@ -249,27 +231,65 @@ open_decoder_err:
 
 int open_input(input_params *params, struct input_ctx *ctx)
 {
-  AVFormatContext *ic   = NULL;
   char *inp = params->fname;
   int ret = 0;
+  int reopen_decoders = !params->transmuxe;
 
+  // TODO: move this away to init
   ctx->transmuxing = params->transmuxe;
 
+  // Not sure about this, though
+  ctx->hw_type = params->hw_type;
+  ctx->device = params->device;
+
   // open demuxer
-  ret = avformat_open_input(&ic, inp, NULL, NULL);
-  if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
-  ctx->ic = ic;
-  ret = avformat_find_stream_info(ic, NULL);
-  if (ret < 0) LPMS_ERR(open_input_err, "Unable to find input info");
-  if (params->transmuxe == 0) {
-    ret = open_video_decoder(params, ctx);
-    if (ret < 0) LPMS_ERR(open_input_err, "Unable to open video decoder")
-    ret = open_audio_decoder(params, ctx);
-    if (ret < 0) LPMS_ERR(open_input_err, "Unable to open audio decoder")
-    ctx->last_frame_v = av_frame_alloc();
-    if (!ctx->last_frame_v) LPMS_ERR(open_input_err, "Unable to alloc last_frame_v");
-    ctx->last_frame_a = av_frame_alloc();
-    if (!ctx->last_frame_a) LPMS_ERR(open_input_err, "Unable to alloc last_frame_a");
+  if (!ctx->ic) {
+    ret = avformat_open_input(&ctx->ic, inp, NULL, NULL);
+    if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
+    ret = avformat_find_stream_info(ctx->ic, NULL);
+    if (ret < 0) LPMS_ERR(open_input_err, "Unable to find input info");
+  } else if (!ctx->ic->pb) {
+    // reopen input segment file IO context if needed
+    ret = avio_open(&ctx->ic->pb, inp, AVIO_FLAG_READ);
+    if (ret < 0) LPMS_ERR(open_input_err, "Unable to reopen file");
+  } else reopen_decoders = 0;
+
+  AVCodec *video_codec = NULL;
+  AVCodec *audio_codec = NULL;
+  ctx->vi = av_find_best_stream(ctx->ic, AVMEDIA_TYPE_VIDEO, -1, -1, &video_codec, 0);
+  ctx->ai = av_find_best_stream(ctx->ic, AVMEDIA_TYPE_AUDIO, -1, -1, &audio_codec, 0);
+
+  if (AV_HWDEVICE_TYPE_CUDA == ctx->hw_type && ctx->vi >= 0) {
+    if (ctx->last_format == AV_PIX_FMT_NONE) ctx->last_format = ctx->ic->streams[ctx->vi]->codecpar->format;
+    else if (ctx->ic->streams[ctx->vi]->codecpar->format != ctx->last_format) {
+      LPMS_WARN("Input pixel format has been changed in the middle.");
+      ctx->last_format = ctx->ic->streams[ctx->vi]->codecpar->format;
+      // if the decoder is not re-opened when the video pixel format is changed,
+      // the decoder tries HW decoding with the video context initialized to a pixel format different from the input one.
+      // to handle a change in the input pixel format,
+      // we close the demuxer and re-open the decoder by calling open_input().
+      free_input(ctx);
+      ret = open_input(params, ctx);
+      if (ret < 0) LPMS_ERR(open_input_err, "Unable to reopen video demuxer for HW decoding");
+      reopen_decoders = 0;
+    }
+  }
+
+  if (reopen_decoders) {
+    if (!ctx->dv && (ctx->vi >= 0) &&
+        (!ctx->vc || (ctx->hw_type == AV_HWDEVICE_TYPE_NONE))) {
+      ret = open_video_decoder(ctx, video_codec);
+      if (ret < 0) LPMS_ERR(open_input_err, "Unable to open video decoder")
+      ctx->last_frame_v = av_frame_alloc();
+      if (!ctx->last_frame_v) LPMS_ERR(open_input_err, "Unable to alloc last_frame_v");
+    } else LPMS_WARN("No video stream found in input");
+
+    if (!ctx->da && (ctx->ai >= 0)) {
+      ret = open_audio_decoder(ctx, audio_codec);
+      if (ret < 0) LPMS_ERR(open_input_err, "Unable to open audio decoder")
+      ctx->last_frame_a = av_frame_alloc();
+      if (!ctx->last_frame_a) LPMS_ERR(open_input_err, "Unable to alloc last_frame_a");
+    } else LPMS_WARN("No audio stream found in input");
   }
 
   return 0;

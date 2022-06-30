@@ -164,47 +164,8 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
   int nb_outputs = h->nb_outputs;
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
-
-  // by default we re-use decoder between segments of same stream
-  // unless we are using SW deocder and had to re-open IO or demuxer
-  if (!ictx->ic) {
-    // reopen demuxer for the input segment if needed
-    // XXX could open_input() be re-used here?
-    ret = avformat_open_input(&ictx->ic, inp->fname, NULL, NULL);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen demuxer");
-    ret = avformat_find_stream_info(ictx->ic, NULL);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to find info for reopened stream")
-  } else if (!ictx->ic->pb) {
-    // reopen input segment file IO context if needed
-    ret = avio_open(&ictx->ic->pb, inp->fname, AVIO_FLAG_READ);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen file");
-  } else reopen_decoders = 0;
-
-  if (AV_HWDEVICE_TYPE_CUDA == ictx->hw_type && ictx->vi >= 0) {
-    if (ictx->last_format == AV_PIX_FMT_NONE) ictx->last_format = ictx->ic->streams[ictx->vi]->codecpar->format;
-    else if (ictx->ic->streams[ictx->vi]->codecpar->format != ictx->last_format) {
-      LPMS_WARN("Input pixel format has been changed in the middle.");
-      ictx->last_format = ictx->ic->streams[ictx->vi]->codecpar->format;
-      // if the decoder is not re-opened when the video pixel format is changed,
-      // the decoder tries HW decoding with the video context initialized to a pixel format different from the input one.
-      // to handle a change in the input pixel format,
-      // we close the demuxer and re-open the decoder by calling open_input().
-      free_input(&h->ictx);
-      ret = open_input(inp, &h->ictx);
-      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video demuxer for HW decoding");
-      reopen_decoders = 0;
-    }
-  }
-
-  if (reopen_decoders) {
-    // XXX check to see if we can also reuse decoder for sw decoding
-    if (ictx->hw_type == AV_HWDEVICE_TYPE_NONE) {
-      ret = open_video_decoder(inp, ictx);
-      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen video decoder");
-    }
-    ret = open_audio_decoder(inp, ictx);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen audio decoder")
-  }
+  ret = open_input(inp, ictx);
+  if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
 
   // populate output contexts
   for (int i = 0; i <  nb_outputs; i++) {
@@ -679,6 +640,9 @@ int lpms_transcode(input_params *inp, output_params *params,
   struct transcode_thread *h = inp->handle;
 
   if (!h->initialized) {
+    // MA: previously this switch had "wider" use, and so it was flipped only
+    // after first transcode() call. This is no longer true so moving it here.
+    h->initialized = 1;
     int i = 0;
     int decode_a = 0, decode_v = 0;
     if (nb_outputs > MAX_OUTPUT_SIZE) {
@@ -686,6 +650,12 @@ int lpms_transcode(input_params *inp, output_params *params,
     }
 
     // Check to see if we can skip decoding
+    // MA: note that here we make decision about dropping INPUT video or audio,
+    // and it is based upon the OUTPUT configuration, which may change in
+    // subsequent calls - but it is never checked again. So suppose audio can be
+    // dropped in first configuration, then ictx->da will be set to 1, and all
+    // subsequent configurations as long as this transmuxer "lives" will have no
+    // audio!
     for (i = 0; i < nb_outputs; i++) {
       if (!needs_decoder(params[i].video.name)) h->ictx.dv = ++decode_v == nb_outputs;
       if (!needs_decoder(params[i].audio.name)) h->ictx.da = ++decode_a == nb_outputs;
@@ -694,10 +664,10 @@ int lpms_transcode(input_params *inp, output_params *params,
     h->nb_outputs = nb_outputs;
 
     // populate input context
-    ret = open_input(inp, &h->ictx);
-    if (ret < 0) {
-      return ret;
-    }
+//    ret = open_input(inp, &h->ictx);
+//    if (ret < 0) {
+//      return ret;
+//    }
   }
 
   // MA: Note that here difference of configurations here is based upon number
@@ -738,7 +708,6 @@ int lpms_transcode(input_params *inp, output_params *params,
   ret = transcode_init(h, inp, params, results);
   if (ret < 0) return ret;
   ret = transcode(h, inp, params, decoded_results);
-  h->initialized = 1;
   return ret;
 }
 

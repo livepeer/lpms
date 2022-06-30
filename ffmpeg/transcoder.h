@@ -53,7 +53,7 @@ typedef struct {
   char *xcoderParams;
 
   // Optional video decoder + opts
-  component_opts video;
+//  component_opts video;
 
   int transmuxe;
 } input_params;
