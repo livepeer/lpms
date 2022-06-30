@@ -85,10 +85,11 @@ type ComponentOptions struct {
 }
 
 type Transcoder struct {
-	handle  *C.struct_transcode_thread
-	stopped bool
-	started bool
-	mu      *sync.Mutex
+	handle     *C.struct_transcode_thread
+	stopped    bool
+	started    bool
+	lastacodec string
+	mu         *sync.Mutex
 }
 
 type TranscodeOptionsIn struct {
@@ -593,6 +594,15 @@ func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) err
 	return nil
 }
 
+func isAudioAllDrop(ps []TranscodeOptions) bool {
+	for _, p := range ps {
+		if p.AudioEncoder.Name != "drop" {
+			return false
+		}
+	}
+	return true
+}
+
 // create C output params array and return it along with corresponding finalizer
 // function that makes sure there are no C memory leaks
 func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.output_params, func(), error) {
@@ -842,6 +852,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if input == nil {
 		return nil, ErrTranscoderInp
 	}
+	var reopendemux C.int
+	reopendemux = 0
 	// don't read metadata for pipe input, because it can't seek back and av_find_input_format in the decoder will fail
 	if !strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
 		status, format, err := GetCodecInfo(input.Fname)
@@ -864,8 +876,18 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				// Audio-only segment, fail fast right here as we cannot handle them nicely
 				return nil, ErrTranscoderVid
 			}
+			// keep last audio codec
+			t.lastacodec = format.Acodec
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
+		} else {
+			//check if we need to reopen demuxer because added audio in video
+			if format.Acodec != "" && !isAudioAllDrop(ps) {
+				if (t.lastacodec == "") || (t.lastacodec != "" && t.lastacodec != format.Acodec) {
+					reopendemux = 1
+					t.lastacodec = format.Acodec
+				}
+			}
 		}
 	}
 	hw_type, err := accelDeviceType(input.Accel)
@@ -907,7 +929,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	xcoderParams := C.CString("")
 	defer C.free(unsafe.Pointer(xcoderParams))
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
-		handle: t.handle}
+		handle: t.handle, reopendemux: reopendemux}
 	if input.Transmuxing {
 		inp.transmuxe = 1
 	}

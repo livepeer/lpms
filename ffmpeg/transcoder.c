@@ -439,6 +439,12 @@ int lpms_transcode(input_params *inp, output_params *params,
     if (ret < 0) {
       return ret;
     }
+  } else if (inp->reopendemux) {
+      free_input(&h->ictx);
+      ret = open_input(inp, &h->ictx);
+      if (ret < 0) {
+        return ret;
+      }
   }
 
   if (h->nb_outputs != nb_outputs) {
