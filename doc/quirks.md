@@ -80,3 +80,22 @@ The solution is to re-use transcoding session, in the form of keeping Ffmpeg obj
 3. Use a [custom flushing API](https://github.com/livepeer/lpms/blob/fe330766146dba62f3e1fccd07a4b96fa1abcf4d/ffmpeg/encoder.c#L342-L345) for the encoder, so that the same session can be re-used after flushing.
 
 When software (CPU) codecs are selected for transcoding, as well as for audio codecs, the logic above is not required, because initialization is fast and feasible per-segment.
+
+## Re-initializing transcoding session on audio changes
+
+### Problem
+
+Some MPEG-TS streams have segments [without audio packets](https://github.com/livepeer/lpms/issues/337). Such audioless segments may be encountered at any point of the stream. Because we re-use Ffmpeg context and demuxer between segments to save time on hardware codec initialization, renditions of such streams wouldn't ever have the audio, if first source segment didn't have it.
+
+### Solution
+
+The solution is to [keep](https://github.com/livepeer/lpms/blob/6ef0b4b0ed5bf34534298805492e0b3924cf9752/ffmpeg/ffmpeg.go#L91) track of segment audio stream information in the transcoding context, and react when there's a change.
+There are two cases:
+1. Video-only segment(s) is the first segment of the stream  
+    In this case, when first segment with the audio is encountered, the Ffmpeg context is re-initialized by calling [open_input()](https://github.com/livepeer/lpms/blob/622b50738904a1c7d75a3b9650f1cf1341980670/ffmpeg/decoder.c#L298) function. After that, demuxer is aware of audio stream, and it will be copied to renditions.
+2. Video-only segment(s) first encountered mid-stream  
+No action is needed. Audio encoder simply won't get any packets from the demuxer, and rendition segment won't have audio packets either.
+   
+# Side effects
+1. Important side effect of above solution is hardware context re-initialization. When using hardware encoders with 'slow' initialization, we will perform such initialization twice for 'no audio' > 'audio' stream, which may introduce additional latency mid-stream. At the time of writing, we don't know how often such streams are encountered in production environment. The consensus among developers is that even if such re-initialization happen, it still won't affect QoS, because hardware transcoding is, normally, many times faster than realtime.
+
