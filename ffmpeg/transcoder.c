@@ -711,6 +711,11 @@ int lpms_transcode(input_params *inp, output_params *params,
   return ret;
 }
 
+int lpms_transcode_reopen_demux(input_params *inp) {
+  free_input(&inp->handle->ictx);
+  return open_input(inp, &inp->handle->ictx);
+}
+
 void lpms_transcode_stop(struct transcode_thread *handle) {
   // not threadsafe as-is; calling function must ensure exclusivity!
 

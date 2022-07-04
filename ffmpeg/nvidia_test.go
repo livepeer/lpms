@@ -789,3 +789,7 @@ func TestTranscoder_Portrait(t *testing.T) {
 }
 
 // XXX test bframes or delayed frames
+
+func TestNvidia_DiscontinuityAudioSegment(t *testing.T) {
+	discontinuityAudioSegment(t, Nvidia)
+}
