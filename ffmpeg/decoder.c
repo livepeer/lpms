@@ -4,6 +4,10 @@
 
 #include <libavutil/pixfmt.h>
 
+static int is_mpegts(AVFormatContext *ic) {
+  return !strcmp("mpegts", ic->iformat->name);
+}
+
 static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFrame *frame)
 {
     int ret = avcodec_receive_frame(dec, frame);
@@ -142,7 +146,7 @@ int open_audio_decoder(struct input_ctx *ctx, AVCodec *codec)
   return 0;
 
 open_audio_err:
-  free_input(ctx);
+  free_input(ctx, FORCE_CLOSE_HW_DECODER);
   return ret;
 }
 
@@ -224,7 +228,7 @@ int open_video_decoder(struct input_ctx *ctx, AVCodec *codec)
   return 0;
 
 open_decoder_err:
-  free_input(ctx);
+  free_input(ctx, FORCE_CLOSE_HW_DECODER);
   if (ret == AVERROR_UNKNOWN) ret = lpms_ERR_UNRECOVERABLE;
   return ret;
 }
@@ -268,7 +272,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
       // the decoder tries HW decoding with the video context initialized to a pixel format different from the input one.
       // to handle a change in the input pixel format,
       // we close the demuxer and re-open the decoder by calling open_input().
-      free_input(ctx);
+      free_input(ctx, FORCE_CLOSE_HW_DECODER);
       ret = open_input(params, ctx);
       if (ret < 0) LPMS_ERR(open_input_err, "Unable to reopen video demuxer for HW decoding");
       reopen_decoders = 0;
@@ -296,20 +300,50 @@ int open_input(input_params *params, struct input_ctx *ctx)
 
 open_input_err:
   LPMS_INFO("Freeing input based on OPEN INPUT error");
-  free_input(ctx);
+  free_input(ctx, FORCE_CLOSE_HW_DECODER);
   return ret;
 }
 
-void free_input(struct input_ctx *inctx)
+void free_input(struct input_ctx *ictx, enum FreeInputPolicy policy)
 {
-  if (inctx->ic) avformat_close_input(&inctx->ic);
-  if (inctx->vc) {
-    if (inctx->vc->hw_device_ctx) av_buffer_unref(&inctx->vc->hw_device_ctx);
-    avcodec_free_context(&inctx->vc);
+  if (FORCE_CLOSE_HW_DECODER == policy) {
+    // This means we are closing everything, so we also want to
+    // remove demuxer
+    if (ictx->ic) avformat_close_input(&ictx->ic);
+  } else {
+    // Otherwise we may want to retain demuxer in certain cases. Note that
+    // this is a lot of effort for very little gain, because demuxer is very
+    // cheap to create and destroy (being software component)
+    if (ictx->ic) {
+      // Only mpegts reuse the demuxer for subsequent segments.
+      // Close the demuxer for everything else.
+      // TODO might be reusable with fmp4 ; check!
+      if (!is_mpegts(ictx->ic)) avformat_close_input(&ictx->ic);
+      else if (ictx->ic->pb) {
+        // Reset leftovers from demuxer internals to prepare for next segment
+        avio_flush(ictx->ic->pb);
+        avformat_flush(ictx->ic);
+        avio_closep(&ictx->ic->pb);
+      }
+    }
   }
-  if (inctx->ac) avcodec_free_context(&inctx->ac);
-  if (inctx->hw_device_ctx) av_buffer_unref(&inctx->hw_device_ctx);
-  if (inctx->last_frame_v) av_frame_free(&inctx->last_frame_v);
-  if (inctx->last_frame_a) av_frame_free(&inctx->last_frame_a);
+  ictx->flushed = 0;
+  ictx->flushing = 0;
+  ictx->pkt_diff = 0;
+  ictx->sentinel_count = 0;
+  if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
+  if (ictx->ac) avcodec_free_context(&ictx->ac);
+  // video decoder is always closed when it is a SW decoder
+  // otherwise only when forced
+  int close_vc = ictx->vc &&
+    ((AV_HWDEVICE_TYPE_NONE == ictx->hw_type) || (FORCE_CLOSE_HW_DECODER == policy));
+  if (close_vc) {
+    if (ictx->vc->hw_device_ctx) av_buffer_unref(&ictx->vc->hw_device_ctx);
+    avcodec_free_context(&ictx->vc);
+    if (ictx->hw_device_ctx) av_buffer_unref(&ictx->hw_device_ctx);
+    if (ictx->last_frame_v) av_frame_free(&ictx->last_frame_v);
+  }
+  if (ictx->last_frame_a) av_frame_free(&ictx->last_frame_a);
+
 }
 
