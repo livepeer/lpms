@@ -91,10 +91,6 @@ void lpms_init(enum LPMSLogLevel max_level)
 // Transcoder
 //
 
-static int is_mpegts(AVFormatContext *ic) {
-  return !strcmp("mpegts", ic->iformat->name);
-}
-
 static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
 {
   // only issue w this flushing method is it's not necessarily sequential
@@ -113,45 +109,6 @@ static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
   }
   av_interleaved_write_frame(octx->oc, NULL); // flush muxer
   return av_write_trailer(octx->oc);
-}
-
-int transcode_shutdown(struct transcode_thread *h, int ret)
-{
-  struct input_ctx *ictx = &h->ictx;
-  struct output_ctx *outputs = h->outputs;
-  int nb_outputs = h->nb_outputs;
-  if (ictx->ic) {
-    // Only mpegts reuse the demuxer for subsequent segments.
-    // Close the demuxer for everything else.
-    // TODO might be reusable with fmp4 ; check!
-    if (!is_mpegts(ictx->ic)) avformat_close_input(&ictx->ic);
-    else if (ictx->ic->pb) {
-      // Reset leftovers from demuxer internals to prepare for next segment
-      avio_flush(ictx->ic->pb);
-      avformat_flush(ictx->ic);
-      avio_closep(&ictx->ic->pb);
-    }
-  }
-  ictx->flushed = 0;
-  ictx->flushing = 0;
-  ictx->pkt_diff = 0;
-  ictx->sentinel_count = 0;
-  if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
-  if (ictx->ac) avcodec_free_context(&ictx->ac);
-  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
-  for (int i = 0; i < nb_outputs; i++) {
-    //send EOF signal to signature filter
-    if (outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
-      av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
-      free_filter(&outputs[i].sf);
-    }
-    // TODO: one day this will be per-output setting and not a global one
-    if (!ictx->transmuxing) {
-      close_output(&outputs[i]);
-    }
-  }
-  return ret == AVERROR_EOF ? 0 : ret;
-
 }
 
 void handle_discontinuity(struct input_ctx *ictx, AVPacket *pkt)
@@ -678,11 +635,26 @@ int lpms_transcode(input_params *inp, output_params *params,
 
   // Part IV: shutdown
 transcode_cleanup:
-  return transcode_shutdown(h, ret);
+
+  free_input(&h->ictx, PRESERVE_HW_DECODER);
+  for (int i = 0; i < nb_outputs; i++) {
+    struct output_ctx *octx = h->outputs + i;
+    // TODO: this sounds as something that could be done in transcode() proper
+    //send EOF signal to signature filter
+    if (octx->sfilters != NULL && octx->sf.src_ctx != NULL) {
+      av_buffersrc_close(octx->sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
+      free_filter(&octx->sf);
+    }
+    // TODO: one day this will be per-output setting and not a global one
+    if (!h->ictx.transmuxing) {
+      close_output(octx);
+    }
+  }
+  return ret == AVERROR_EOF ? 0 : ret;
 }
 
 int lpms_transcode_reopen_demux(input_params *inp) {
-  free_input(&inp->handle->ictx);
+  free_input(&inp->handle->ictx, FORCE_CLOSE_HW_DECODER);
   return open_input(inp, &inp->handle->ictx);
 }
 
@@ -693,7 +665,7 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
 
   if (!handle) return;
 
-  free_input(&handle->ictx);
+  free_input(&handle->ictx, FORCE_CLOSE_HW_DECODER);
   for (i = 0; i < MAX_OUTPUT_SIZE; i++) {
     if (handle->ictx.transmuxing && handle->outputs[i].oc) {
         av_write_trailer(handle->outputs[i].oc);
