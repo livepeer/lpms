@@ -17,6 +17,7 @@ var lpmsErrors = []struct {
 	{Code: C.lpms_ERR_INPUT_PIXFMT, Desc: "Unsupported input pixel format"},
 	{Code: C.lpms_ERR_FILTERS, Desc: "Error initializing filtergraph"},
 	{Code: C.lpms_ERR_OUTPUTS, Desc: "Too many outputs"},
+  {Code: C.lpms_ERR_INPUTS, Desc: "No input configuration"},
 	{Code: C.lpms_ERR_INPUT_CODEC, Desc: "Unsupported input codec"},
 	{Code: C.lpms_ERR_INPUT_NOKF, Desc: "No keyframes in input"},
 	{Code: C.lpms_ERR_UNRECOVERABLE, Desc: "Unrecoverable state, restart process"},

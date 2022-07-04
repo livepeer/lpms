@@ -18,6 +18,7 @@ const int lpms_ERR_FILTERS = FFERRTAG('F','L','T','R');
 const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_FILTER_FLUSHED = FFERRTAG('F','L','F','L');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
+const int lpms_ERR_INPUTS = FFERRTAG('I', 'N', 'P', 'Z');
 const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 
 //
@@ -151,55 +152,6 @@ int transcode_shutdown(struct transcode_thread *h, int ret)
   }
   return ret == AVERROR_EOF ? 0 : ret;
 
-}
-
-int transcode_init(struct transcode_thread *h, input_params *inp,
-                   output_params *params, output_results *results)
-{
-  int ret = 0;
-  struct input_ctx *ictx = &h->ictx;
-  ictx->xcoderParams = inp->xcoderParams;
-  int reopen_decoders = !ictx->transmuxing;
-  struct output_ctx *outputs = h->outputs;
-  int nb_outputs = h->nb_outputs;
-
-  if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
-  ret = open_input(inp, ictx);
-  if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
-
-  // populate output contexts
-  for (int i = 0; i <  nb_outputs; i++) {
-    struct output_ctx *octx = &outputs[i];
-    octx->fname = params[i].fname;
-    octx->width = params[i].w;
-    octx->height = params[i].h;
-    octx->muxer = &params[i].muxer;
-    octx->audio = &params[i].audio;
-    octx->video = &params[i].video;
-    octx->vfilters = params[i].vfilters;
-    octx->sfilters = params[i].sfilters;
-    octx->xcoderParams = params[i].xcoderParams;
-    if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
-      octx->is_dnn_profile = params[i].is_dnn;
-      octx->dnn_filtergraph = &h->dnn_filtergraph;
-    }
-    if (params[i].bitrate) octx->bitrate = params[i].bitrate;
-    if (params[i].fps.den) octx->fps = params[i].fps;
-    if (params[i].gop_time) octx->gop_time = params[i].gop_time;
-    if (params[i].from) octx->clip_from = params[i].from;
-    if (params[i].to) octx->clip_to = params[i].to;
-    octx->dv = ictx->vi < 0 || is_drop(octx->video->name);
-    octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
-    octx->res = &results[i];
-
-    ret = open_output(octx, ictx);
-    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
-  }
-
-  return 0;   // all ok
-
-transcode_cleanup:
-  return transcode_shutdown(h, ret);
 }
 
 void handle_discontinuity(struct input_ctx *ictx, AVPacket *pkt)
@@ -628,7 +580,7 @@ int transcode(struct transcode_thread *h,
   if (ipkt) av_packet_free(&ipkt);
   if (iframe) av_frame_free(&iframe);
 
-  return transcode_shutdown(h, ret);
+  return ret;
 }
 
 // MA: this should probably be merged with transcode_init, as it basically is a
@@ -638,43 +590,20 @@ int lpms_transcode(input_params *inp, output_params *params,
 {
   int ret = 0;
   struct transcode_thread *h = inp->handle;
+  int decode_a = 0, decode_v = 0;
 
-  if (!h->initialized) {
-    // MA: previously this switch had "wider" use, and so it was flipped only
-    // after first transcode() call. This is no longer true so moving it here.
-    h->initialized = 1;
-    int i = 0;
-    int decode_a = 0, decode_v = 0;
-    if (nb_outputs > MAX_OUTPUT_SIZE) {
-      return lpms_ERR_OUTPUTS;
-    }
-
-    // Check to see if we can skip decoding
-    // MA: note that here we make decision about dropping INPUT video or audio,
-    // and it is based upon the OUTPUT configuration, which may change in
-    // subsequent calls - but it is never checked again. So suppose audio can be
-    // dropped in first configuration, then ictx->da will be set to 1, and all
-    // subsequent configurations as long as this transmuxer "lives" will have no
-    // audio!
-    for (i = 0; i < nb_outputs; i++) {
-      if (!needs_decoder(params[i].video.name)) h->ictx.dv = ++decode_v == nb_outputs;
-      if (!needs_decoder(params[i].audio.name)) h->ictx.da = ++decode_a == nb_outputs;
-    }
-
-    h->nb_outputs = nb_outputs;
-
-    // populate input context
-//    ret = open_input(inp, &h->ictx);
-//    if (ret < 0) {
-//      return ret;
-//    }
+  // Part I: Configuration checks. These are far too lax really
+  if (nb_outputs > MAX_OUTPUT_SIZE) {
+    return lpms_ERR_OUTPUTS;
   }
+
+  if (!inp) return lpms_ERR_INPUTS;
 
   // MA: Note that here difference of configurations here is based upon number
   // of outputs alone. But what if the number of outputs is the same, but they
   // are of different types? What if the number and types of outputs are the
   // same but there is a different permutation?
-  if (h->nb_outputs != nb_outputs) {
+  if (h->nb_outputs && (h->nb_outputs != nb_outputs)) {
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
     bool only_detector_diff = true;
@@ -696,19 +625,60 @@ int lpms_transcode(input_params *inp, output_params *params,
       if (!h->outputs[i].is_dnn_profile)
         only_detector_diff = false;
     }
-    if (only_detector_diff) {
-      h->nb_outputs = nb_outputs;
-    } else {
+    if (!only_detector_diff) {
       return lpms_ERR_OUTPUTS;
     }
 #undef MAX
 #undef MIN
   }
 
-  ret = transcode_init(h, inp, params, results);
-  if (ret < 0) return ret;
+  // Part II: If we got here, it appears we can use new configuration
+  h->nb_outputs = nb_outputs;
+  // Check to see if we can skip decoding
+  for (int i = 0; i < nb_outputs; i++) {
+    if (!needs_decoder(params[i].video.name)) h->ictx.dv = ++decode_v == nb_outputs;
+    if (!needs_decoder(params[i].audio.name)) h->ictx.da = ++decode_a == nb_outputs;
+  }
+
+  ret = open_input(inp, &h->ictx);
+  if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
+
+  // populate output contexts
+  for (int i = 0; i < nb_outputs; i++) {
+    struct output_ctx *octx = h->outputs + i;
+    octx->fname = params[i].fname;
+    octx->width = params[i].w;
+    octx->height = params[i].h;
+    octx->muxer = &params[i].muxer;
+    octx->audio = &params[i].audio;
+    octx->video = &params[i].video;
+    octx->vfilters = params[i].vfilters;
+    octx->sfilters = params[i].sfilters;
+    octx->xcoderParams = params[i].xcoderParams;
+    if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
+      octx->is_dnn_profile = params[i].is_dnn;
+      octx->dnn_filtergraph = &h->dnn_filtergraph;
+    }
+    if (params[i].bitrate) octx->bitrate = params[i].bitrate;
+    if (params[i].fps.den) octx->fps = params[i].fps;
+    if (params[i].gop_time) octx->gop_time = params[i].gop_time;
+    if (params[i].from) octx->clip_from = params[i].from;
+    if (params[i].to) octx->clip_to = params[i].to;
+    octx->dv = h->ictx.vi < 0 || is_drop(octx->video->name);
+    octx->da = h->ictx.ai < 0 || is_drop(octx->audio->name);
+    octx->res = &results[i];
+
+    ret = open_output(octx, &h->ictx);
+    if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
+  }
+
+  // Part III: transcoding operation itself since everything was set for up
+  // properly (or at least it appears so)
   ret = transcode(h, inp, params, decoded_results);
-  return ret;
+
+  // Part IV: shutdown
+transcode_cleanup:
+  return transcode_shutdown(h, ret);
 }
 
 int lpms_transcode_reopen_demux(input_params *inp) {
