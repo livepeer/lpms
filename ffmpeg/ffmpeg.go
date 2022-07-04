@@ -852,8 +852,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if input == nil {
 		return nil, ErrTranscoderInp
 	}
-	var reopendemux C.int
-	reopendemux = 0
+	var reopendemux bool
+	reopendemux = false
 	// don't read metadata for pipe input, because it can't seek back and av_find_input_format in the decoder will fail
 	if !strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
 		status, format, err := GetCodecInfo(input.Fname)
@@ -881,10 +881,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
 		} else {
-			//check if we need to reopen demuxer because added audio in video
+			// check if we need to reopen demuxer because added audio in video
+			// TODO: fixes like that are needed because handling of cfg change in
+			// LPMS is a joke. We need to decide whether LPMS should support full
+			// dynamic config one day and either implement it there, or implement
+			// some generic workaround for the problem in Go code, such as marking
+			// config changes as significant/insignificant and re-creating the instance
+			// if the former type change happens
 			if format.Acodec != "" && !isAudioAllDrop(ps) {
 				if (t.lastacodec == "") || (t.lastacodec != "" && t.lastacodec != format.Acodec) {
-					reopendemux = 1
+					reopendemux = true
 					t.lastacodec = format.Acodec
 				}
 			}
@@ -929,7 +935,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	xcoderParams := C.CString("")
 	defer C.free(unsafe.Pointer(xcoderParams))
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
-		handle: t.handle, reopendemux: reopendemux}
+		handle: t.handle}
 	if input.Transmuxing {
 		inp.transmuxe = 1
 	}
@@ -942,6 +948,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if len(params) > 0 {
 		paramsPointer = (*C.output_params)(&params[0])
 		resultsPointer = (*C.output_results)(&results[0])
+	}
+	if reopendemux {
+		// forcefully close and open demuxer
+		ret := int(C.lpms_transcode_reopen_demux(inp))
+		if ret != 0 {
+			if LogTranscodeErrors {
+				glog.Error("Reopen demux returned : ", ErrorMap[ret])
+			}
+			return nil, ErrorMap[ret]
+		}
 	}
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
