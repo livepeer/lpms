@@ -439,12 +439,6 @@ int lpms_transcode(input_params *inp, output_params *params,
     if (ret < 0) {
       return ret;
     }
-  } else if (inp->reopendemux) {
-      free_input(&h->ictx);
-      ret = open_input(inp, &h->ictx);
-      if (ret < 0) {
-        return ret;
-      }
   }
 
   if (h->nb_outputs != nb_outputs) {
@@ -469,6 +463,11 @@ int lpms_transcode(input_params *inp, output_params *params,
   h->initialized = 1;
 
   return ret;
+}
+
+int lpms_transcode_reopen_demux(input_params *inp) {
+  free_input(&inp->handle->ictx);
+  return open_input(inp, &inp->handle->ictx);
 }
 
 struct transcode_thread* lpms_transcode_new() {
