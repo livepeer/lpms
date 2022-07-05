@@ -8,7 +8,7 @@ static int is_mpegts(AVFormatContext *ic) {
   return !strcmp("mpegts", ic->iformat->name);
 }
 
-static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFrame *frame)
+static int receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFrame *frame)
 {
     int ret = avcodec_receive_frame(dec, frame);
     if (dec != ictx->vc) return ret;
@@ -53,7 +53,7 @@ int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
       ictx->flushed = 1;
       return ret;
     }
-    ret = lpms_receive_frame(ictx, ictx->vc, frame);
+    ret = receive_frame(ictx, ictx->vc, frame);
     *stream_index = ictx->vi;
     // Keep flushing if we haven't received all frames back but stop after SENTINEL_MAX tries.
     if (ictx->pkt_diff != 0 && ictx->sentinel_count <= SENTINEL_MAX && (!ret || ret == AVERROR(EAGAIN))) {
