@@ -718,7 +718,8 @@ create_dnn_error:
   return NULL;
 }
 
-struct transcode_thread* lpms_transcode_new() {
+struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts)
+{
   struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
   if (!h) return NULL;
   memset(h, 0, sizeof *h);
@@ -729,22 +730,15 @@ struct transcode_thread* lpms_transcode_new() {
   for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
     h->ictx.last_dts[i] = -1;
   }
-  return h;
-}
-
-// TODO: perhaps could merge together with previous one, giving NULL as
-// dnn_opts when dnn filtergraph is not desired
-struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts)
-{
-  struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
-  if (!h) return NULL;
-  memset(h, 0, sizeof *h);
-  AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
-  if (!filtergraph) {
+  // handle dnn filter graph creation
+  if (dnn_opts) {
+    AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
+    if (!filtergraph) {
       free(h);
       h = NULL;
-  } else {
+    } else {
       h->dnn_filtergraph = filtergraph;
+    }
   }
   return h;
 }
