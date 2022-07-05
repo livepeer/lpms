@@ -72,26 +72,61 @@ const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 //
 
 struct transcode_thread {
-  int initialized;
-
   struct input_ctx ictx;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
+  int nb_outputs;
 
   AVFilterGraph *dnn_filtergraph;
-
-  int nb_outputs;
 };
 
-void lpms_init(enum LPMSLogLevel max_level)
+// TODO: this feels like it belongs elsewhere, not in the top-level transcoder
+// code
+static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
 {
-  av_log_set_level(max_level);
+  const AVFilter *filter = NULL;
+  AVFilterContext *filter_ctx = NULL;
+  AVFilterGraph *graph_ctx = NULL;
+  int ret = 0;
+  char errstr[1024];
+  char *filter_name = "livepeer_dnn";
+  char filter_args[512];
+  snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:backend_configs=%s",
+           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->backend_configs);
+
+  /* allocate graph */
+  graph_ctx = avfilter_graph_alloc();
+  if (!graph_ctx)
+    LPMS_ERR(create_dnn_error, "Unable to open DNN filtergraph");
+
+  /* get a corresponding filter and open it */
+  if (!(filter = avfilter_get_by_name(filter_name))) {
+    snprintf(errstr, sizeof errstr, "Unrecognized filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  /* open filter and add it to the graph */
+  if (!(filter_ctx = avfilter_graph_alloc_filter(graph_ctx, filter, filter_name))) {
+    snprintf(errstr, sizeof errstr, "Impossible to open filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+  if (avfilter_init_str(filter_ctx, filter_args) < 0) {
+    snprintf(errstr, sizeof errstr, "Impossible to init filter '%s' with arguments '%s'\n", filter_name, filter_args);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  return graph_ctx;
+
+create_dnn_error:
+  avfilter_graph_free(&graph_ctx);
+  return NULL;
 }
 
-//
-// Transcoder
-//
-
-static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
+// TODO: I don't like this flush_output/flush_all_outputs stuff. To begin with
+// we could use better terminology, because flushing the output means flushing
+// the filters first, then the decoders. Also I don't like how
+// av_interleaved_write_frame is sometimes called in one and sometimes in the
+// other function. To be redone
+static int flush_output(struct input_ctx *ictx, struct output_ctx *octx)
 {
   // only issue w this flushing method is it's not necessarily sequential
   // wrt all the outputs; might want to iterate on each output per frame?
@@ -107,11 +142,45 @@ static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
       ret = process_out(ictx, octx, octx->ac, octx->oc->streams[octx->dv ? 0 : 1], &octx->af, NULL);
     }
   }
+  // send EOF signal to signature filter
+  if (octx->sfilters != NULL && octx->sf.src_ctx != NULL) {
+    av_buffersrc_close(octx->sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
+  }
+
   av_interleaved_write_frame(octx->oc, NULL); // flush muxer
-  return av_write_trailer(octx->oc);
+  return 0;
 }
 
-void handle_discontinuity(struct input_ctx *ictx, AVPacket *pkt)
+// See comment above
+static int flush_all_outputs(struct transcode_thread *h)
+{
+  struct input_ctx *ictx = &h->ictx;
+  int ret = 0;
+  for (int i = 0; i < h->nb_outputs; i++) {
+    // Again, global switch but could be output setting in the future
+    if (ictx->transmuxing) {
+      // just flush muxer, but do not write trailer and close
+      av_interleaved_write_frame(h->outputs[i].oc, NULL);
+    } else {
+      if(h->outputs[i].is_dnn_profile == 0) {
+        // this will flush video and audio streams, flush muxer
+        // and close
+        ret = flush_output(ictx, h->outputs + i);
+        if (ret < 0) LPMS_ERR_RETURN("Unable to fully flush outputs")
+      } else if(h->outputs[i].is_dnn_profile && h->outputs[i].res->frames > 0) {
+        for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
+          h->outputs[i].res->probs[j] = h->outputs[i].res->probs[j] / h->outputs[i].res->frames;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+// TODO: change name to something like "fix" perhaps? Handle is kinda reserved
+// here for frames/packets
+static void handle_discontinuity(struct input_ctx *ictx, AVPacket *pkt)
 {
   int stream_index = pkt->stream_index;
   if (stream_index >= MAX_OUTPUT_SIZE) {
@@ -141,7 +210,8 @@ void handle_discontinuity(struct input_ctx *ictx, AVPacket *pkt)
   }
 }
 
-int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results *decoded_results, AVFrame *dframe)
+static int handle_audio_frame(struct transcode_thread *h, AVStream *ist,
+                              output_results *decoded_results, AVFrame *dframe)
 {
   struct input_ctx *ictx = &h->ictx;
 
@@ -176,7 +246,8 @@ int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results
   return 0;
 }
 
-int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results *decoded_results, AVFrame *dframe)
+static int handle_video_frame(struct transcode_thread *h, AVStream *ist,
+                              output_results *decoded_results, AVFrame *dframe)
 {
   struct input_ctx *ictx = &h->ictx;
 
@@ -218,8 +289,8 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
   return 0;
 }
 
-int handle_audio_packet(struct transcode_thread *h, output_results *decoded_results,
-                        AVPacket *pkt, AVFrame *frame)
+static int handle_audio_packet(struct transcode_thread *h, output_results *decoded_results,
+                               AVPacket *pkt, AVFrame *frame)
 {
   ++decoded_results->audio_packets;
   // Packet processing part
@@ -306,8 +377,8 @@ int handle_audio_packet(struct transcode_thread *h, output_results *decoded_resu
   }
 }
 
-int handle_video_packet(struct transcode_thread *h, output_results *decoded_results,
-                        AVPacket *pkt, AVFrame *frame)
+static int handle_video_packet(struct transcode_thread *h, output_results *decoded_results,
+                               AVPacket *pkt, AVFrame *frame)
 {
   ++decoded_results->video_packets;
   // Packet processing part
@@ -392,8 +463,8 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
   }
 }
 
-int handle_other_packet(struct transcode_thread *h,
-                        output_results *decoded_results, AVPacket *pkt)
+static int handle_other_packet(struct transcode_thread *h,
+                               output_results *decoded_results, AVPacket *pkt)
 {
   ++decoded_results->other_packets;
   struct input_ctx *ictx = &h->ictx;
@@ -428,37 +499,8 @@ int handle_other_packet(struct transcode_thread *h,
   return 0;
 }
 
-// TODO: right now this flushes filter and the encoders, this will be separated
-// in the future
-int flush_all_outputs(struct transcode_thread *h)
-{
-  struct input_ctx *ictx = &h->ictx;
-  int ret = 0;
-  for (int i = 0; i < h->nb_outputs; i++) {
-    // Again, global switch but could be output setting in the future
-    if (ictx->transmuxing) {
-      // just flush muxer, but do not write trailer and close
-      av_interleaved_write_frame(h->outputs[i].oc, NULL);
-    } else {
-      if(h->outputs[i].is_dnn_profile == 0) {
-        // this will flush video and audio streams, flush muxer, write trailer
-        // and close
-        ret = flush_outputs(ictx, h->outputs + i);
-        if (ret < 0) LPMS_ERR_RETURN("Unable to fully flush outputs")
-      } else if(h->outputs[i].is_dnn_profile && h->outputs[i].res->frames > 0) {
-        for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
-          h->outputs[i].res->probs[j] = h->outputs[i].res->probs[j] / h->outputs[i].res->frames;
-        }
-      }
-    }
-  }
-
-  return 0;
-}
-
-int transcode(struct transcode_thread *h,
-  input_params *inp, output_params *params,
-  output_results *decoded_results)
+static int transcode(struct transcode_thread *h, input_params *inp,
+                     output_params *params, output_results *decoded_results)
 {
   struct input_ctx *ictx = &h->ictx;
   AVStream *ist = NULL;
@@ -540,8 +582,12 @@ int transcode(struct transcode_thread *h,
   return ret;
 }
 
-// MA: this should probably be merged with transcode_init, as it basically is a
-// part of initialization
+// lpms_* functions form externally visible Transcoder interface
+void lpms_init(enum LPMSLogLevel max_level)
+{
+  av_log_set_level(max_level);
+}
+
 int lpms_transcode(input_params *inp, output_params *params,
   output_results *results, int nb_outputs, output_results *decoded_results)
 {
@@ -601,6 +647,12 @@ int lpms_transcode(input_params *inp, output_params *params,
   if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
 
   // populate output contexts
+  // TODO: I don't like this manual copying. What about making the "context"
+  // or "settings" or whatever structs and having them in both params as well
+  // as in actual contexts? Then simple memcpy would do...or perhaps make
+  // utility functions for this? Or make it open_output's job, more in line
+  // with how open_input works (except that dv/da are initialized by hand)
+  // In short: streamline this somehow
   for (int i = 0; i < nb_outputs; i++) {
     struct output_ctx *octx = h->outputs + i;
     octx->fname = params[i].fname;
@@ -632,33 +684,45 @@ int lpms_transcode(input_params *inp, output_params *params,
   // Part III: transcoding operation itself since everything was set for up
   // properly (or at least it appears so)
   ret = transcode(h, inp, params, decoded_results);
+  // we treat AVERROR_EOF here as success
+  if (AVERROR_EOF == ret) {
+    ret = 0;
+  }
 
   // Part IV: shutdown
 transcode_cleanup:
 
+  // IMPORTANT: note that this is the only place when PRESERVE_HW_ENCODER and
+  // PRESERVE_HW_DECODER are used. This is done to retain HW encoder and decoder
+  // when segment transcoding was successful, because some HW encoders/decoders
+  // are very costly to initialize from ffmpeg level.
+  // In the future I want code like that:
+  // - at the very least moved deep into respective video pipeline implementation
+  // - ideally completely removed, because in most (if not all) cases it is the
+  // memory buffers and not decoders/encoders that are so costly to initialize
+  // and/or obtain. Keeping the pool of the buffers should allow for cheap
+  // decoder/encoder initialization, and it is how it should be given that we
+  // don't want to assume that the configuration stays constant between
+  // segments being encoded (and we kinda do it now)
   free_input(&h->ictx, PRESERVE_HW_DECODER);
   for (int i = 0; i < nb_outputs; i++) {
-    struct output_ctx *octx = h->outputs + i;
-    // TODO: this sounds as something that could be done in transcode() proper
-    //send EOF signal to signature filter
-    if (octx->sfilters != NULL && octx->sf.src_ctx != NULL) {
-      av_buffersrc_close(octx->sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
-      free_filter(&octx->sf);
-    }
     // TODO: one day this will be per-output setting and not a global one
     if (!h->ictx.transmuxing) {
-      close_output(octx);
+      free_output(h->outputs + i, PRESERVE_HW_ENCODER);
     }
   }
-  return ret == AVERROR_EOF ? 0 : ret;
+  return ret;
 }
 
-int lpms_transcode_reopen_demux(input_params *inp) {
+int lpms_transcode_reopen_demux(input_params *inp)
+{
   free_input(&inp->handle->ictx, FORCE_CLOSE_HW_DECODER);
   return open_input(inp, &inp->handle->ictx);
 }
 
-void lpms_transcode_stop(struct transcode_thread *handle) {
+// TODO: name - this is called _stop, but it is more like stop & destroy
+void lpms_transcode_stop(struct transcode_thread *handle)
+{
   // not threadsafe as-is; calling function must ensure exclusivity!
 
   int i;
@@ -666,56 +730,13 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
   if (!handle) return;
 
   free_input(&handle->ictx, FORCE_CLOSE_HW_DECODER);
-  for (i = 0; i < MAX_OUTPUT_SIZE; i++) {
-    if (handle->ictx.transmuxing && handle->outputs[i].oc) {
-        av_write_trailer(handle->outputs[i].oc);
-    }
-    free_output(&handle->outputs[i]);
+  for (i = 0; i < handle->nb_outputs; i++) {
+    free_output(&handle->outputs[i], FORCE_CLOSE_HW_ENCODER);
   }
 
   if (handle->dnn_filtergraph) avfilter_graph_free(&handle->dnn_filtergraph);
 
   free(handle);
-}
-
-static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
-{
-  const AVFilter *filter = NULL;
-  AVFilterContext *filter_ctx = NULL;
-  AVFilterGraph *graph_ctx = NULL;
-  int ret = 0;
-  char errstr[1024];
-  char *filter_name = "livepeer_dnn";
-  char filter_args[512];
-  snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:backend_configs=%s",
-           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->backend_configs);
-
-  /* allocate graph */
-  graph_ctx = avfilter_graph_alloc();
-  if (!graph_ctx)
-    LPMS_ERR(create_dnn_error, "Unable to open DNN filtergraph");
-
-  /* get a corresponding filter and open it */
-  if (!(filter = avfilter_get_by_name(filter_name))) {
-    snprintf(errstr, sizeof errstr, "Unrecognized filter with name '%s'\n", filter_name);
-    LPMS_ERR(create_dnn_error, errstr);
-  }
-
-  /* open filter and add it to the graph */
-  if (!(filter_ctx = avfilter_graph_alloc_filter(graph_ctx, filter, filter_name))) {
-    snprintf(errstr, sizeof errstr, "Impossible to open filter with name '%s'\n", filter_name);
-    LPMS_ERR(create_dnn_error, errstr);
-  }
-  if (avfilter_init_str(filter_ctx, filter_args) < 0) {
-    snprintf(errstr, sizeof errstr, "Impossible to init filter '%s' with arguments '%s'\n", filter_name, filter_args);
-    LPMS_ERR(create_dnn_error, errstr);
-  }
-
-  return graph_ctx;
-
-create_dnn_error:
-  avfilter_graph_free(&graph_ctx);
-  return NULL;
 }
 
 struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts)

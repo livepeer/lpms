@@ -233,7 +233,13 @@ video_encoder_err:
   return ret;
 }
 
-void close_output(struct output_ctx *octx)
+// This function is really the implementation of the free_output(), except that
+// it doesn't write trailer into the muxer. This is because trailer can only be
+// written if the header was written before - otherwise av_write_trailer() will
+// crash. Now, open_output() can fail somewhere between the begin of init work
+// and writing the header, hence the need for free_output() version without
+// writing the trailer. All other functions should use full version.
+static void free_output_no_trailer(struct output_ctx *octx, enum FreeOutputPolicy policy)
 {
   if (octx->oc) {
     if (!(octx->oc->oformat->flags & AVFMT_NOFILE) && octx->oc->pb) {
@@ -242,20 +248,41 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
+  if (octx->vc &&
+      ((octx->hw_type == AV_HWDEVICE_TYPE_NONE) || (FORCE_CLOSE_HW_ENCODER == policy))) {
+    avcodec_free_context(&octx->vc);
+  }
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
   octx->vf.pts_diff = INT64_MIN;
+  // TODO: this is a ugly hack. Basically, I believe that filters should be
+  // released/recreated every time (at least they are created again), but old
+  // code only close the vf filters on the lpms_transcode_stop, and it seems
+  // that retaining the filters has some effect on timestamps, so when new code
+  // started closing the video filter, TestTranscoderAPI_CountEncodedFrames
+  // was failing. And the fail had nothing to do with number of frames, just
+  // their timestamps were not the same as expected. I suppose new behavior is
+  // also correct, just different from what was hardcoded. So this is just a
+  // temporary solution to keep the test happy
+  // Update: as Ivan pointed out, some filters should be kept alive between
+  // segment, for example fps filter, or audio conversion filter, so for now
+  // I am expanding the hack to include audio filter as well
+  if (FORCE_CLOSE_HW_ENCODER == policy) {
+    free_filter(&octx->vf);
+    free_filter(&octx->af);
+  }
+  free_filter(&octx->sf);
 }
 
-void free_output(struct output_ctx *octx)
+// See comment on free_output_no_trailer() above
+void free_output(struct output_ctx *octx, enum FreeOutputPolicy policy)
 {
-  close_output(octx);
-  if (octx->vc) avcodec_free_context(&octx->vc);
-  free_filter(&octx->vf);
-  free_filter(&octx->af);
-  free_filter(&octx->sf);
+  // in this function it is safe to write trailer, since it is only called
+  // when muxer setup was succesful and header was written in the muxer
+  // doing otherwise causes crash in av_write_trailer
+  if (octx->oc) av_write_trailer(octx->oc);
+  free_output_no_trailer(octx, policy);
 }
 
 int open_output(struct output_ctx *octx, struct input_ctx *ictx)
@@ -318,18 +345,31 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
   }
 
+  // IMPORTANT: notice how up to and including this point open_output_err is
+  // the error label. This is because free_output_no_trailer() is called there
+  // and it is actually the only place where we need that function. This is
+  // because avformat_write_trailer() which is called in free_output() will
+  // _crash_ if there wasn't corresponding avformat_write_header() call before.
+  // So up to the succesful completion of avformat_write_header() we need to
+  // call free_output_no_trailer() exclusively!
   ret = avformat_write_header(octx->oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
 
+  // From now on it is normal free_output(), hence after_header error label
   if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
     ret = init_signature_filters(octx, NULL);
-    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
+    if (ret < 0) LPMS_ERR(after_header_err, "Unable to open signature filter");
   }
 
   return 0;
 
 open_output_err:
-  free_output(octx);
+  // See comment above - here we have no header, so no trailer can be written
+  free_output_no_trailer(octx, FORCE_CLOSE_HW_ENCODER);
+  return ret;
+after_header_err:
+  // See comments above - header was written, we can finally call free_output()
+  free_output(octx, FORCE_CLOSE_HW_ENCODER);
   return ret;
 }
 
