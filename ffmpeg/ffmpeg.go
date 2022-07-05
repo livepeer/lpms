@@ -1018,7 +1018,7 @@ func (t *Transcoder) Discontinuity() {
 
 func NewTranscoder() *Transcoder {
 	return &Transcoder{
-		handle: C.lpms_transcode_new(),
+		handle: C.lpms_transcode_new(nil),
 		mu:     &sync.Mutex{},
 	}
 }
@@ -1071,7 +1071,7 @@ func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Tran
 		defer C.free(unsafe.Pointer(dnnOpt.inputname))
 		defer C.free(unsafe.Pointer(dnnOpt.outputname))
 		defer C.free(unsafe.Pointer(dnnOpt.backend_configs))
-		handle := C.lpms_transcode_new_with_dnn(dnnOpt)
+		handle := C.lpms_transcode_new(dnnOpt)
 		if handle != nil {
 			return &Transcoder{
 				handle: handle,
