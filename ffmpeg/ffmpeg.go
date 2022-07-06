@@ -358,10 +358,12 @@ func GetDiffInfo(info1, info2 VideoInfo, linestr *[]string) {
 	hdiff := strconv.Itoa(info1.Height - info2.Height)
 	*linestr = append(*linestr, hdiff)
 
-	bitratediff := strconv.Itoa(int(info1.Bit_rate - info2.Bit_rate))
+	//bitratediff := strconv.Itoa(int(info1.Bit_rate - info2.Bit_rate))
+	bitratediff := strconv.Itoa(info1.Width)
 	*linestr = append(*linestr, bitratediff)
 
-	packetcountdiff := strconv.Itoa(info1.Packetcount - info2.Packetcount)
+	//packetcountdiff := strconv.Itoa(info1.Packetcount - info2.Packetcount)
+	packetcountdiff := strconv.Itoa(info1.Height)
 	*linestr = append(*linestr, packetcountdiff)
 
 	timestampdiff := strconv.Itoa(int(info1.Timestamp - info2.Timestamp))

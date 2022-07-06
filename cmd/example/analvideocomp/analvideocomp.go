@@ -61,13 +61,18 @@ func main() {
 		var res1, res2 ffmpeg.VideoInfo
 		res1, _ = ffmpeg.GetVideoInfoByPath(infiles[i*2])
 		res2, _ = ffmpeg.GetVideoInfoByPath(infiles[i*2+1])
-
 		_, filename1 := filepath.Split(infiles[i*2])
 		_, filename2 := filepath.Split(infiles[i*2+1])
 
-		linestr = append(linestr, filename1)
-		linestr = append(linestr, filename2)
-		ffmpeg.GetDiffInfo(res1, res2, &linestr)
+		if res1.Width >= res2.Width {
+			linestr = append(linestr, filename1)
+			linestr = append(linestr, filename2)
+			ffmpeg.GetDiffInfo(res1, res2, &linestr)
+		} else {
+			linestr = append(linestr, filename2)
+			linestr = append(linestr, filename1)
+			ffmpeg.GetDiffInfo(res2, res1, &linestr)
+		}
 
 		csvrecorder.Write(linestr)
 	}
