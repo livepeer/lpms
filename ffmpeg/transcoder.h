@@ -7,6 +7,7 @@
 #include <libavformat/avformat.h>
 #include <libavfilter/avfilter.h>
 #include "logging.h"
+#include "stream_buffer_queue.h"
 
 // LPMS specific errors
 extern const int lpms_ERR_INPUT_PIXFMT;
@@ -96,6 +97,25 @@ enum LPMSLogLevel {
   LPMS_LOG_QUIET    = AV_LOG_QUIET
 };
 
+// Queue API
+// This should be called in FIFO order, such as when reading the file with the
+// fixed size buffer. EOF flag should be 1 for last buffer, 0 otherwise. It is
+// important to set it correctly, otherwise demuxe won't know it needs to stop.
+// This call is not blocking. Queue will copy memory, so the caller should
+// manage its own.
+void lpms_add_input_buffer(struct transcode_thread *handle, const StreamBuffer *input);
+// This returns copy of last buffer on the output queue. If there are no buffers
+// it will block. Be aware not to call this function if the very last buffer was
+// popped, because it will block infinitely without Transcoder to feed in new
+// data. Memory is owned by the queue.
+void lpms_peek_output_buffer(struct transcode_thread *handle, const StreamBuffer *output);
+// Remove last output buffer from the queue. Just as above, this call will block
+// if there are no buffers. Normally it should be called after the buffer was
+// previously retrieved by means of peek_output_buffer() and then it won't block
+// This call will remove memory allocated for the
+void lpms_pop_output_buffer(struct transcode_thread *handle);
+
+// Transcoding API
 void lpms_init(enum LPMSLogLevel max_level);
 int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 int lpms_transcode_reopen_demux(input_params *inp);

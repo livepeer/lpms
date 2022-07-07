@@ -77,6 +77,12 @@ struct transcode_thread {
   int nb_outputs;
 
   AVFilterGraph *dnn_filtergraph;
+
+  // Input and output queues (when the I/O is done outside of Transcoder, for
+  // example in Low Latency scenarios)
+  StreamBufferQueue input_queue;   // put input buffers here
+  StreamBufferQueue output_queue;  // get output data out of here
+  int use_queues_for_io;
 };
 
 // TODO: this feels like it belongs elsewhere, not in the top-level transcoder
@@ -583,6 +589,20 @@ static int transcode(struct transcode_thread *h, input_params *inp,
 }
 
 // lpms_* functions form externally visible Transcoder interface
+void lpms_add_input_buffer(struct transcode_thread *handle,
+                           const StreamBuffer *input)
+{
+}
+
+void lpms_peek_output_buffer(struct transcode_thread *handle,
+                             const StreamBuffer *output)
+{
+}
+
+void lpms_pop_output_buffer(struct transcode_thread *handle)
+{
+}
+
 void lpms_init(enum LPMSLogLevel max_level)
 {
   av_log_set_level(max_level);
@@ -683,11 +703,16 @@ int lpms_transcode(input_params *inp, output_params *params,
 
   // Part III: transcoding operation itself since everything was set for up
   // properly (or at least it appears so)
+  // Make sure nothing is left in output queue from previous runs
+  queue_remove_all(&h->output_queue);
+  // Transcode
   ret = transcode(h, inp, params, decoded_results);
   // we treat AVERROR_EOF here as success
   if (AVERROR_EOF == ret) {
     ret = 0;
   }
+  // Make sure nothing is left in the input queue from this run
+  queue_remove_all(&h->input_queue);
 
   // Part IV: shutdown
 transcode_cleanup:
@@ -735,7 +760,9 @@ void lpms_transcode_stop(struct transcode_thread *handle)
   }
 
   if (handle->dnn_filtergraph) avfilter_graph_free(&handle->dnn_filtergraph);
-
+  // destroy both queues
+  queue_destroy(&handle->input_queue);
+  queue_destroy(&handle->output_queue);
   free(handle);
 }
 
@@ -751,6 +778,10 @@ struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts)
   for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
     h->ictx.last_dts[i] = -1;
   }
+  // create both queues
+  queue_create(&h->input_queue);
+  queue_create(&h->output_queue);
+  h->use_queues_for_io = 0;
   // handle dnn filter graph creation
   if (dnn_opts) {
     AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
