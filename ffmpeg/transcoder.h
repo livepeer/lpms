@@ -103,12 +103,12 @@ enum LPMSLogLevel {
 // important to set it correctly, otherwise demuxe won't know it needs to stop.
 // This call is not blocking. Queue will copy memory, so the caller should
 // manage its own.
-void lpms_add_input_buffer(struct transcode_thread *handle, const StreamBuffer *input);
+void lpms_add_input_buffer(struct transcode_thread *handle, StreamBuffer *input);
 // This returns copy of last buffer on the output queue. If there are no buffers
 // it will block. Be aware not to call this function if the very last buffer was
 // popped, because it will block infinitely without Transcoder to feed in new
 // data. Memory is owned by the queue.
-void lpms_peek_output_buffer(struct transcode_thread *handle, const StreamBuffer *output);
+const StreamBuffer *lpms_peek_output_buffer(struct transcode_thread *handle);
 // Remove last output buffer from the queue. Just as above, this call will block
 // if there are no buffers. Normally it should be called after the buffer was
 // previously retrieved by means of peek_output_buffer() and then it won't block

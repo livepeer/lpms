@@ -233,9 +233,24 @@ open_decoder_err:
   return ret;
 }
 
-int open_input(input_params *params, struct input_ctx *ctx)
+int open_demuxer(input_params *params, struct input_ctx *ctx, ReadContext *rctx)
 {
-  char *inp = params->fname;
+  int ret;
+  if (rctx) {
+    // using queue for input
+    ctx->ic = avformat_alloc_context();
+    queue_setup_as_input(ctx->ic, rctx);
+    // instruct FFmpeg to use our input, note that file name is empty
+    ret = avformat_open_input(&ctx->ic, "", NULL, NULL);
+  } else {
+    // normal file-based input, note that file name is passed
+    ret = avformat_open_input(&ctx->ic, params->fname, NULL, NULL);
+  }
+  return ret;
+}
+
+int open_input(input_params *params, struct input_ctx *ctx, ReadContext *rctx)
+{
   int ret = 0;
   int reopen_decoders = !params->transmuxe;
 
@@ -247,7 +262,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
   ctx->device = params->device;
 
   // open demuxer
-  if (!ctx->ic) {
+/*  if (!ctx->ic) {
     ret = avformat_open_input(&ctx->ic, inp, NULL, NULL);
     if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
     ret = avformat_find_stream_info(ctx->ic, NULL);
@@ -256,7 +271,11 @@ int open_input(input_params *params, struct input_ctx *ctx)
     // reopen input segment file IO context if needed
     ret = avio_open(&ctx->ic->pb, inp, AVIO_FLAG_READ);
     if (ret < 0) LPMS_ERR(open_input_err, "Unable to reopen file");
-  } else reopen_decoders = 0;
+  } else reopen_decoders = 0;*/
+  ret = open_demuxer(params, ctx, rctx);
+  if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
+  ret = avformat_find_stream_info(ctx->ic, NULL);
+  if (ret < 0) LPMS_ERR(open_input_err, "Unable to find input info");
 
   AVCodec *video_codec = NULL;
   AVCodec *audio_codec = NULL;
@@ -273,7 +292,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
       // to handle a change in the input pixel format,
       // we close the demuxer and re-open the decoder by calling open_input().
       free_input(ctx, FORCE_CLOSE_HW_DECODER);
-      ret = open_input(params, ctx);
+      ret = open_input(params, ctx, rctx);
       if (ret < 0) LPMS_ERR(open_input_err, "Unable to reopen video demuxer for HW decoding");
       reopen_decoders = 0;
     }
@@ -306,6 +325,12 @@ open_input_err:
 
 void free_input(struct input_ctx *ictx, enum FreeInputPolicy policy)
 {
+  // MA: this is kinda temporary - I want to get LL changes in place, and so
+  // for now want to work with fully recreating demuxer. But to be honest,
+  // I very much doubt it makes sense to try and preserve demuxer - and it
+  // increases code complexity - so I hereby propose to get rid of the feature
+  if (ictx->ic) avformat_close_input(&ictx->ic);
+  /*
   if (FORCE_CLOSE_HW_DECODER == policy) {
     // This means we are closing everything, so we also want to
     // remove demuxer
@@ -326,7 +351,7 @@ void free_input(struct input_ctx *ictx, enum FreeInputPolicy policy)
         avio_closep(&ictx->ic->pb);
       }
     }
-  }
+  }*/
   ictx->flushed = 0;
   ictx->flushing = 0;
   ictx->pkt_diff = 0;

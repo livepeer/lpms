@@ -1,10 +1,13 @@
+#include <libavformat/avformat.h>
 #include <libavutil/thread.h>
 
 typedef enum {
-  END_OF_STREAM = 0x1,
-  END_OF_ALL_STREAMS = 0x2
+  END_OF_STREAM = 0x1, // end of current stream
+  END_OF_QUEUE = 0x2   // end of all streams on this side
 } StreamFlags;
 
+// This is a single portion of data from the stream. It may contain either
+// input or output data, and it is suitable for use with StreamBufferQueue
 struct StreamBuffer;
 
 typedef struct _StreamBuffer {
@@ -14,9 +17,12 @@ typedef struct _StreamBuffer {
   int index;          // index of output, when used with output queue
   StreamFlags flags;  // end of stream flag, all end flag
   // list pointer - only queue should access it
-  struct _StreamBuffer *previous;
+  struct _StreamBuffer *next;
 } StreamBuffer;
 
+// Queue that allows for connecting demuxer as consumer, and muxer as a producer
+// with other threads in safe way. Standard condition variable and mutex are
+// used to accomplish this
 typedef struct {
   // These are called "pthread", but FFmpeg also has Windows implementation,
   // so we should be safe on all reasonable platforms
@@ -27,9 +33,24 @@ typedef struct {
   StreamBuffer *back;
 } StreamBufferQueue;
 
+// Reading has to have a bit of context, due to the following reasons:
+// - demuxer may wish to consume data in portions not alignet to the
+// buffer size (which in turn comes from network or file I/O)
+// - we want to support limited seek operation (as in "return to begin of
+// stream)
+typedef struct {
+  StreamBufferQueue *queue;
+  int offset;
+  const StreamBuffer *current;
+} ReadContext;
+
 // NOT THREAD SAFE
 void queue_create(StreamBufferQueue *queue);
 void queue_destroy(StreamBufferQueue *queue);
+// prepare read context for given queue
+void queue_setup_read_context(StreamBufferQueue *queue, ReadContext *rctx);
+// setup glue logic to allow ctx to use queue as input
+void queue_setup_as_input(AVFormatContext *ctx, ReadContext *rctx);
 
 // All functions below are thread-safe
 
@@ -47,4 +68,11 @@ const StreamBuffer *queue_peek_front(StreamBufferQueue *queue);
 void queue_pop_front(StreamBufferQueue *queue);
 // This removes all elements from the queue. Will never block.
 void queue_remove_all(StreamBufferQueue *queue);
+// This allows for iterating over queue's contents. current must not be NULL!
+// If current has END_OF_QUEUE attribute, NULL will be returned. Otherwise
+// next element is retuned, and if there is no next element yet, function will
+// block
+const StreamBuffer *queue_next(StreamBufferQueue *queue,
+                               const StreamBuffer * current);
+
 

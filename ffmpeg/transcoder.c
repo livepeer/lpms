@@ -82,6 +82,7 @@ struct transcode_thread {
   // example in Low Latency scenarios)
   StreamBufferQueue input_queue;   // put input buffers here
   StreamBufferQueue output_queue;  // get output data out of here
+  ReadContext read_context;
   int use_queues_for_io;
 };
 
@@ -590,17 +591,19 @@ static int transcode(struct transcode_thread *h, input_params *inp,
 
 // lpms_* functions form externally visible Transcoder interface
 void lpms_add_input_buffer(struct transcode_thread *handle,
-                           const StreamBuffer *input)
+                           StreamBuffer *input)
 {
+  queue_push_back(&handle->input_queue, input);
 }
 
-void lpms_peek_output_buffer(struct transcode_thread *handle,
-                             const StreamBuffer *output)
+const StreamBuffer *lpms_peek_output_buffer(struct transcode_thread *handle)
 {
+  return queue_peek_front(&handle->output_queue);
 }
 
 void lpms_pop_output_buffer(struct transcode_thread *handle)
 {
+  queue_pop_front(&handle->output_queue);
 }
 
 void lpms_init(enum LPMSLogLevel max_level)
@@ -663,7 +666,7 @@ int lpms_transcode(input_params *inp, output_params *params,
     if (!needs_decoder(params[i].audio.name)) h->ictx.da = ++decode_a == nb_outputs;
   }
 
-  ret = open_input(inp, &h->ictx);
+  ret = open_input(inp, &h->ictx, h->use_queues_for_io ? &h->read_context : NULL);
   if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
 
   // populate output contexts
@@ -742,7 +745,8 @@ transcode_cleanup:
 int lpms_transcode_reopen_demux(input_params *inp)
 {
   free_input(&inp->handle->ictx, FORCE_CLOSE_HW_DECODER);
-  return open_input(inp, &inp->handle->ictx);
+  return open_input(inp, &inp->handle->ictx, inp->handle->use_queues_for_io
+                    ? &inp->handle->read_context : NULL);
 }
 
 // TODO: name - this is called _stop, but it is more like stop & destroy
@@ -778,9 +782,10 @@ struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts)
   for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
     h->ictx.last_dts[i] = -1;
   }
-  // create both queues
+  // create both queues and setup read context
   queue_create(&h->input_queue);
   queue_create(&h->output_queue);
+  queue_setup_read_context(&h->input_queue, &h->read_context);
   h->use_queues_for_io = 0;
   // handle dnn filter graph creation
   if (dnn_opts) {

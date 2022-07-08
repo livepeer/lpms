@@ -64,7 +64,7 @@ int demux_in(struct input_ctx *ictx, AVPacket *pkt);
 int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream_index);
 int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index);
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt, int *stream_index);
-int open_input(input_params *params, struct input_ctx *ctx);
+int open_input(input_params *params, struct input_ctx *ctx, ReadContext *rctx);
 void free_input(struct input_ctx *inctx, enum FreeInputPolicy policy);
 // this should perhaps be moved to some utility file, as it is not decoder
 // specific
