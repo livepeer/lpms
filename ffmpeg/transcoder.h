@@ -104,6 +104,10 @@ enum LPMSLogLevel {
 // This call is not blocking. Queue will copy memory, so the caller should
 // manage its own.
 void lpms_add_input_buffer(struct transcode_thread *handle, StreamBuffer *input);
+// This clears all the data from input queue. It should be called before loading
+// of a new data starts, to make sure there are no leftovers from previous
+// session
+void lpms_clear_input_queue(struct transcode_thread *handle);
 // This returns copy of last buffer on the output queue. If there are no buffers
 // it will block. Be aware not to call this function if the very last buffer was
 // popped, because it will block infinitely without Transcoder to feed in new

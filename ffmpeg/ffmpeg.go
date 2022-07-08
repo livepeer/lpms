@@ -608,6 +608,42 @@ func isAudioAllDrop(ps []TranscodeOptions) bool {
 	return true
 }
 
+// load input file into input queue
+func loadInputQueue(t *Transcoder, input *TranscodeOptionsIn) {
+  C.lpms_clear_input_queue(t.handle)
+  if strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
+    fmt.Println("Skipping queue input for pipe")
+    return
+  }
+  data, err := os.ReadFile(input.Fname)
+  var sb *C.StreamBuffer
+  sb = (*C.StreamBuffer)(C.malloc(C.size_t(unsafe.Sizeof(C.StreamBuffer{}))))
+  sb.index = 0
+  if nil != err {
+    // error loading file
+    sb.data = nil
+    sb.size = 0
+    sb.flags = 0x4  // error packet!
+    // translate Go error into proper FFmpeg error to get expected behavior
+    // of tests even when using queues
+    if errors.Is(err, os.ErrNotExist) {
+      sb.error = 1
+    } else {
+      sb.error = 0
+    }
+    fmt.Println("Error while loading the queue", err)
+  } else {
+    // file loaded fine
+    sb.size = C.int(len(data))
+    sb.data = (*C.char)(C.malloc(C.size_t(sb.size)))
+    C.memcpy(unsafe.Pointer(sb.data), unsafe.Pointer(&data[0]), C.size_t(sb.size))
+    sb.flags = 0x3  // first packet is last stream packet and last of all packets
+    sb.error = 0
+    fmt.Println(sb.size, "bytes of input loaded into queue")
+  }
+  C.lpms_add_input_buffer(t.handle, sb)
+}
+
 // create C output params array and return it along with corresponding finalizer
 // function that makes sure there are no C memory leaks
 func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.output_params, func(), error) {
@@ -964,6 +1000,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			return nil, ErrorMap[ret]
 		}
 	}
+  // DEBUG: load data to the input queue here
+  loadInputQueue(t, input)
+  // DEBUG ends
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		if LogTranscodeErrors {

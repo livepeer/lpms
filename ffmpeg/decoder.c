@@ -239,7 +239,10 @@ int open_demuxer(input_params *params, struct input_ctx *ctx, ReadContext *rctx)
   if (rctx) {
     // using queue for input
     ctx->ic = avformat_alloc_context();
-    queue_setup_as_input(ctx->ic, rctx);
+    if (queue_setup_as_input(ctx->ic, rctx) < 0) {
+      // memory allocation failure
+      return -1;
+    }
     // instruct FFmpeg to use our input, note that file name is empty
     ret = avformat_open_input(&ctx->ic, "", NULL, NULL);
   } else {
@@ -329,7 +332,11 @@ void free_input(struct input_ctx *ictx, enum FreeInputPolicy policy)
   // for now want to work with fully recreating demuxer. But to be honest,
   // I very much doubt it makes sense to try and preserve demuxer - and it
   // increases code complexity - so I hereby propose to get rid of the feature
-  if (ictx->ic) avformat_close_input(&ictx->ic);
+  if (ictx->ic) {
+    avformat_close_input(&ictx->ic);
+    avformat_free_context(ictx->ic);
+    ictx->ic = NULL;
+  }
   /*
   if (FORCE_CLOSE_HW_DECODER == policy) {
     // This means we are closing everything, so we also want to

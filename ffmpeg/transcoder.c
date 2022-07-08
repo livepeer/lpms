@@ -21,6 +21,8 @@ const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
 const int lpms_ERR_INPUTS = FFERRTAG('I', 'N', 'P', 'Z');
 const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 
+// TODO: notes are slowly becoming obsolete(ish), update them
+
 //
 //  Notes on transcoder internals:
 //
@@ -593,7 +595,16 @@ static int transcode(struct transcode_thread *h, input_params *inp,
 void lpms_add_input_buffer(struct transcode_thread *handle,
                            StreamBuffer *input)
 {
+  // TODO: probably not the best place, should be explicit?
+  handle->use_queues_for_io = 1;
   queue_push_back(&handle->input_queue, input);
+}
+
+void lpms_clear_input_queue(struct transcode_thread *handle)
+{
+  queue_remove_all(&handle->input_queue);
+  // TODO: see commend in lpms_add_input_buffer
+  handle->use_queues_for_io = 0;
 }
 
 const StreamBuffer *lpms_peek_output_buffer(struct transcode_thread *handle)
@@ -665,7 +676,6 @@ int lpms_transcode(input_params *inp, output_params *params,
     if (!needs_decoder(params[i].video.name)) h->ictx.dv = ++decode_v == nb_outputs;
     if (!needs_decoder(params[i].audio.name)) h->ictx.da = ++decode_a == nb_outputs;
   }
-
   ret = open_input(inp, &h->ictx, h->use_queues_for_io ? &h->read_context : NULL);
   if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
 
@@ -714,8 +724,6 @@ int lpms_transcode(input_params *inp, output_params *params,
   if (AVERROR_EOF == ret) {
     ret = 0;
   }
-  // Make sure nothing is left in the input queue from this run
-  queue_remove_all(&h->input_queue);
 
   // Part IV: shutdown
 transcode_cleanup:
@@ -786,7 +794,7 @@ struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts)
   queue_create(&h->input_queue);
   queue_create(&h->output_queue);
   queue_setup_read_context(&h->input_queue, &h->read_context);
-  h->use_queues_for_io = 0;
+  h->use_queues_for_io = 0; // queue i/o disabled by default
   // handle dnn filter graph creation
   if (dnn_opts) {
     AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);

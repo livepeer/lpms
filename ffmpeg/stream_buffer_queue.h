@@ -3,8 +3,16 @@
 
 typedef enum {
   END_OF_STREAM = 0x1, // end of current stream
-  END_OF_QUEUE = 0x2   // end of all streams on this side
+  END_OF_QUEUE = 0x2,  // end of all streams on this side
+  STREAM_ERROR = 0x4   // some kind of error occured while loading data into
+                       // queue (this for example to make "invalid file" kind
+                       // of tests happy)
 } StreamFlags;
+
+typedef enum {
+  OTHER_ERROR = 0,     // error without dedicated handling
+  NO_ENTRY = 1,        // ENOENT
+} StreamErrors;
 
 // This is a single portion of data from the stream. It may contain either
 // input or output data, and it is suitable for use with StreamBufferQueue
@@ -13,9 +21,11 @@ struct StreamBuffer;
 typedef struct _StreamBuffer {
   // data members
   char *data;         // stream data
-  size_t size;        // number of bytes in the buffer
+  int size;           // number of bytes in the buffer
   int index;          // index of output, when used with output queue
   StreamFlags flags;  // end of stream flag, all end flag
+  StreamErrors error; // actual error encountered by I/O code if STREAM_ERROR
+                      // flag is set
   // list pointer - only queue should access it
   struct _StreamBuffer *next;
 } StreamBuffer;
@@ -42,6 +52,7 @@ typedef struct {
   StreamBufferQueue *queue;
   int offset;
   const StreamBuffer *current;
+  int64_t position;
 } ReadContext;
 
 // NOT THREAD SAFE
@@ -50,7 +61,7 @@ void queue_destroy(StreamBufferQueue *queue);
 // prepare read context for given queue
 void queue_setup_read_context(StreamBufferQueue *queue, ReadContext *rctx);
 // setup glue logic to allow ctx to use queue as input
-void queue_setup_as_input(AVFormatContext *ctx, ReadContext *rctx);
+int queue_setup_as_input(AVFormatContext *ctx, ReadContext *rctx);
 
 // All functions below are thread-safe
 
