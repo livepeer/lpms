@@ -9,8 +9,19 @@ typedef struct s_codec_info {
   int    height;
 } codec_info, *pcodec_info;
 
+typedef struct s_match_info {
+  int       width;
+  int       height;
+  uint64_t  bit_rate;
+  int       packetcount; //video total packet count
+  uint64_t  timestamp;    //XOR sum of avpacket pts
+  int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
+} match_info, *pmatch_info;
+
 int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char *seg_start);
 int lpms_get_codec_info(char *fname, pcodec_info out);
+int lpms_get_match_infobybuff(void *buffer1, int len1, pmatch_info out);
+int lpms_get_match_infobypath(char *fname, pmatch_info out);
 int lpms_compare_sign_bypath(char *signpath1, char *signpath2);
 int lpms_compare_sign_bybuffer(void *buffer1, int len1, void *buffer2, int len2);
 int lpms_compare_video_bypath(char *vpath1, char *vpath2);

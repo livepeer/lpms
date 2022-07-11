@@ -247,6 +247,10 @@ type MediaFormatInfo struct {
 	PixFormat      PixelFormat
 	Width, Height  int
 }
+type MatchInfo struct {
+	Width, Height int
+	AudioMd5Sum   []int
+}
 
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
 	return int(float32(width) * float32(f.Height) / float32(f.Width))
@@ -318,6 +322,41 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 	status, _, err := GetCodecInfo(fname)
 	ow.Close()
 	return status == CodecStatusNeedsBypass, err
+}
+
+//
+func GetMatchInfoByPath(fname string) (MatchInfo, error) {
+	Info := MatchInfo{}
+	cfpath1 := C.CString(fname)
+	defer C.free(unsafe.Pointer(cfpath1))
+	var info_c C.match_info
+	res := int(C.lpms_get_match_infobypath(cfpath1, &info_c))
+	if res < 0 {
+		return Info, ErrVideoCompare
+	}
+	Info.Width = int(info_c.width)
+	Info.Height = int(info_c.height)
+	for i := 0; i < 4; i++ {
+		Info.AudioMd5Sum = append(Info.AudioMd5Sum, int(info_c.audiosum[i]))
+	}
+	return Info, nil
+}
+
+//
+func GetMatchInfoByBuffer(data1 []byte) (MatchInfo, error) {
+	Info := MatchInfo{}
+	pdata1 := unsafe.Pointer(&data1[0])
+	var info_c C.match_info
+	res := int(C.lpms_get_match_infobybuff(pdata1, C.int(len(data1)), &info_c))
+	if res < 0 {
+		return Info, ErrVideoCompare
+	}
+	Info.Width = int(info_c.width)
+	Info.Height = int(info_c.height)
+	for i := 0; i < 4; i++ {
+		Info.AudioMd5Sum = append(Info.AudioMd5Sum, int(info_c.audiosum[i]))
+	}
+	return Info, nil
 }
 
 // compare two signature files whether those matches or not

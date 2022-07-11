@@ -6,14 +6,7 @@
 #include "extras.h"
 #include "logging.h"
 
-struct match_info {
-  int       width;
-  int       height;
-  uint64_t  bit_rate;
-  int       packetcount; //video total packet count
-  uint64_t  timestamp;    //XOR sum of avpacket pts
-  int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
-};
+
 
 struct buffer_data {
     uint8_t *ptr;
@@ -270,7 +263,7 @@ static int read_packet(void *opaque, uint8_t *buf, int buf_size)
     return buf_size;
 }
 
-static int get_matchinfo(void *buffer, int len, struct match_info* info)
+static int get_matchinfo(void *buffer, int len, match_info* info)
 {
   int ret = 0;
   AVFormatContext* ifmt_ctx = NULL;
@@ -282,7 +275,7 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
   size_t  avio_ctx_buffer_size = 4096;
   struct buffer_data bd = { 0 };
   //initialize matching information
-  memset(info, 0x00, sizeof(struct match_info));
+  memset(info, 0x00, sizeof(match_info));
 
    /* fill opaque structure used by the AVIOContext read callback */
   bd.ptr  = buffer;
@@ -358,6 +351,27 @@ clean:
   avformat_close_input(&ifmt_ctx);
   return ret;
 }
+//
+int lpms_get_match_infobybuff(void *buffer1, int len1, pmatch_info out)
+{
+  int ret = 0;
+  memset(out, 0x00, sizeof(match_info));
+  ret = get_matchinfo(buffer1,len1, out);
+  if(ret < 0) return ret;
+  return ret;
+}
+int lpms_get_match_infobypath(char *fname, pmatch_info out)
+{
+  int ret = 0;
+  int len1;
+  uint8_t *buffer1;
+  memset(out, 0x00, sizeof(match_info));
+  buffer1 = get_filebuffer(fname, &len1);
+  if(buffer1 == NULL) return AVERROR(ENOMEM);
+  ret = get_matchinfo(buffer1,len1, out);
+  if(ret < 0) return ret;
+  return ret;
+}
 
 // compare two video buffers whether those matches or not.
 // @param buffer1         the pointer of the first video buffer.
@@ -368,7 +382,7 @@ clean:
 int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
   int ret = 0;
-  struct match_info info1, info2;
+  match_info info1, info2;
 
   ret = get_matchinfo(buffer1,len1,&info1);
   if(ret < 0) return ret;
