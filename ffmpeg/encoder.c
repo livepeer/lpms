@@ -422,13 +422,11 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
           pkt->pts = pkt->dts = pkt->pts + pkt->dts + octx->last_video_dts + 1
                      - FFMIN3(pkt->pts, pkt->dts, octx->last_video_dts + 1)
                      - FFMAX3(pkt->pts, pkt->dts, octx->last_video_dts + 1);
-          if (pkt->dts != AV_NOPTS_VALUE && octx->last_video_dts != AV_NOPTS_VALUE) {
-              int64_t max = octx->last_video_dts + !(octx->oc->oformat->flags & AVFMT_TS_NONSTRICT);
-              // check if dts is bigger than previous last dts or not, not then that's non-monotonic
-              if (pkt->dts < max) {
-                  if (pkt->pts >= pkt->dts) pkt->pts = FFMAX(pkt->pts, max);
-                  pkt->dts = max;
-              }
+          int64_t max = octx->last_video_dts + !(octx->oc->oformat->flags & AVFMT_TS_NONSTRICT);
+          // check if dts is bigger than previous last dts or not, not then that's non-monotonic
+          if (pkt->dts < max) {
+              if (pkt->pts >= pkt->dts) pkt->pts = FFMAX(pkt->pts, max);
+              pkt->dts = max;
           }
       }
       octx->last_video_dts = pkt->dts;
