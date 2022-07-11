@@ -45,6 +45,8 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
     }
     if (ret < 0) LPMS_ERR(add_video_err, "Error setting video params from encoder");
   } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
+
+  octx->last_video_dts = AV_NOPTS_VALUE;
   return 0;
 
 add_video_err:
@@ -410,6 +412,25 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
         }
       }
       octx->last_audio_dts = pkt->dts;
+  }
+  if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type) {
+      //after a long time of transcoding on GPU, exactly 6.5 hours, sometimes here,
+      //got weird packets which DTS > PTS. But muxer doesn't agree with those packets.
+      //so we make DTS and PTS of these packets accept in muxer.
+      /*https://github.com/livepeer/FFmpeg/blob/dd7e5c34e75fcb8ed79e0798d190d523e11ce60b/libavformat/mux.c#L604*/
+      if (pkt->dts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->dts > pkt->pts) {
+          //picking middle value from (pkt->pts, pkt->dts and oct->last_video_dts + 1). 
+          pkt->pts = pkt->dts = pkt->pts + pkt->dts + octx->last_video_dts + 1
+                     - FFMIN3(pkt->pts, pkt->dts, octx->last_video_dts + 1)
+                     - FFMAX3(pkt->pts, pkt->dts, octx->last_video_dts + 1);
+          int64_t max = octx->last_video_dts + !(octx->oc->oformat->flags & AVFMT_TS_NONSTRICT);
+          // check if dts is bigger than previous last dts or not, not then that's non-monotonic
+          if (pkt->dts < max) {
+              if (pkt->pts >= pkt->dts) pkt->pts = FFMAX(pkt->pts, max);
+              pkt->dts = max;
+          }
+      }
+      octx->last_video_dts = pkt->dts;
   }
 
   return av_interleaved_write_frame(octx->oc, pkt);
