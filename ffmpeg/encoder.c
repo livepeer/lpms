@@ -419,6 +419,7 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
       //so we make DTS and PTS of these packets accept in muxer.
       /*https://github.com/livepeer/FFmpeg/blob/dd7e5c34e75fcb8ed79e0798d190d523e11ce60b/libavformat/mux.c#L604*/
       if (pkt->dts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->dts > pkt->pts) {
+          //picking middle value from (pkt->pts, pkt->dts and oct->last_video_dts + 1). 
           pkt->pts = pkt->dts = pkt->pts + pkt->dts + octx->last_video_dts + 1
                      - FFMIN3(pkt->pts, pkt->dts, octx->last_video_dts + 1)
                      - FFMAX3(pkt->pts, pkt->dts, octx->last_video_dts + 1);
