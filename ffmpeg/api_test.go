@@ -3,9 +3,12 @@ package ffmpeg
 import (
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAPI_SkippedSegment(t *testing.T) {
@@ -542,9 +545,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected frame counts from stream copy")
 			t.Error(res)
@@ -575,9 +576,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
+		require.NoError(t, err)
 		if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
 		}
@@ -1295,15 +1294,19 @@ func TestTranscoder_OutputFPS(t *testing.T) {
 }
 
 func TestTranscoderAPI_ClipInvalidConfig(t *testing.T) {
+	run, dir := setupTest(t)
+	cmd := `
+		cp "$1"/../transcoder/test.ts .`
+	run(cmd)
+	defer os.RemoveAll(dir)
 	tc := NewTranscoder()
 	defer tc.StopTranscoder()
-	in := &TranscodeOptionsIn{}
+	in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test.ts", dir)}
 	out := []TranscodeOptions{{
 		Oname:        "-",
 		VideoEncoder: ComponentOptions{Name: "drop"},
 		From:         time.Second,
 	}}
-
 	_, err := tc.Transcode(in, out)
 	if err == nil || err != ErrTranscoderClipConfig {
 		t.Errorf("Expected '%s', got %v", ErrTranscoderClipConfig, err)
@@ -1532,6 +1535,7 @@ func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 
 	InitFFmpeg()
 	tc, err := NewTranscoderWithDetector(&DSceneAdultSoccer, deviceid)
+	require.NotNil(t, tc, "look for `Failed to load native model` logs above")
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -1569,4 +1573,55 @@ func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 
 func TestTranscoder_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Software, "-1")
+}
+
+func discontinuityAudioSegment(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+	cp "$1/../transcoder/test.ts" test1.ts
+
+	# remove audio track
+    ffmpeg -loglevel warning -i test1.ts -an -c:v copy -t 1 test0.ts
+
+	# check audio track
+	ffprobe -loglevel warning test0.ts  -show_streams -select_streams a
+	ffprobe -loglevel warning test1.ts  -show_streams -select_streams a | grep codec_name=aac
+	`
+	run(cmd)
+
+	prof := P144p30fps16x9
+	for i := 1; i <= 4; i++ {
+		tc := NewTranscoder()
+		for j := 1; j <= 4; j++ {
+			k := rand.Int() % 2
+			inname := fmt.Sprintf("%s/test%d.ts", dir, k)
+			outname := fmt.Sprintf("%s/out%d.ts", dir, k)
+			in := &TranscodeOptionsIn{
+				Fname: inname,
+				Accel: accel,
+			}
+			out := []TranscodeOptions{{
+				Oname:        outname,
+				Profile:      prof,
+				AudioEncoder: ComponentOptions{Name: "copy"},
+				Accel:        accel,
+			}}
+			_, err := tc.Transcode(in, out)
+			if err != nil {
+				t.Error(err)
+			}
+			_, info1, _ := GetCodecInfo(inname)
+			_, info2, _ := GetCodecInfo(outname)
+
+			if info1.Acodec != info2.Acodec {
+				t.Error("Expected to succeed for the same audio codec in source and output.")
+			}
+		}
+		tc.StopTranscoder()
+	}
+}
+func TestTranscoder_discontinuityAudioSegment(t *testing.T) {
+	discontinuityAudioSegment(t, Software)
 }

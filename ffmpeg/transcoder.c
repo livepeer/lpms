@@ -969,6 +969,11 @@ int lpms_transcode(input_params *inp, output_params *params,
   return ret;
 }
 
+int lpms_transcode_reopen_demux(input_params *inp) {
+  free_input(&inp->handle->ictx);
+  return open_input(inp, &inp->handle->ictx);
+}
+
 struct transcode_thread* lpms_transcode_new() {
   struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
   if (!h) return NULL;

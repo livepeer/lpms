@@ -85,10 +85,11 @@ type ComponentOptions struct {
 }
 
 type Transcoder struct {
-	handle  *C.struct_transcode_thread
-	stopped bool
-	started bool
-	mu      *sync.Mutex
+	handle     *C.struct_transcode_thread
+	stopped    bool
+	started    bool
+	lastacodec string
+	mu         *sync.Mutex
 }
 
 type TranscodeOptionsIn struct {
@@ -241,8 +242,22 @@ const (
 	CodecStatusMissing       CodecStatus = 2
 )
 
-func GetCodecInfo(fname string) (CodecStatus, string, string, PixelFormat, error) {
-	var acodec, vcodec string
+type MediaFormatInfo struct {
+	Acodec, Vcodec string
+	PixFormat      PixelFormat
+	Width, Height  int
+}
+
+func (f *MediaFormatInfo) ScaledHeight(width int) int {
+	return int(float32(width) * float32(f.Height) / float32(f.Width))
+}
+
+func (f *MediaFormatInfo) ScaledWidth(height int) int {
+	return int(float32(height) * float32(f.Width) / float32(f.Height))
+}
+
+func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
+	format := MediaFormatInfo{}
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
 	acodec_c := C.CString(strings.Repeat("0", 255))
@@ -255,20 +270,21 @@ func GetCodecInfo(fname string) (CodecStatus, string, string, PixelFormat, error
 	params_c.pixel_format = C.AV_PIX_FMT_NONE
 	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
 	if C.strlen(acodec_c) < 255 {
-		acodec = C.GoString(acodec_c)
+		format.Acodec = C.GoString(acodec_c)
 	}
 	if C.strlen(vcodec_c) < 255 {
-		vcodec = C.GoString(vcodec_c)
+		format.Vcodec = C.GoString(vcodec_c)
 	}
-	pixelFormat := PixelFormat{int(params_c.pixel_format)}
-	return status, acodec, vcodec, pixelFormat, nil
+	format.PixFormat = PixelFormat{int(params_c.pixel_format)}
+	format.Width = int(params_c.width)
+	format.Height = int(params_c.height)
+	return status, format, nil
 }
 
 // GetCodecInfo opens the segment and attempts to get video and audio codec names. Additionally, first return value
 // indicates whether the segment has zero video frames
-func GetCodecInfoBytes(data []byte) (CodecStatus, string, string, PixelFormat, error) {
-	var acodec, vcodec string
-	var pixelFormat PixelFormat
+func GetCodecInfoBytes(data []byte) (CodecStatus, MediaFormatInfo, error) {
+	format := MediaFormatInfo{}
 	status := CodecStatusInternalError
 	or, ow, err := os.Pipe()
 	go func() {
@@ -277,11 +293,11 @@ func GetCodecInfoBytes(data []byte) (CodecStatus, string, string, PixelFormat, e
 		ow.Close()
 	}()
 	if err != nil {
-		return status, acodec, vcodec, pixelFormat, ErrEmptyData
+		return status, format, ErrEmptyData
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
-	status, acodec, vcodec, pixelFormat, err = GetCodecInfo(fname)
-	return status, acodec, vcodec, pixelFormat, err
+	status, format, err = GetCodecInfo(fname)
+	return status, format, err
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -299,7 +315,7 @@ func HasZeroVideoFrameBytes(data []byte) (bool, error) {
 		io.Copy(ow, br)
 		ow.Close()
 	}()
-	status, _, _, _, err := GetCodecInfo(fname)
+	status, _, err := GetCodecInfo(fname)
 	ow.Close()
 	return status == CodecStatusNeedsBypass, err
 }
@@ -490,6 +506,101 @@ func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeRes
 	t := NewTranscoder()
 	defer t.StopTranscoder()
 	return t.Transcode(input, ps)
+}
+
+type CodingSizeLimit struct {
+	WidthMin, HeightMin int
+	WidthMax, HeightMax int
+}
+
+type Size struct {
+	W, H int
+}
+
+func (s *Size) Valid(l *CodingSizeLimit) bool {
+	if s.W < l.WidthMin || s.W > l.WidthMax || s.H < l.HeightMin || s.H > l.HeightMax {
+		glog.Warningf("[not valid] profile %dx%d\n", s.W, s.H)
+		return false
+	}
+	return true
+}
+
+func clamp(val, min, max int) int {
+	if val <= min {
+		return min
+	}
+	if val >= max {
+		return max
+	}
+	return val
+}
+
+func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
+	w, h, err := VideoProfileResolution(*p)
+	if err != nil {
+		return err
+	}
+	// detect correct rotation
+	outputAr := float32(w) / float32(h)
+	inputAr := float32(format.Width) / float32(format.Height)
+	if (inputAr > 1.0) != (outputAr > 1.0) {
+		// comparing landscape to portrait, apply rotate on chosen resolution
+		w, h = h, w
+	}
+	// Adjust to minimal encode dimensions keeping aspect ratio
+
+	var adjustedWidth, adjustedHeight Size
+	adjustedWidth.W = clamp(w, l.WidthMin, l.WidthMax)
+	adjustedWidth.H = format.ScaledHeight(adjustedWidth.W)
+	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
+	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
+	if adjustedWidth.Valid(l) {
+		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
+		return nil
+	}
+	if adjustedHeight.Valid(l) {
+		p.Resolution = fmt.Sprintf("%dx%d", adjustedHeight.W, adjustedHeight.H)
+		return nil
+	}
+	// Improve error message to include calculation context
+	return fmt.Errorf("profile %dx%d size out of bounds %dx%d-%dx%d input=%dx%d adjusted %dx%d or %dx%d",
+		w, h, l.WidthMin, l.WidthMin, l.WidthMax, l.HeightMax, format.Width, format.Height, adjustedWidth.W, adjustedWidth.H, adjustedHeight.W, adjustedHeight.H)
+}
+
+// 7th Gen NVENC limits:
+var nvidiaCodecSizeLimts = map[VideoCodec]CodingSizeLimit{
+	H264: {146, 50, 4096, 4096},
+	H265: {132, 40, 8192, 8192},
+}
+
+func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) error {
+	// not using range to be able to make inplace modifications to outputs elements
+	for i := 0; i < len(outputs); i++ {
+		if outputs[i].Accel == Nvidia {
+			limits, haveLimits := nvidiaCodecSizeLimts[outputs[i].Profile.Encoder]
+			resolutionSpecified := outputs[i].Profile.Resolution != ""
+			// Sometimes rendition Resolution is not specified. We skip this rendition.
+			if haveLimits && resolutionSpecified {
+				err := limits.Clamp(&outputs[i].Profile, format)
+				if err != nil {
+					// if err == ErrTranscoderRes {
+					// 	return fmt.Errorf("Found profile [%d] without resolution %v", i, outputs[i])
+					// }
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func isAudioAllDrop(ps []TranscodeOptions) bool {
+	for _, p := range ps {
+		if p.AudioEncoder.Name != "drop" {
+			return false
+		}
+	}
+	return true
 }
 
 // create C output params array and return it along with corresponding finalizer
@@ -741,6 +852,50 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if input == nil {
 		return nil, ErrTranscoderInp
 	}
+	var reopendemux bool
+	reopendemux = false
+	// don't read metadata for pipe input, because it can't seek back and av_find_input_format in the decoder will fail
+	if !strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
+		status, format, err := GetCodecInfo(input.Fname)
+		if err != nil {
+			return nil, err
+		}
+		if status == CodecStatusOk {
+			// We don't return error in case status != CodecStatusOk because proper error would be returned later in the logic.
+			// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
+			// here we require input size and aspect ratio
+			err = ensureEncoderLimits(ps, format)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !t.started {
+			// NeedsBypass is state where video is present in container & without any frames
+			videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""
+			if videoMissing {
+				// Audio-only segment, fail fast right here as we cannot handle them nicely
+				return nil, ErrTranscoderVid
+			}
+			// keep last audio codec
+			t.lastacodec = format.Acodec
+			// Stream is either OK or completely broken, let the transcoder handle it
+			t.started = true
+		} else {
+			// check if we need to reopen demuxer because added audio in video
+			// TODO: fixes like that are needed because handling of cfg change in
+			// LPMS is a joke. We need to decide whether LPMS should support full
+			// dynamic config one day and either implement it there, or implement
+			// some generic workaround for the problem in Go code, such as marking
+			// config changes as significant/insignificant and re-creating the instance
+			// if the former type change happens
+			if format.Acodec != "" && !isAudioAllDrop(ps) {
+				if (t.lastacodec == "") || (t.lastacodec != "" && t.lastacodec != format.Acodec) {
+					reopendemux = true
+					t.lastacodec = format.Acodec
+				}
+			}
+		}
+	}
 	hw_type, err := accelDeviceType(input.Accel)
 	if err != nil {
 		return nil, err
@@ -760,18 +915,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if input.Transmuxing {
 		t.started = true
 	}
-	if !t.started {
-		status, _, vcodec, _, _ := GetCodecInfo(input.Fname)
-		// NeedsBypass is state where video is present in container & vithout any frames
-		videoMissing := status == CodecStatusNeedsBypass || vcodec == ""
-		if videoMissing {
-			// Audio-only segment, fail fast right here as we cannot handle them nicely
-			return nil, ErrTranscoderVid
-		}
-		// Stream is either OK or completely broken, let the transcoder handle it
-		t.started = true
-	}
-
 	// Output configuration
 	params, finalizer, err := createCOutputParams(input, ps)
 	// This prevents C memory leaks
@@ -805,6 +948,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if len(params) > 0 {
 		paramsPointer = (*C.output_params)(&params[0])
 		resultsPointer = (*C.output_results)(&results[0])
+	}
+	if reopendemux {
+		// forcefully close and open demuxer
+		ret := int(C.lpms_transcode_reopen_demux(inp))
+		if ret != 0 {
+			if LogTranscodeErrors {
+				glog.Error("Reopen demux returned : ", ErrorMap[ret])
+			}
+			return nil, ErrorMap[ret]
+		}
 	}
   // This version of the code has two internal transcoder implementations, original
   // and a refactored version. By default, we want to run the former, to stay on the
