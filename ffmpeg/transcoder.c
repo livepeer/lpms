@@ -3,6 +3,7 @@
 #include "filter.h"
 #include "encoder.h"
 #include "logging.h"
+#include "stream_buffer.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -76,6 +77,11 @@ struct transcode_thread {
   int nb_outputs;
 
   AVFilterGraph *dnn_filtergraph;
+
+  // Input buffer - when I/O is done outside of transcoder, for example in
+  // Low Latency scenarios
+  StreamBuffer input_buffer;
+  int use_buffer_for_input;
 };
 
 // TODO: this feels like it belongs elsewhere, not in the top-level transcoder
@@ -641,7 +647,7 @@ int lpms_transcode(input_params *inp, output_params *params,
     if (!needs_decoder(params[i].audio.name)) h->ictx.da = ++decode_a == nb_outputs;
   }
 
-  ret = open_input(inp, &h->ictx);
+  ret = open_input(inp, &h->ictx, h->use_buffer_for_input ? &h->input_buffer : 0);
   if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
 
   // populate output contexts
@@ -727,7 +733,7 @@ void lpms_transcode_stop(struct transcode_thread *handle)
   }
 
   if (handle->dnn_filtergraph) avfilter_graph_free(&handle->dnn_filtergraph);
-
+  buffer_destroy(&handle->input_buffer);
   free(handle);
 }
 
@@ -743,10 +749,16 @@ struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts)
   for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
     h->ictx.last_dts[i] = -1;
   }
+
+  if (-1 == buffer_create(&h->input_buffer)) {
+    free(h);
+    return NULL;
+  }
   // handle dnn filter graph creation
   if (dnn_opts) {
     AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
     if (!filtergraph) {
+      buffer_destroy(&h->input_buffer);
       free(h);
       h = NULL;
     } else {
@@ -763,3 +775,29 @@ void lpms_transcode_discontinuity(struct transcode_thread *handle) {
     handle->ictx.discontinuity[i] = 1;
   }
 }
+
+void lpms_transcode_push_reset(struct transcode_thread *handle, int on)
+{
+  if (!handle) return;
+  buffer_reset(&handle->input_buffer);
+  handle->use_buffer_for_input = on;
+}
+
+void lpms_transcode_push_bytes(struct transcode_thread *handle, uint8_t *bytes, int size)
+{
+  if (!handle) return;
+  buffer_put_bytes(&handle->input_buffer, bytes, size);
+}
+
+void lpms_transcode_push_eof(struct transcode_thread *handle)
+{
+  if (!handle) return;
+  buffer_end_of_stream(&handle->input_buffer);
+}
+
+void lpms_transcode_push_error(struct transcode_thread *handle, int code)
+{
+  if (!handle) return;
+  buffer_error(&handle->input_buffer, code);
+}
+

@@ -101,5 +101,9 @@ int lpms_transcode(input_params *inp, output_params *params, output_results *res
 struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts);
 void lpms_transcode_stop(struct transcode_thread* handle);
 void lpms_transcode_discontinuity(struct transcode_thread *handle);
+void lpms_transcode_push_reset(struct transcode_thread *handle, int on);
+void lpms_transcode_push_bytes(struct transcode_thread* handle, uint8_t *bytes, int size);
+void lpms_transcode_push_eof(struct transcode_thread *handle);
+void lpms_transcode_push_error(struct transcode_thread *handle, int code);
 
 #endif // _LPMS_TRANSCODER_H_
