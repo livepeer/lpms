@@ -441,11 +441,13 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		if res.Decoded.Frames != 120 {
-			t.Error("Did not get decoded frames", res.Decoded.Frames)
-		}
-		if res.Encoded[1].Frames != res.Encoded[2].Frames {
-			t.Error("Mismatched frame count for hw/nv")
+		if res != nil {
+			if res.Decoded.Frames != 120 {
+				t.Error("Did not get decoded frames", res.Decoded.Frames)
+			}
+			if res.Encoded[1].Frames != res.Encoded[2].Frames {
+				t.Error("Mismatched frame count for hw/nv")
+			}
 		}
 	}
 	cmd := `
@@ -1536,34 +1538,35 @@ func detectionFreq(t *testing.T, accel Acceleration, deviceid string) {
 	require.NotNil(t, tc, "look for `Failed to load native model` logs above")
 	if err != nil {
 		t.Error(err)
-	}
-	defer tc.StopTranscoder()
-	// Test encoding with only seg0 and seg2 under detection
-	prof := P144p30fps16x9
-	for i := 0; i < 4; i++ {
-		in := &TranscodeOptionsIn{
-			Fname: fmt.Sprintf("%s/test%d.ts", dir, i),
-			Accel: accel,
-		}
-		out := []TranscodeOptions{
-			{
-				Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
-				Profile: prof,
-				Accel:   accel,
-			},
-		}
-		if i%2 == 0 {
-			out = append(out, TranscodeOptions{
-				Detector: &DSceneAdultSoccer,
-				Accel:    accel,
-			})
-		}
-		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error(err)
-		}
-		if i%2 == 0 && (len(res.Encoded) < 2 || res.Encoded[1].DetectData == nil) {
-			t.Error("No detect data returned for detection profile")
+	} else {
+		defer tc.StopTranscoder()
+		// Test encoding with only seg0 and seg2 under detection
+		prof := P144p30fps16x9
+		for i := 0; i < 4; i++ {
+			in := &TranscodeOptionsIn{
+				Fname: fmt.Sprintf("%s/test%d.ts", dir, i),
+				Accel: accel,
+			}
+			out := []TranscodeOptions{
+				{
+					Oname:   fmt.Sprintf("%s/out%d.ts", dir, i),
+					Profile: prof,
+					Accel:   accel,
+				},
+			}
+			if i%2 == 0 {
+				out = append(out, TranscodeOptions{
+					Detector: &DSceneAdultSoccer,
+					Accel:    accel,
+				})
+			}
+			res, err := tc.Transcode(in, out)
+			if err != nil {
+				t.Error(err)
+			}
+			if i%2 == 0 && (len(res.Encoded) < 2 || res.Encoded[1].DetectData == nil) {
+				t.Error("No detect data returned for detection profile")
+			}
 		}
 	}
 }

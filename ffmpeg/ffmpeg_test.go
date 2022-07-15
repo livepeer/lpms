@@ -1055,9 +1055,11 @@ func TestTranscoder_StreamCopyAndDrop(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 0 {
-		t.Error("Unexpected count for decoded frames ", res.Decoded.Frames)
-	}
+  if res != nil {
+    if res.Decoded.Frames != 0 {
+      t.Error("Unexpected count for decoded frames ", res.Decoded.Frames)
+    }
+  }
 	cmd := `
         cp "$1"/../transcoder/test.ts .
 
