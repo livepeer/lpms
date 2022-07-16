@@ -393,7 +393,7 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
   //     hasn't been a problem in practice (so far)
   if (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type) {
       if (octx->drop_ts == AV_NOPTS_VALUE) octx->drop_ts = pkt->pts;
-      if (!is_copy(octx->audio->name) && pkt->pts && pkt->pts == octx->drop_ts) return 0;
+      if (pkt->pts && pkt->pts == octx->drop_ts) return 0;
 
       if (pkt->dts != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE && pkt->dts > pkt->pts) {
         pkt->pts = pkt->dts = pkt->pts + pkt->dts + octx->last_audio_dts + 1

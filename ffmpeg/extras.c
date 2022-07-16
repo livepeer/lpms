@@ -341,7 +341,7 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
     }
     info->packetcount++;
     info->timestamp ^= packet->pts;
-    if(packet->stream_index == audioid && packet->size > 0) {
+    if(packet->stream_index == audioid && packet->pts > 0 && packet->size > 0) {
       av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
       for (int i=0; i<4; i++) info->audiosum[i] ^= md5tmp[i];
     }
