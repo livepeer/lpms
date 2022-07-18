@@ -30,7 +30,7 @@ struct input_ctx {
   // We maintain a count of sentinel packets sent without receiving any
   // valid frames back, and stop flushing if it crosses SENTINEL_MAX.
   // FIXME This is needed due to issue #155 - input/output frame mismatch.
-#define SENTINEL_MAX 5
+#define SENTINEL_MAX 8
   uint16_t sentinel_count;
 
   // Filter flush
