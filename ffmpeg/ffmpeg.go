@@ -373,7 +373,8 @@ func GetDiffInfo(info1, info2 VideoInfo, linestr *[]string) {
 	for i := 0; i < 256; i++ {
 		//audiodiff += strconv.Itoa(info1.Audiosum[i]-info2.Audiosum[i]) + "_"
 		//audiodiff += math.Abs(float64(info1.Audiosum[i] - info2.Audiosum[i]))
-		audiodiff += float64((info1.Audiosum[i] - info2.Audiosum[i]) * (info1.Audiosum[i] - info2.Audiosum[i]) / (info1.Audiosum[i] + info2.Audiosum[i]) / 2)
+		audiodiff += float64((info1.Audiosum[i] - info2.Audiosum[i]) * (info1.Audiosum[i] - info2.Audiosum[i]) / (info1.Audiosum[i] + info2.Audiosum[i]))
+		audiodiff /= 2
 	}
 	*linestr = append(*linestr, strconv.Itoa(int(audiodiff)))
 }
