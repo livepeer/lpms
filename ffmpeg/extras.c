@@ -331,8 +331,10 @@ int get_matchinfo(void *buffer, int len, match_info* info)
     info->packetcount++;
     info->timestamp ^= packet->pts;
     if(packet->stream_index == audioid && packet->size > 0) {
-      av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
-      for (int i=0; i<4; i++) info->audiosum[i] ^= md5tmp[i];
+      //av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
+      for (int  i = 0; i < packet->size; i++) {
+        info->audiosum[packet->data[i]]++;
+      }
     }
     av_packet_unref(packet);
   }

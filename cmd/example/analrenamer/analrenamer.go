@@ -64,7 +64,7 @@ func main() {
 			}
 		}
 	}
-	fmt.Printf("Missing audio count is %d", missaudio)
+	fmt.Printf("Missing audio count is %d\n", missaudio)
 
 	fmt.Printf("Task completed!")
 

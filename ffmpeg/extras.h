@@ -13,7 +13,7 @@ typedef struct s_match_info {
   uint64_t  bit_rate;
   int       packetcount; //video total packet count
   uint64_t  timestamp;    //XOR sum of avpacket pts
-  int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
+  int       audiosum[256]; //Histogram of audio data
 } match_info;
 
 int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char *seg_start);
