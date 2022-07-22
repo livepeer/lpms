@@ -6,13 +6,14 @@
 #include "extras.h"
 #include "logging.h"
 
+#define MIN_AUDIO_CHI_DIS 500.0
 struct match_info {
   int       width;
   int       height;
   uint64_t  bit_rate;
-  int       packetcount; //video total packet count
+  int       packetcount;  //video total packet count
   uint64_t  timestamp;    //XOR sum of avpacket pts
-  int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
+  int       audiohis[256];//Histogram for audio data
 };
 
 struct buffer_data {
@@ -341,9 +342,10 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
     }
     info->packetcount++;
     info->timestamp ^= packet->pts;
-    if(packet->stream_index == audioid && packet->pts > 0 && packet->size > 0) {
-      av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
-      for (int i=0; i<4; i++) info->audiosum[i] ^= md5tmp[i];
+    if(packet->stream_index == audioid && packet->size > 0) {
+      for (int i = 0; i < packet->size; i++) {
+        info->audiohis[packet->data[i]]++;
+      }
     }
     av_packet_unref(packet);
   }
@@ -357,6 +359,16 @@ clean:
   avio_context_free(&avio_in);
   avformat_close_input(&ifmt_ctx);
   return ret;
+}
+// calculate chi-distance for audio histogram data
+double get_chi_distance(struct match_info* info1, struct match_info *info2)
+{
+  double chidis = 0.0;
+	for (int i = 0; i < 256; i++) {
+		chidis += ((info1->audiohis[i] - info2->audiohis[i]) ^ 2) / (double)(info1->audiohis[i] + info2->audiohis[i]);
+	}
+	chidis /= 2.0;
+  return chidis;
 }
 
 // compare two video buffers whether those matches or not.
@@ -376,7 +388,7 @@ int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2
   ret = get_matchinfo(buffer2,len2,&info2);
   if(ret < 0) return ret;
   //compare two matching information
-  if (info1.width != info2.width || info1.height != info2.height || memcmp(info1.audiosum, info2.audiosum, 16)) {
+  if (info1.width != info2.width || info1.height != info2.height || get_chi_distance(&info1, &info2) >= MIN_AUDIO_CHI_DIS) {
       ret = 1;
   }
 
