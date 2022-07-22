@@ -871,17 +871,6 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
 		t.Error("Unexpected count of decoded/encoded frames")
 	}
-	in = &TranscodeOptionsIn{Fname: dir + "/audioonly.ts"}
-	out = []TranscodeOptions{
-		{
-			Oname:        dir + "/noaudio.ts",
-			Profile:      P144p30fps16x9,
-			AudioEncoder: ComponentOptions{Name: "copy"},
-		},
-	}
-	// Audio only segments are not supported
-	_, err = Transcode3(in, out)
-	assert.EqualError(t, err, "TranscoderInvalidVideo")
 }
 
 func TestTranscoder_StreamCopy_Validate_B_Frames(t *testing.T) {
@@ -1010,11 +999,6 @@ func TestTranscoder_Drop(t *testing.T) {
 	if res.Decoded.Frames != 30 || res.Encoded[0].Frames != 30 {
 		t.Error("Unexpected encoded/decoded frame counts ", res.Decoded.Frames, res.Encoded[0].Frames)
 	}
-	in.Fname = dir + "/novideo.ts"
-	out = []TranscodeOptions{{Oname: dir + "/encoded-audio.mp4", Profile: P144p30fps16x9}}
-	_, err = Transcode3(in, out)
-	// Audio only segments are not supported
-	assert.EqualError(t, err, "TranscoderInvalidVideo")
 }
 
 func TestTranscoder_StreamCopyAndDrop(t *testing.T) {

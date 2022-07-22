@@ -53,6 +53,8 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     const AVFilter *buffersink = avfilter_get_by_name("buffersink");
     AVFilterInOut *outputs = NULL;
     AVFilterInOut *inputs  = NULL;
+    // vi should be safe here because this function gets called only if video
+    // is available
     AVRational time_base = ictx->ic->streams[ictx->vi]->time_base;
     enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_YUV420P, AV_PIX_FMT_CUDA, AV_PIX_FMT_NONE }; // XXX ensure the encoder allows this
     struct filter_ctx *vf = &octx->vf;
@@ -302,7 +304,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
   }
 
   // Timestamp handling code
-  AVStream *vst = ictx->ic->streams[ictx->vi];
+  AVStream *vst = (ictx->vi >= 0) ? ictx->ic->streams[ictx->vi] : NULL;
   if (inf) { // Non-Flush Frame
     inf->opaque = (void *) inf->pts; // Store original PTS for calc later
     if (is_video && octx->fps.den) {
@@ -363,6 +365,7 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
       // re-calculate our output PTS before passing it on to the encoder
       if (filter->pts_diff == INT64_MIN) {
         int64_t pts = (int64_t)frame->opaque; // original input PTS
+        // safe to use ictx->vi because we know this is video frame
         pts = av_rescale_q_rnd(pts, ictx->ic->streams[ictx->vi]->time_base, av_buffersink_get_time_base(filter->sink_ctx), AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
         // difference between rescaled input PTS and the segment's first frame PTS of the filtergraph output
         filter->pts_diff = pts - frame->pts;

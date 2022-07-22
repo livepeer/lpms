@@ -36,10 +36,9 @@ const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 //  short of re-initializing the component. This is addressed for each component
 //  as follows:
 //
-//  Demuxer: For resumable / header-less formats such as mpegts, the demuxer
-//           is reused across segments. This gives a small speed boost. For
-//           all other formats, the demuxer is closed and reopened at the next
-//           segment.
+//  Demuxer: Used to be reused, but it was found very problematic, as reused
+//           muxer retained information from previous segments. It caused all
+//           kind of subtle problems and was removed
 //
 
 // MOVED TO decoder.[ch]
@@ -133,13 +132,13 @@ static int flush_output(struct input_ctx *ictx, struct output_ctx *octx)
   int ret = 0;
   if (octx->vc) { // flush video
     while (!ret || ret == AVERROR(EAGAIN)) {
-      ret = process_out(ictx, octx, octx->vc, octx->oc->streams[0], &octx->vf, NULL);
+      ret = process_out(ictx, octx, octx->vc, octx->video_stream, &octx->vf, NULL);
     }
   }
   ret = 0;
   if (octx->ac) { // flush audio
     while (!ret || ret == AVERROR(EAGAIN)) {
-      ret = process_out(ictx, octx, octx->ac, octx->oc->streams[octx->dv ? 0 : 1], &octx->af, NULL);
+      ret = process_out(ictx, octx, octx->ac, octx->audio_stream, &octx->af, NULL);
     }
   }
   // send EOF signal to signature filter
@@ -214,7 +213,6 @@ static int handle_audio_frame(struct transcode_thread *h, AVStream *ist,
                               output_results *decoded_results, AVFrame *dframe)
 {
   struct input_ctx *ictx = &h->ictx;
-
   ++decoded_results->audio_frames;
   // frame duration update
   int64_t dur = 0;
@@ -237,7 +235,7 @@ static int handle_audio_frame(struct transcode_thread *h, AVStream *ist,
 
     if (octx->ac) {
       int ret = process_out(ictx, octx, octx->ac,
-                            octx->oc->streams[octx->dv ? 0 : 1], &octx->af, dframe);
+                            octx->audio_stream, &octx->af, dframe);
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue; // this is ok
       if (ret < 0) LPMS_ERR_RETURN("Error encoding audio");
     }
@@ -320,7 +318,7 @@ static int handle_audio_packet(struct transcode_thread *h, output_results *decod
       if (octx->da) continue; // drop audio
       // If there is no encoder, then we are copying. Also the index of
       // audio stream is 0 when we are dropping video and 1 otherwise
-      if (!octx->ac) ost = octx->oc->streams[octx->dv ? 0 : 1];
+      if (!octx->ac) ost = octx->audio_stream;
     }
 
     if (ost) {
@@ -418,7 +416,7 @@ static int handle_video_packet(struct transcode_thread *h, output_results *decod
       // This is video stream for this output, but do we need packet?
       if (octx->dv) continue; // drop video
       // If there is no encoder, then we are copying
-      if (!octx->vc) ost = octx->oc->streams[0];
+      if (!octx->vc) ost = octx->video_stream;
     }
 
     if (ost) {
@@ -712,12 +710,6 @@ transcode_cleanup:
     }
   }
   return ret;
-}
-
-int lpms_transcode_reopen_demux(input_params *inp)
-{
-  free_input(&inp->handle->ictx, FORCE_CLOSE_HW_DECODER);
-  return open_input(inp, &inp->handle->ictx);
 }
 
 // TODO: name - this is called _stop, but it is more like stop & destroy

@@ -42,22 +42,19 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
 {
   // video stream to muxer
   int ret = 0;
-  AVStream *st = NULL;
   if (is_copy(octx->video->name)) {
     // create stream as a copy of existing one
     if (ictx->vi < 0) LPMS_ERR(add_video_err, "Input video stream does not exist");
-    st = add_stream_copy(octx, ictx->ic->streams[ictx->vi]);
-    if (!st) LPMS_ERR(add_video_err, "Error adding video copy stream");
-    octx->vi = st->index;
-    if (octx->fps.den) st->avg_frame_rate = octx->fps;
-    else st->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
+    octx->video_stream = add_stream_copy(octx, ictx->ic->streams[ictx->vi]);
+    if (!octx->video_stream) LPMS_ERR(add_video_err, "Error adding video copy stream");
+    if (octx->fps.den) octx->video_stream->avg_frame_rate = octx->fps;
+    else octx->video_stream->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
   } else if (octx->vc) {
     // create stream from encoder
-    st = add_stream_for_encoder(octx, octx->vc);
-    if (!st) LPMS_ERR(add_video_err, "Error adding video encoder stream");
-    octx->vi = st->index;
-    if (octx->fps.den) st->avg_frame_rate = octx->fps;
-    else st->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
+    octx->video_stream = add_stream_for_encoder(octx, octx->vc);
+    if (!octx->video_stream) LPMS_ERR(add_video_err, "Error adding video encoder stream");
+    if (octx->fps.den) octx->video_stream->avg_frame_rate = octx->fps;
+    else octx->video_stream->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
     // Video has rescale here. Audio is slightly different
     // Rescale the gop/clip time to the expected timebase after filtering.
     // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
@@ -65,7 +62,7 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
     AVRational ms_tb = {1, 1000};
     AVRational dest_tb;
     if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
-    else dest_tb = ictx->ic->streams[ictx->vi]->time_base;
+    else dest_tb = ictx->ic->streams[ictx->vi]->time_base;  // should be safe to use vi
     if (octx->gop_time) {
       octx->gop_pts_len = av_rescale_q(octx->gop_time, ms_tb, dest_tb);
       octx->next_kf_pts = 0; // force for first frame
@@ -77,8 +74,14 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
       octx->clip_to_pts = av_rescale_q(octx->clip_to, ms_tb, dest_tb);
     }
   } else if (is_drop(octx->video->name)) {
+    octx->video_stream = NULL;
     LPMS_ERR(add_video_err, "add_video_stream called for dropped video!");
-  } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
+  } else {
+    // this can actually happen if the transcoder configured for video
+    // gets segment without actual video stream
+    octx->video_stream = NULL;
+    LPMS_WARN("No video encoder, not a copy; missing video input perhaps?");
+  }
 
   octx->last_video_dts = AV_NOPTS_VALUE;
   return 0;
@@ -99,26 +102,26 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 
   // audio stream to muxer
   int ret = 0;
-  AVStream *st = NULL;
   if (is_copy(octx->audio->name)) {
     // create stream as a copy of existing one
     if (ictx->ai < 0) LPMS_ERR(add_audio_err, "Input audio stream does not exist");
-    st = add_stream_copy(octx, ictx->ic->streams[ictx->ai]);
-    octx->ai = st->index;
+    octx->audio_stream = add_stream_copy(octx, ictx->ic->streams[ictx->ai]);
   } else if (octx->ac) {
     // create stream from encoder
-    st = add_stream_for_encoder(octx, octx->ac);
-    octx->ai = st->index;
+    octx->audio_stream = add_stream_for_encoder(octx, octx->ac);
     // Video has rescale here
   } else if (is_drop(octx->audio->name)) {
     // Supposed to exit this function early if there's a drop
+    octx->audio_stream = NULL;
     LPMS_ERR(add_audio_err, "add_audio_stream called for dropped audio!");
   } else {
-    LPMS_ERR(add_audio_err, "No audio encoder; not a copy; what is this?");
+    // see comment in add_video_stream above
+    octx->audio_stream = NULL;
+    LPMS_WARN("No audio encoder; not a copy; missing audio input perhaps?");
+    return 0;
   }
 
-  if (!st) LPMS_ERR(add_audio_err, "Error adding video copy stream");
-  octx->ai = st->index;
+  if (!octx->audio_stream) LPMS_ERR(add_audio_err, "Error adding audio stream");;
 
   // Audio has rescale here. Video version is slightly different
   AVRational ms_tb = {1, 1000};
@@ -131,7 +134,7 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
   }
 
   // signal whether to drop preroll audio
-  if (st->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
+  if (octx->audio_stream->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
 
   octx->last_audio_dts = AV_NOPTS_VALUE;
 
@@ -217,10 +220,10 @@ static int open_video_encoder(struct input_ctx *ictx, struct output_ctx *octx,
   vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
   if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
   else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->framerate = ictx->vc->framerate;
-  else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate;
+  else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate; // vi should be safe
   if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
   else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
-  else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
+  else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;    // vi should be safe
   if (octx->bitrate) vc->rc_min_rate = vc->bit_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
   if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
     vc->hw_frames_ctx =

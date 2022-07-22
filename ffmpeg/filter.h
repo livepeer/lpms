@@ -45,7 +45,8 @@ struct output_ctx {
   AVFormatContext *oc; // muxer required
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
-  int vi, ai; // video and audio stream indices
+  AVStream *audio_stream;
+  AVStream *video_stream;
   int dv, da; // flags whether to drop video or audio
   struct filter_ctx vf, af, sf;
 

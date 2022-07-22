@@ -10,6 +10,9 @@ struct input_ctx {
   AVFormatContext *ic; // demuxer required
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
+  // TODO: perhaps get rid of indices and introduce pointers same way as on
+  // the encoder side, easier to check and easier to dereference without
+  // pointer to demuxer
   int vi, ai; // video and audio stream indices
   int dv, da; // flags whether to drop video or audio
 
