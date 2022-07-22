@@ -364,10 +364,10 @@ clean:
 double get_chi_distance(struct match_info* info1, struct match_info *info2)
 {
   double chidis = 0.0;
-	for (int i = 0; i < 256; i++) {
-		chidis += ((info1->audiohis[i] - info2->audiohis[i]) ^ 2) / (double)(info1->audiohis[i] + info2->audiohis[i]);
-	}
-	chidis /= 2.0;
+  for (int i = 0; i < 256; i++) {
+    chidis += ((info1->audiohis[i] - info2->audiohis[i]) ^ 2) / (double)(info1->audiohis[i] + info2->audiohis[i]);
+  }
+  chidis /= 2.0;
   return chidis;
 }
 
