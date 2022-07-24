@@ -636,6 +636,47 @@ func loadInputBuffer(t *Transcoder, input *TranscodeOptionsIn) {
   }
 }
 
+func storeOutputQueue(t *Transcoder, outputs []TranscodeOptions) (error) {
+  var fds = make([]*os.File, len(outputs))
+  for i := range fds {
+      file, err := os.Create(outputs[i].Oname)
+      if nil != err {
+        return err
+      }
+      fds[i] = file
+  }
+  for {
+    // get next output packet
+    packet := C.lpms_transcode_peek_packet(t.handle)
+    if 8 == packet.flags {
+      break
+    }
+    // this is a data packet, write it to file
+    data := C.GoBytes(unsafe.Pointer(packet.data), packet.size)
+    bytes, err := fds[packet.index].Write(data)
+    if nil != err {
+      return err
+    }
+    if bytes != int(packet.size) {
+      panic("storeOutputQueue couldn't write all bytes error")
+    }
+    // pop data packet
+    C.lpms_transcode_pop_packet(t.handle)
+  }
+  // if we are here, we just have terminating packet, remove it
+  // (terminating packet carries no data, it is added there to signify
+  // the end of all input)
+  C.lpms_transcode_pop_packet(t.handle)
+  // Close all the open files
+  for i := range fds {
+    if nil != fds[i] {
+      fds[i].Close()
+    }
+  }
+  // Success
+  return nil
+}
+
 
 // create C output params array and return it along with corresponding finalizer
 // function that makes sure there are no C memory leaks
@@ -961,6 +1002,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
   loadInputBuffer(t, input)
 	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
+  // be careful to use storeOutputQueue to fake lpms_transcode so that the test
+  // reacts properly
+  if (ret == 0) {
+    err = storeOutputQueue(t, ps)
+    if nil != err {
+      // fake output error
+      ret = C.AVERROR_STREAM_NOT_FOUND
+    }
+  }
+
 	if ret != 0 {
 		if LogTranscodeErrors {
 			glog.Error("Transcoder Return : ", ErrorMap[ret])

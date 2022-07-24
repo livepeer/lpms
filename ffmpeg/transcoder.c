@@ -4,6 +4,7 @@
 #include "encoder.h"
 #include "logging.h"
 #include "stream_buffer.h"
+#include "output_queue.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -81,7 +82,9 @@ struct transcode_thread {
   // Input buffer - when I/O is done outside of transcoder, for example in
   // Low Latency scenarios
   StreamBuffer input_buffer;
-  int use_buffer_for_input;
+  int use_buffer_for_input; // TODO: name it "use custom output" or some such
+  // Output
+  OutputQueue output_queue;
 };
 
 // TODO: this feels like it belongs elsewhere, not in the top-level transcoder
@@ -647,7 +650,7 @@ int lpms_transcode(input_params *inp, output_params *params,
     if (!needs_decoder(params[i].audio.name)) h->ictx.da = ++decode_a == nb_outputs;
   }
 
-  ret = open_input(inp, &h->ictx, h->use_buffer_for_input ? &h->input_buffer : 0);
+  ret = open_input(inp, &h->ictx, h->use_buffer_for_input ? &h->input_buffer : NULL);
   if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open input");
 
   // populate output contexts
@@ -680,8 +683,9 @@ int lpms_transcode(input_params *inp, output_params *params,
     octx->dv = h->ictx.vi < 0 || is_drop(octx->video->name);
     octx->da = h->ictx.ai < 0 || is_drop(octx->audio->name);
     octx->res = &results[i];
+    octx->write_context.index = i;
 
-    ret = open_output(octx, &h->ictx);
+    ret = open_output(octx, &h->ictx, h->use_buffer_for_input ? &h->output_queue : NULL);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
   }
 
@@ -695,6 +699,10 @@ int lpms_transcode(input_params *inp, output_params *params,
 
   // Part IV: shutdown
 transcode_cleanup:
+  if (h->use_buffer_for_input) {
+    // terminate output queue
+    queue_push_end(&h->output_queue);
+  }
 
   // IMPORTANT: note that this is the only place when PRESERVE_HW_ENCODER and
   // PRESERVE_HW_DECODER are used. This is done to retain HW encoder and decoder
@@ -754,11 +762,14 @@ struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts)
     free(h);
     return NULL;
   }
+  queue_create(&h->output_queue);
+
   // handle dnn filter graph creation
   if (dnn_opts) {
     AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
     if (!filtergraph) {
       buffer_destroy(&h->input_buffer);
+      queue_destroy(&h->output_queue);
       free(h);
       h = NULL;
     } else {
@@ -780,6 +791,7 @@ void lpms_transcode_push_reset(struct transcode_thread *handle, int on)
 {
   if (!handle) return;
   buffer_reset(&handle->input_buffer);
+  queue_reset(&handle->output_queue);
   handle->use_buffer_for_input = on;
 }
 
@@ -801,3 +813,14 @@ void lpms_transcode_push_error(struct transcode_thread *handle, int code)
   buffer_error(&handle->input_buffer, code);
 }
 
+const OutputPacket *lpms_transcode_peek_packet(struct transcode_thread *handle)
+{
+  if (!handle) return NULL;
+  return queue_peek_front(&handle->output_queue);
+}
+
+void lpms_transcode_pop_packet(struct transcode_thread *handle)
+{
+  if (!handle) return;
+  return queue_pop_front(&handle->output_queue);
+}
