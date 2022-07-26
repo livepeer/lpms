@@ -373,7 +373,7 @@ func GetDiffInfo(info1, info2 VideoInfo, linestr *[]string) {
 	for i := 0; i < 256; i++ {
 		//audiodiff += strconv.Itoa(info1.Audiosum[i]-info2.Audiosum[i]) + "_"
 		//audiodiff += math.Abs(float64(info1.Audiosum[i] - info2.Audiosum[i]))
-		audiodiff += float64((info1.Audiosum[i] - info2.Audiosum[i]) * (info1.Audiosum[i] - info2.Audiosum[i]) / (info1.Audiosum[i] + info2.Audiosum[i]))
+		//audiodiff += float64((info1.Audiosum[i] - info2.Audiosum[i]) * (info1.Audiosum[i] - info2.Audiosum[i]) / (info1.Audiosum[i] + info2.Audiosum[i]))
 	}
 	audiodiff /= 2.0
 	*linestr = append(*linestr, strconv.Itoa(int(audiodiff)))
@@ -402,6 +402,21 @@ func GetVideoInfoByPath(fname1 string) (VideoInfo, error) {
 	} else {
 		return vinfo, nil
 	}
+}
+
+// compare two vidoe files whether those matches or not
+func GetCostVideoByPath(fname1 string, fname2 string) float64 {
+	if len(fname1) <= 0 || len(fname2) <= 0 {
+		return 0.0
+	}
+	cfpath1 := C.CString(fname1)
+	defer C.free(unsafe.Pointer(cfpath1))
+	cfpath2 := C.CString(fname2)
+	defer C.free(unsafe.Pointer(cfpath2))
+
+	res := float64(C.lpms_getmatch_cost(cfpath1, cfpath2))
+
+	return res
 }
 
 // compare two vidoe files whether those matches or not

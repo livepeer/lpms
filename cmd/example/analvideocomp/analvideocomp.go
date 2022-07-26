@@ -31,7 +31,7 @@ func main() {
 	flag.Parse()
 	outcsv := "compresult.csv"
 	//indir := os.Args[0]
-	indir := "/home/gpu/tvideo/fastverifyfaildata/"
+	indir := "/home/gpu/tvideo/analdata/"
 	if indir == "" {
 		panic("Usage: <input directory>")
 	}
@@ -55,6 +55,7 @@ func main() {
 	//write header
 	columnheader := []string{"filepath1", "filepath2", "width", "height", "bitrate", "packetcount", "timestamp", "audiosum"}
 	_ = csvrecorder.Write(columnheader)
+	matchingcount := 0
 
 	for i := 0; i < len(infiles)/2; i++ {
 		var linestr []string
@@ -73,10 +74,13 @@ func main() {
 			linestr = append(linestr, filename1)
 			ffmpeg.GetDiffInfo(res2, res1, &linestr)
 		}
+		bres := ffmpeg.GetCostVideoByPath(infiles[i*2], infiles[i*2+1])
+		sres := fmt.Sprintf("%f", bres)
+		linestr = append(linestr, sres)
 
 		csvrecorder.Write(linestr)
 	}
 
-	fmt.Printf("Test completed!")
+	fmt.Printf("Test completed! %d", matchingcount)
 
 }

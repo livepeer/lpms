@@ -6,6 +6,10 @@
 #include "extras.h"
 #include "logging.h"
 
+#define MIN_SIMILARITY 0.90
+#define INC_MD5_COUNT 300
+#define MAX_MD5_COUNT 30000
+#define MD5_SIZE 16   //sizeof(int)*4 byte
 struct buffer_data {
     uint8_t *ptr;
     size_t size; ///< size left in the buffer
@@ -331,10 +335,26 @@ int get_matchinfo(void *buffer, int len, match_info* info)
     info->packetcount++;
     info->timestamp ^= packet->pts;
     if(packet->stream_index == audioid && packet->size > 0) {
-      //av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
-      for (int  i = 0; i < packet->size; i++) {
-        info->audiosum[packet->data[i]]++;
+      if (info->apacketcount < MAX_MD5_COUNT) {
+          info->apacketcount++;
+          if (info->apacketcount > info->md5allocsize) {
+            info->md5allocsize += INC_MD5_COUNT;
+            if (info->pmd5array == NULL) {
+              info->pmd5array = (int*)av_malloc(info->md5allocsize*MD5_SIZE);
+            } else {
+              int* tmp = info->pmd5array;
+              info->pmd5array = (int*)av_malloc(info->md5allocsize*MD5_SIZE);
+              memcpy(info->pmd5array, tmp, (info->md5allocsize-INC_MD5_COUNT)*MD5_SIZE);
+              av_free(tmp);
+            }
+          }
+          int* pint = info->pmd5array + (info->apacketcount-1) * 4;
+          av_md5_sum((uint8_t*)(pint), packet->data, packet->size);
       }
+      //av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
+      //for (int  i = 0; i < packet->size; i++) {
+      //  info->audiosum[packet->data[i]]++;
+      //}
     }
     av_packet_unref(packet);
   }
@@ -364,6 +384,30 @@ int lpms_get_matchinfo(char *vpath1, match_info* info)
       av_freep(&buffer1);
   return 0;
 }
+
+// calculate similarity for audio md5 data
+double get_md5_similarity(match_info* info1, match_info *info2)
+{
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
+  double res = 0.0;
+  int matchingcount = 0;
+  for (int i = 0; i < info1->apacketcount; i++) {
+    int scanscope = i/10+10;// +- 10% scan
+    int *psrcmpd = info1->pmd5array + (i*4);
+    int nstart = max(0,i-scanscope);
+    int nend = min(info2->apacketcount,i+scanscope);
+    for (int j = nstart; j < nend; j++) {
+      if(memcmp(psrcmpd, info2->pmd5array + (j*4), MD5_SIZE) == 0){
+        matchingcount++;
+        break;
+      }
+    }
+  }
+  res = matchingcount/(double)info1->apacketcount;
+  av_log(NULL, AV_LOG_ERROR, "matchingcount: %lf \n", res);
+  return res;
+}
 // compare two video buffers whether those matches or not.
 // @param buffer1         the pointer of the first video buffer.
 // @param buffer2         the pointer of the second video buffer.
@@ -373,19 +417,20 @@ int lpms_get_matchinfo(char *vpath1, match_info* info)
 int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
   int ret = 0;
-  match_info info1, info2;
+  match_info info1 = {0,}, info2 = {0,};
 
   ret = get_matchinfo(buffer1,len1,&info1);
-  if(ret < 0) return ret;
+  if(ret < 0) goto clean;
 
   ret = get_matchinfo(buffer2,len2,&info2);
-  if(ret < 0) return ret;
+  if(ret < 0) goto clean;
   //compare two matching information
-  if ( info1.width != info2.width /*|| info1.height != info2.height ||
-      info1.bit_rate != info2.bit_rate || info1.packetcount != info2.packetcount ||
-      info1.timestamp != info2.timestamp || memcmp(info1.audiosum, info2.audiosum, 16)*/) {
+  if (/*info1.width != info2.width || info1.height != info2.height ||*/ get_md5_similarity(&info1, &info2) < MIN_SIMILARITY) {
       ret = 1;
   }
+clean:
+  if(info1.pmd5array) av_free(info1.pmd5array);
+  if(info2.pmd5array) av_free(info2.pmd5array);
 
   return ret;
 }
@@ -414,4 +459,39 @@ int lpms_compare_video_bypath(char *vpath1, char *vpath2)
       av_freep(&buffer2);
 
   return ret;
+}
+
+double lpms_getmatch_cost(char *vpath1, char *vpath2)
+{
+  double cost = 0.0;
+  int ret = 0;
+  int len1, len2;
+  uint8_t *buffer1, *buffer2;
+  buffer1 = get_filebuffer(vpath1, &len1);
+  if(buffer1 == NULL) return cost;
+  buffer2 = get_filebuffer(vpath2, &len2);
+  if(buffer2 == NULL) {
+      av_freep(&buffer1);
+      return cost;
+  }
+  match_info info1 = {0,}, info2 = {0,};
+
+  ret = get_matchinfo(buffer1,len1,&info1);
+  if(ret < 0) goto clean;
+
+  ret = get_matchinfo(buffer2,len2,&info2);
+  if(ret < 0) goto clean;
+
+  cost = get_md5_similarity(&info1, &info2);
+
+clean:
+  if(info1.pmd5array) av_free(info1.pmd5array);
+  if(info2.pmd5array) av_free(info2.pmd5array);
+
+  if(buffer1 != NULL)
+      av_freep(&buffer1);
+  if(buffer2 != NULL)
+      av_freep(&buffer2);
+
+  return cost;
 }
