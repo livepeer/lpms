@@ -16,8 +16,7 @@ struct match_info {
   int       height;
   uint64_t  bit_rate;
   int       packetcount;  //video total packet count
-  uint64_t  timestamp;    //XOR sum of avpacket pts
-  int       audiohis[256];//Histogram for audio data
+  uint64_t  timestamp;    //XOR sum of avpacket pts  
   int       md5allocsize;
   int       apacketcount; //audio packet count
   int       *pmd5array;
