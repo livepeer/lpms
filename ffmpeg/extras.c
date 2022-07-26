@@ -6,7 +6,11 @@
 #include "extras.h"
 #include "logging.h"
 
-#define MIN_AUDIO_CHI_DIS 500.0
+#define MIN_SIMILARITY 0.90
+#define INC_MD5_COUNT 300
+#define MAX_MD5_COUNT 30000
+#define MD5_SIZE 16   //sizeof(int)*4 byte
+
 struct match_info {
   int       width;
   int       height;
@@ -14,6 +18,9 @@ struct match_info {
   int       packetcount;  //video total packet count
   uint64_t  timestamp;    //XOR sum of avpacket pts
   int       audiohis[256];//Histogram for audio data
+  int       md5allocsize;
+  int       apacketcount; //audio packet count
+  int       *pmd5array;
 };
 
 struct buffer_data {
@@ -342,9 +349,22 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
     }
     info->packetcount++;
     info->timestamp ^= packet->pts;
-    if(packet->stream_index == audioid && packet->size > 0) {
-      for (int i = 0; i < packet->size; i++) {
-        info->audiohis[packet->data[i]]++;
+    if (packet->stream_index == audioid && packet->size > 0) {
+      if (info->apacketcount < MAX_MD5_COUNT) {
+          info->apacketcount++;
+          if (info->apacketcount > info->md5allocsize) {
+            info->md5allocsize += INC_MD5_COUNT;
+            if (info->pmd5array == NULL) {
+              info->pmd5array = (int*)av_malloc(info->md5allocsize*MD5_SIZE);
+            } else {
+              int* tmp = info->pmd5array;
+              info->pmd5array = (int*)av_malloc(info->md5allocsize*MD5_SIZE);
+              memcpy(info->pmd5array, tmp, (info->md5allocsize-INC_MD5_COUNT)*MD5_SIZE);
+              av_free(tmp);
+            }
+          }
+          int* pint = info->pmd5array + (info->apacketcount-1) * 4;
+          av_md5_sum((uint8_t*)(pint), packet->data, packet->size);
       }
     }
     av_packet_unref(packet);
@@ -360,15 +380,27 @@ clean:
   avformat_close_input(&ifmt_ctx);
   return ret;
 }
-// calculate chi-distance for audio histogram data
-double get_chi_distance(struct match_info* info1, struct match_info *info2)
+// calculate similarity for audio md5 data
+double get_md5_similarity(struct match_info* info1, struct match_info *info2)
 {
-  double chidis = 0.0;
-  for (int i = 0; i < 256; i++) {
-    chidis += ((info1->audiohis[i] - info2->audiohis[i]) ^ 2) / (double)(info1->audiohis[i] + info2->audiohis[i]);
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
+  double res = 0.0;
+  int matchingcount = 0;
+  for (int i = 0; i < info1->apacketcount; i++) {
+    int scanscope = i/10+10;// +- 10% scan
+    int *psrcmpd = info1->pmd5array + (i*4);
+    int nstart = max(0,i-scanscope);
+    int nend = min(info2->apacketcount,i+scanscope);
+    for (int j = nstart; j < nend; j++) {
+      if(memcmp(psrcmpd, info2->pmd5array + (j*4), MD5_SIZE) == 0){
+        matchingcount++;
+        break;
+      }
+    }
   }
-  chidis /= 2.0;
-  return chidis;
+  res = matchingcount/(double)info1->apacketcount;
+  return res;
 }
 
 // compare two video buffers whether those matches or not.
@@ -380,17 +412,20 @@ double get_chi_distance(struct match_info* info1, struct match_info *info2)
 int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
   int ret = 0;
-  struct match_info info1, info2;
+  struct match_info info1 = {0,}, info2 = {0,};
 
   ret = get_matchinfo(buffer1,len1,&info1);
-  if(ret < 0) return ret;
+  if(ret < 0) goto clean;
 
   ret = get_matchinfo(buffer2,len2,&info2);
-  if(ret < 0) return ret;
+  if(ret < 0) goto clean;
   //compare two matching information
-  if (info1.width != info2.width || info1.height != info2.height || get_chi_distance(&info1, &info2) >= MIN_AUDIO_CHI_DIS) {
+  if (info1.width != info2.width || info1.height != info2.height || get_md5_similarity(&info1, &info2) < MIN_SIMILARITY) {
       ret = 1;
   }
+clean:
+  if(info1.pmd5array) av_free(info1.pmd5array);
+  if(info2.pmd5array) av_free(info2.pmd5array);
 
   return ret;
 }
