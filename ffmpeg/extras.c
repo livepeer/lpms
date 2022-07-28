@@ -6,13 +6,20 @@
 #include "extras.h"
 #include "logging.h"
 
+#define MAX_AMISMATCH 10
+#define INC_MD5_COUNT 300
+#define MAX_MD5_COUNT 30000
+#define MD5_SIZE 16   //sizeof(int)*4 byte
+
 struct match_info {
   int       width;
   int       height;
   uint64_t  bit_rate;
-  int       packetcount; //video total packet count
-  uint64_t  timestamp;    //XOR sum of avpacket pts
-  int       audiosum[4]; //XOR sum of audio data's md5(16 bytes)
+  int       packetcount;  //video total packet count
+  uint64_t  timestamp;    //XOR sum of avpacket pts  
+  int       md5allocsize;
+  int       apacketcount; //audio packet count
+  int       *pmd5array;
 };
 
 struct buffer_data {
@@ -341,9 +348,23 @@ static int get_matchinfo(void *buffer, int len, struct match_info* info)
     }
     info->packetcount++;
     info->timestamp ^= packet->pts;
-    if(packet->stream_index == audioid && packet->pts > 0 && packet->size > 0) {
-      av_md5_sum((uint8_t*)md5tmp, packet->data, packet->size);
-      for (int i=0; i<4; i++) info->audiosum[i] ^= md5tmp[i];
+    if (packet->stream_index == audioid && packet->size > 0) {
+      if (info->apacketcount < MAX_MD5_COUNT) {
+          info->apacketcount++;
+          if (info->apacketcount > info->md5allocsize) {
+            info->md5allocsize += INC_MD5_COUNT;
+            if (info->pmd5array == NULL) {
+              info->pmd5array = (int*)av_malloc(info->md5allocsize*MD5_SIZE);
+            } else {
+              int* tmp = info->pmd5array;
+              info->pmd5array = (int*)av_malloc(info->md5allocsize*MD5_SIZE);
+              memcpy(info->pmd5array, tmp, (info->md5allocsize-INC_MD5_COUNT)*MD5_SIZE);
+              av_free(tmp);
+            }
+          }
+          int* pint = info->pmd5array + (info->apacketcount-1) * 4;
+          av_md5_sum((uint8_t*)(pint), packet->data, packet->size);
+      }
     }
     av_packet_unref(packet);
   }
@@ -358,7 +379,31 @@ clean:
   avformat_close_input(&ifmt_ctx);
   return ret;
 }
-
+// check validity for audio md5 data
+bool is_valid_md5data(struct match_info* info1, struct match_info *info2)
+{
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
+  struct match_info* first = info1->apacketcount < info2->apacketcount? info1: info2;
+  struct match_info* second = info1->apacketcount >= info2->apacketcount? info1: info2;
+  int packetdiff = second->apacketcount - first->apacketcount;
+  if (packetdiff > MAX_AMISMATCH) return false;
+  int matchingcount = 0;
+  for (int i = 0; i < first->apacketcount; i++) {
+    int scanscope = packetdiff + 1;
+    int *psrcmpd = first->pmd5array + (i*4);
+    int nstart = max(0,i-scanscope);
+    int nend = min(second->apacketcount,i+scanscope);
+    for (int j = nstart; j < nend; j++) {
+      if(memcmp(psrcmpd, second->pmd5array + (j*4), MD5_SIZE) == 0){
+        matchingcount++;
+        break;
+      }
+    }
+  }
+  int realdiff = first->apacketcount - matchingcount;
+  return realdiff < MAX_AMISMATCH ? true: false;
+}
 // compare two video buffers whether those matches or not.
 // @param buffer1         the pointer of the first video buffer.
 // @param buffer2         the pointer of the second video buffer.
@@ -368,17 +413,20 @@ clean:
 int lpms_compare_video_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
   int ret = 0;
-  struct match_info info1, info2;
+  struct match_info info1 = {0,}, info2 = {0,};
 
   ret = get_matchinfo(buffer1,len1,&info1);
-  if(ret < 0) return ret;
+  if(ret < 0) goto clean;
 
   ret = get_matchinfo(buffer2,len2,&info2);
-  if(ret < 0) return ret;
+  if(ret < 0) goto clean;
   //compare two matching information
-  if (info1.width != info2.width || info1.height != info2.height || memcmp(info1.audiosum, info2.audiosum, 16)) {
+  if (info1.width != info2.width || info1.height != info2.height || !is_valid_md5data(&info1, &info2)) {
       ret = 1;
   }
+clean:
+  if(info1.pmd5array) av_free(info1.pmd5array);
+  if(info2.pmd5array) av_free(info2.pmd5array);
 
   return ret;
 }
