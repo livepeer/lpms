@@ -128,12 +128,13 @@ type PixelFormat struct {
 	RawValue int
 }
 type VideoInfo struct {
-	Width       int
-	Height      int
-	Bit_rate    int64
-	Packetcount int   //video total packet count
-	Timestamp   int64 //XOR sum of avpacket pts
-	Audiosum    []int //XOR sum of audio data's md5(16 bytes)
+	Width        int
+	Height       int
+	Bit_rate     int64
+	Packetcount  int   //video total packet count
+	Timestamp    int64 //XOR sum of avpacket pts
+	Audiosum     []int //XOR sum of audio data's md5(16 bytes)
+	APacketcount int   //audio total packet count
 }
 
 const (
@@ -377,6 +378,11 @@ func GetDiffInfo(info1, info2 VideoInfo, linestr *[]string) {
 	}
 	audiodiff /= 2.0
 	*linestr = append(*linestr, strconv.Itoa(int(audiodiff)))
+
+	*linestr = append(*linestr, strconv.Itoa(int(info1.APacketcount)))
+
+	apacketdiff := strconv.Itoa(int(info1.APacketcount - info2.APacketcount))
+	*linestr = append(*linestr, apacketdiff)
 }
 
 func GetVideoInfoByPath(fname1 string) (VideoInfo, error) {
@@ -394,6 +400,7 @@ func GetVideoInfoByPath(fname1 string) (VideoInfo, error) {
 		vinfo.Bit_rate = int64(info1.bit_rate)
 		vinfo.Packetcount = int(info1.packetcount)
 		vinfo.Timestamp = int64(info1.timestamp)
+		vinfo.APacketcount = int(info1.apacketcount)
 		//audiosum:
 		for i := 0; i < 256; i++ {
 			vinfo.Audiosum = append(vinfo.Audiosum, int(info1.audiosum[i]))

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -74,9 +75,11 @@ func main() {
 			linestr = append(linestr, filename1)
 			ffmpeg.GetDiffInfo(res2, res1, &linestr)
 		}
-		bres := ffmpeg.GetCostVideoByPath(infiles[i*2], infiles[i*2+1])
-		sres := fmt.Sprintf("%f", bres)
-		linestr = append(linestr, sres)
+		//bres := ffmpeg.GetCostVideoByPath(infiles[i*2], infiles[i*2+1])
+		//sres := fmt.Sprintf("%f", bres)
+		//linestr = append(linestr, sres)
+		bres, _ := ffmpeg.CompareVideoByPath(infiles[i*2], infiles[i*2+1])
+		linestr = append(linestr, strconv.FormatBool(bres))
 
 		csvrecorder.Write(linestr)
 	}
