@@ -88,7 +88,6 @@ type Transcoder struct {
 	handle     *C.struct_transcode_thread
 	stopped    bool
 	started    bool
-	lastacodec string
 	mu         *sync.Mutex
 }
 
@@ -115,9 +114,14 @@ type TranscodeOptions struct {
 }
 
 type MediaInfo struct {
-	Frames     int
-	Pixels     int64
-	DetectData DetectData
+	Frames       int
+	Pixels       int64
+	VideoFrames  int
+	AudioFrames  int
+	VideoPackets int
+	AudioPackets int
+	OtherPackets int
+	DetectData   DetectData
 }
 
 type TranscodeResults struct {
@@ -852,8 +856,6 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	if input == nil {
 		return nil, ErrTranscoderInp
 	}
-	var reopendemux bool
-	reopendemux = false
 	// don't read metadata for pipe input, because it can't seek back and av_find_input_format in the decoder will fail
 	if !strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
 		status, format, err := GetCodecInfo(input.Fname)
@@ -870,30 +872,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			}
 		}
 		if !t.started {
-			// NeedsBypass is state where video is present in container & without any frames
-			videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""
-			if videoMissing {
-				// Audio-only segment, fail fast right here as we cannot handle them nicely
-				return nil, ErrTranscoderVid
-			}
-			// keep last audio codec
-			t.lastacodec = format.Acodec
 			// Stream is either OK or completely broken, let the transcoder handle it
 			t.started = true
-		} else {
-			// check if we need to reopen demuxer because added audio in video
-			// TODO: fixes like that are needed because handling of cfg change in
-			// LPMS is a joke. We need to decide whether LPMS should support full
-			// dynamic config one day and either implement it there, or implement
-			// some generic workaround for the problem in Go code, such as marking
-			// config changes as significant/insignificant and re-creating the instance
-			// if the former type change happens
-			if format.Acodec != "" && !isAudioAllDrop(ps) {
-				if (t.lastacodec == "") || (t.lastacodec != "" && t.lastacodec != format.Acodec) {
-					reopendemux = true
-					t.lastacodec = format.Acodec
-				}
-			}
 		}
 	}
 	hw_type, err := accelDeviceType(input.Accel)
@@ -949,29 +929,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		paramsPointer = (*C.output_params)(&params[0])
 		resultsPointer = (*C.output_results)(&results[0])
 	}
-	if reopendemux {
-		// forcefully close and open demuxer
-		ret := int(C.lpms_transcode_reopen_demux(inp))
-		if ret != 0 {
-			if LogTranscodeErrors {
-				glog.Error("Reopen demux returned : ", ErrorMap[ret])
-			}
-			return nil, ErrorMap[ret]
-		}
-	}
-  // This version of the code has two internal transcoder implementations, original
-  // and a refactored version. By default, we want to run the former, to stay on the
-  // safe side, but then we want to progressively enable the latter, "risky".
-  // It will be done by means of environment variable LPMS_USE_NEW_TRANSCODE
-  _, ok := os.LookupEnv("LPMS_USE_NEW_TRANSCODE")
-  var use_new_transcode C.int
-  if ok {
-    use_new_transcode = 1
-  } else {
-    use_new_transcode = 0
-  }
-
-	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded, use_new_transcode))
+	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		if LogTranscodeErrors {
 			glog.Error("Transcoder Return : ", ErrorMap[ret])
@@ -984,8 +942,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	tr := make([]MediaInfo, len(ps))
 	for i, r := range results {
 		tr[i] = MediaInfo{
-			Frames: int(r.frames),
-			Pixels: int64(r.pixels),
+			Frames:       int(r.frames),
+			Pixels:       int64(r.pixels),
+			VideoFrames:  int(r.video_frames),
+			AudioFrames:  int(r.audio_frames),
+			VideoPackets: int(r.video_packets),
+			AudioPackets: int(r.audio_packets),
+			OtherPackets: int(r.other_packets),
 		}
 		// add detect result
 		if ps[i].Detector != nil {
@@ -1001,8 +964,13 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 	}
 	dec := MediaInfo{
-		Frames: int(decoded.frames),
-		Pixels: int64(decoded.pixels),
+		Frames:       int(decoded.frames),
+		Pixels:       int64(decoded.pixels),
+		VideoFrames:  int(decoded.video_frames),
+		AudioFrames:  int(decoded.audio_frames),
+		VideoPackets: int(decoded.video_packets),
+		AudioPackets: int(decoded.audio_packets),
+		OtherPackets: int(decoded.other_packets),
 	}
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
 }
@@ -1015,7 +983,7 @@ func (t *Transcoder) Discontinuity() {
 
 func NewTranscoder() *Transcoder {
 	return &Transcoder{
-		handle: C.lpms_transcode_new(),
+		handle: C.lpms_transcode_new(nil),
 		mu:     &sync.Mutex{},
 	}
 }
@@ -1068,7 +1036,7 @@ func NewTranscoderWithDetector(detector DetectorProfile, deviceid string) (*Tran
 		defer C.free(unsafe.Pointer(dnnOpt.inputname))
 		defer C.free(unsafe.Pointer(dnnOpt.outputname))
 		defer C.free(unsafe.Pointer(dnnOpt.backend_configs))
-		handle := C.lpms_transcode_new_with_dnn(dnnOpt)
+		handle := C.lpms_transcode_new(dnnOpt)
 		if handle != nil {
 			return &Transcoder{
 				handle: handle,

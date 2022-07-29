@@ -10,6 +10,9 @@ struct input_ctx {
   AVFormatContext *ic; // demuxer required
   AVCodecContext  *vc; // video decoder optional
   AVCodecContext  *ac; // audo  decoder optional
+  // TODO: perhaps get rid of indices and introduce pointers same way as on
+  // the encoder side, easier to check and easier to dereference without
+  // pointer to demuxer
   int vi, ai; // video and audio stream indices
   int dv, da; // flags whether to drop video or audio
 
@@ -54,17 +57,21 @@ struct input_ctx {
   enum AVPixelFormat last_format;
 };
 
+enum FreeInputPolicy {
+  FORCE_CLOSE_HW_DECODER,
+  PRESERVE_HW_DECODER
+};
+
 // Exported methods
 int demux_in(struct input_ctx *ictx, AVPacket *pkt);
 int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream_index);
 int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index);
 int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt, int *stream_index);
-enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx);
 int open_input(input_params *params, struct input_ctx *ctx);
-int open_video_decoder(input_params *params, struct input_ctx *ctx);
-int open_audio_decoder(input_params *params, struct input_ctx *ctx);
-char* get_hw_decoder(int ff_codec_id, int hw_type);
-void free_input(struct input_ctx *inctx);
+void free_input(struct input_ctx *inctx, enum FreeInputPolicy policy);
+// this should perhaps be moved to some utility file, as it is not decoder
+// specific
+enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx);
 
 // Utility functions
 static inline int is_flush_frame(AVFrame *frame)

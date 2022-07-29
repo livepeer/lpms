@@ -16,6 +16,7 @@ extern const int lpms_ERR_FILTERS;
 extern const int lpms_ERR_PACKET_ONLY;
 extern const int lpms_ERR_FILTER_FLUSHED;
 extern const int lpms_ERR_OUTPUTS;
+extern const int lpms_ERR_INPUTS;
 extern const int lpms_ERR_UNRECOVERABLE;
 
 struct transcode_thread;
@@ -53,7 +54,7 @@ typedef struct {
   char *xcoderParams;
 
   // Optional video decoder + opts
-  component_opts video;
+//  component_opts video;
 
   int transmuxe;
 } input_params;
@@ -75,6 +76,12 @@ typedef struct {
     int64_t pixels;
     //for scene classification  
     float probs[MAX_CLASSIFY_SIZE];//probability
+    // new stats
+    int video_frames;
+    int audio_frames;
+    int video_packets;
+    int audio_packets;
+    int other_packets;
 } output_results;
 
 enum LPMSLogLevel {
@@ -90,10 +97,8 @@ enum LPMSLogLevel {
 };
 
 void lpms_init(enum LPMSLogLevel max_level);
-int lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results, int use_new);
-int lpms_transcode_reopen_demux(input_params *inp);
-struct transcode_thread* lpms_transcode_new();
-struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts);
+int lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
+struct transcode_thread* lpms_transcode_new(lvpdnn_opts *dnn_opts);
 void lpms_transcode_stop(struct transcode_thread* handle);
 void lpms_transcode_discontinuity(struct transcode_thread *handle);
 

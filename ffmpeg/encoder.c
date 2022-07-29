@@ -5,34 +5,64 @@
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
 
+static AVStream *add_stream_copy(struct output_ctx *octx, AVStream *ist)
+{
+  int ret = 0;
+  if (!ist) LPMS_ERR(add_copy_err, "Input stream for copy not available");
+  AVStream *st = avformat_new_stream(octx->oc, NULL);
+  if (!st) LPMS_ERR(add_copy_err, "Unable to alloc copy stream");
+  st->time_base = ist->time_base;
+  ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
+  if (ret < 0) LPMS_ERR(add_copy_err, "Error copying params from input stream");
+  // Sometimes the codec tag is wonky for some reason, so correct it
+  ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
+  avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
+  return st;
+
+add_copy_err:
+  return NULL;
+}
+
+static AVStream *add_stream_for_encoder(struct output_ctx *octx, AVCodecContext *encoder)
+{
+  int ret = 0;
+  AVStream *st = avformat_new_stream(octx->oc, NULL);
+  if (!st) LPMS_ERR(add_encoder_err, "Unable to alloc encoder stream");
+
+  st->time_base = encoder->time_base;
+  ret = avcodec_parameters_from_context(st->codecpar, encoder);
+  if (ret < 0) LPMS_ERR(add_encoder_err, "Error setting stream params from encoder");
+  return st;
+
+add_encoder_err:
+  return NULL;
+}
+
 static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
 {
   // video stream to muxer
   int ret = 0;
-  AVStream *st = avformat_new_stream(octx->oc, NULL);
-  if (!st) LPMS_ERR(add_video_err, "Unable to alloc video stream");
-  octx->vi = st->index;
-  if (octx->fps.den) st->avg_frame_rate = octx->fps;
-  else st->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
   if (is_copy(octx->video->name)) {
-    AVStream *ist = ictx->ic->streams[ictx->vi];
-    if (ictx->vi < 0 || !ist) LPMS_ERR(add_video_err, "Input video stream does not exist");
-    st->time_base = ist->time_base;
-    ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0) LPMS_ERR(add_video_err, "Error copying video params from input stream");
-    // Sometimes the codec tag is wonky for some reason, so correct it
-    ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
-    avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
+    // create stream as a copy of existing one
+    if (ictx->vi < 0) LPMS_ERR(add_video_err, "Input video stream does not exist");
+    octx->video_stream = add_stream_copy(octx, ictx->ic->streams[ictx->vi]);
+    if (!octx->video_stream) LPMS_ERR(add_video_err, "Error adding video copy stream");
+    if (octx->fps.den) octx->video_stream->avg_frame_rate = octx->fps;
+    else octx->video_stream->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
   } else if (octx->vc) {
-    st->time_base = octx->vc->time_base;
-    ret = avcodec_parameters_from_context(st->codecpar, octx->vc);
+    // create stream from encoder
+    octx->video_stream = add_stream_for_encoder(octx, octx->vc);
+    if (!octx->video_stream) LPMS_ERR(add_video_err, "Error adding video encoder stream");
+    if (octx->fps.den) octx->video_stream->avg_frame_rate = octx->fps;
+    else octx->video_stream->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
+    // Video has rescale here. Audio is slightly different
     // Rescale the gop/clip time to the expected timebase after filtering.
     // The FPS filter outputs pts incrementing by 1 at a rate of 1/framerate
     // while non-fps will retain the input timebase.
     AVRational ms_tb = {1, 1000};
     AVRational dest_tb;
     if (octx->fps.den) dest_tb = av_inv_q(octx->fps);
-    else dest_tb = ictx->ic->streams[ictx->vi]->time_base;
+    else dest_tb = ictx->ic->streams[ictx->vi]->time_base;  // should be safe to use vi
     if (octx->gop_time) {
       octx->gop_pts_len = av_rescale_q(octx->gop_time, ms_tb, dest_tb);
       octx->next_kf_pts = 0; // force for first frame
@@ -43,8 +73,15 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
     if (octx->clip_to) {
       octx->clip_to_pts = av_rescale_q(octx->clip_to, ms_tb, dest_tb);
     }
-    if (ret < 0) LPMS_ERR(add_video_err, "Error setting video params from encoder");
-  } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
+  } else if (is_drop(octx->video->name)) {
+    octx->video_stream = NULL;
+    LPMS_ERR(add_video_err, "add_video_stream called for dropped video!");
+  } else {
+    // this can actually happen if the transcoder configured for video
+    // gets segment without actual video stream
+    octx->video_stream = NULL;
+    LPMS_WARN("No video encoder, not a copy; missing video input perhaps?");
+  }
 
   octx->last_video_dts = AV_NOPTS_VALUE;
   return 0;
@@ -56,6 +93,7 @@ add_video_err:
 
 static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 {
+  // TODO: remove this? already handled in create_output
   if (ictx->ai < 0 || octx->da) {
     // Don't need to add an audio stream if no input audio exists,
     // or we're dropping the output audio stream
@@ -64,29 +102,28 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 
   // audio stream to muxer
   int ret = 0;
-  AVStream *st = avformat_new_stream(octx->oc, NULL);
-  if (!st) LPMS_ERR(add_audio_err, "Unable to alloc audio stream");
   if (is_copy(octx->audio->name)) {
-    AVStream *ist = ictx->ic->streams[ictx->ai];
-    if (ictx->ai < 0 || !ist) LPMS_ERR(add_audio_err, "Input audio stream does not exist");
-    st->time_base = ist->time_base;
-    ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0) LPMS_ERR(add_audio_err, "Error copying audio params from input stream");
-    // Sometimes the codec tag is wonky for some reason, so correct it
-    ret = av_codec_get_tag2(octx->oc->oformat->codec_tag, st->codecpar->codec_id, &st->codecpar->codec_tag);
-    avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist, AVFMT_TBCF_DEMUXER);
+    // create stream as a copy of existing one
+    if (ictx->ai < 0) LPMS_ERR(add_audio_err, "Input audio stream does not exist");
+    octx->audio_stream = add_stream_copy(octx, ictx->ic->streams[ictx->ai]);
   } else if (octx->ac) {
-    st->time_base = octx->ac->time_base;
-    ret = avcodec_parameters_from_context(st->codecpar, octx->ac);
-    if (ret < 0) LPMS_ERR(add_audio_err, "Error setting audio params from encoder");
+    // create stream from encoder
+    octx->audio_stream = add_stream_for_encoder(octx, octx->ac);
+    // Video has rescale here
   } else if (is_drop(octx->audio->name)) {
     // Supposed to exit this function early if there's a drop
-    LPMS_ERR(add_audio_err, "Shouldn't ever happen here");
+    octx->audio_stream = NULL;
+    LPMS_ERR(add_audio_err, "add_audio_stream called for dropped audio!");
   } else {
-    LPMS_ERR(add_audio_err, "No audio encoder; not a copy; what is this?");
+    // see comment in add_video_stream above
+    octx->audio_stream = NULL;
+    LPMS_WARN("No audio encoder; not a copy; missing audio input perhaps?");
+    return 0;
   }
-  octx->ai = st->index;
 
+  if (!octx->audio_stream) LPMS_ERR(add_audio_err, "Error adding audio stream");;
+
+  // Audio has rescale here. Video version is slightly different
   AVRational ms_tb = {1, 1000};
   AVRational dest_tb = ictx->ic->streams[ictx->ai]->time_base;
   if (octx->clip_from) {
@@ -97,7 +134,7 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
   }
 
   // signal whether to drop preroll audio
-  if (st->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
+  if (octx->audio_stream->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
 
   octx->last_audio_dts = AV_NOPTS_VALUE;
 
@@ -108,47 +145,111 @@ add_audio_err:
   return ret;
 }
 
-static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
+// Add all streams provided by the demuxer. This is used in transmuxing
+// scenarios
+int add_remux_streams(struct input_ctx *ictx, struct output_ctx *octx)
+{
+  octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
+  octx->oc->flush_packets = 1;
+  for (int i = 0; i < ictx->ic->nb_streams; i++) {
+    AVStream *st = add_stream_copy(octx, ictx->ic->streams[i]);
+    if (!st) return -1; // error logged in add_stream_copy
+  }
+  return 0;
+}
+
+
+static int open_audio_encoder(struct input_ctx *ictx, struct output_ctx *octx,
   AVOutputFormat *fmt)
 {
   int ret = 0;
   AVCodec *codec = NULL;
   AVCodecContext *ac = NULL;
 
-  // add audio encoder if a decoder exists and this output requires one
-  if (ictx->ac && needs_decoder(octx->audio->name)) {
+  // initialize audio filters
+  ret = init_audio_filters(ictx, octx);
+  if (ret < 0) LPMS_ERR(audio_encoder_err, "Unable to open audio filter")
 
-    // initialize audio filters
-    ret = init_audio_filters(ictx, octx);
-    if (ret < 0) LPMS_ERR(audio_output_err, "Unable to open audio filter")
+  // open encoder
+  codec = avcodec_find_encoder_by_name(octx->audio->name);
+  if (!codec) LPMS_ERR(audio_encoder_err, "Unable to find audio encoder");
+  // open audio encoder
+  ac = avcodec_alloc_context3(codec);
+  if (!ac) LPMS_ERR(audio_encoder_err, "Unable to alloc audio encoder");
+  octx->ac = ac;
+  ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
+  ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);
+  ac->channels = av_buffersink_get_channels(octx->af.sink_ctx);
+  ac->sample_rate = av_buffersink_get_sample_rate(octx->af.sink_ctx);
+  ac->time_base = av_buffersink_get_time_base(octx->af.sink_ctx);
+  if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+  ret = avcodec_open2(ac, codec, &octx->audio->opts);
+  if (ret < 0) LPMS_ERR(audio_encoder_err, "Error opening audio encoder");
+  av_buffersink_set_frame_size(octx->af.sink_ctx, ac->frame_size);
 
-    // open encoder
-    codec = avcodec_find_encoder_by_name(octx->audio->name);
-    if (!codec) LPMS_ERR(audio_output_err, "Unable to find audio encoder");
-    // open audio encoder
-    ac = avcodec_alloc_context3(codec);
-    if (!ac) LPMS_ERR(audio_output_err, "Unable to alloc audio encoder");
-    octx->ac = ac;
-    ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
-    ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);
-    ac->channels = av_buffersink_get_channels(octx->af.sink_ctx);
-    ac->sample_rate = av_buffersink_get_sample_rate(octx->af.sink_ctx);
-    ac->time_base = av_buffersink_get_time_base(octx->af.sink_ctx);
-    if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    ret = avcodec_open2(ac, codec, &octx->audio->opts);
-    if (ret < 0) LPMS_ERR(audio_output_err, "Error opening audio encoder");
-    av_buffersink_set_frame_size(octx->af.sink_ctx, ac->frame_size);
-  }
-
-  ret = add_audio_stream(ictx, octx);
-  if (ret < 0) LPMS_ERR(audio_output_err, "Error adding audio stream")
-
-audio_output_err:
+audio_encoder_err:
   // TODO clean up anything here?
   return ret;
 }
 
-void close_output(struct output_ctx *octx)
+static int open_video_encoder(struct input_ctx *ictx, struct output_ctx *octx,
+                              AVOutputFormat *fmt)
+{
+  AVCodecContext *vc  = NULL;
+  AVCodec *codec      = NULL;
+  int ret = 0;
+  // add video encoder if a decoder exists and this output requires one
+  if (octx->dnn_filtergraph && !ictx->vc->hw_frames_ctx) {
+    // swap filtergraph with the pre-initialized DNN filtergraph for SW
+    // for HW we handle it later during filter re-init
+    octx->vf.graph = *octx->dnn_filtergraph;
+  }
+  ret = init_video_filters(ictx, octx);
+  if (ret < 0) LPMS_ERR(video_encoder_err, "Unable to open video filter");
+
+  codec = avcodec_find_encoder_by_name(octx->video->name);
+  if (!codec) LPMS_ERR(video_encoder_err, "Unable to find encoder");
+
+  // open video encoder
+  // XXX use avoptions rather than manual enumeration
+  // (MA: dunno what the original author had in mind, avcodec_copy_context)
+  vc = avcodec_alloc_context3(codec);
+  if (!vc) LPMS_ERR(video_encoder_err, "Unable to alloc video encoder");
+  octx->vc = vc;
+  vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
+  vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
+  if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
+  else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->framerate = ictx->vc->framerate;
+  else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate; // vi should be safe
+  if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
+  else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
+  else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;    // vi should be safe
+  if (octx->bitrate) vc->rc_min_rate = vc->bit_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
+  if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
+    vc->hw_frames_ctx =
+      av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
+    if (!vc->hw_frames_ctx) LPMS_ERR(video_encoder_err, "Unable to alloc hardware context");
+  }
+  vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
+  if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+  if(strcmp(octx->xcoderParams,"")!=0){
+    av_opt_set(vc->priv_data, "xcoder-params", octx->xcoderParams, 0);
+  }
+  ret = avcodec_open2(vc, codec, &octx->video->opts);
+  if (ret < 0) LPMS_ERR(video_encoder_err, "Error opening video encoder");
+  // TODO: move this up to open_output or similar
+  octx->hw_type = ictx->hw_type;
+video_encoder_err:
+  return ret;
+}
+
+// This function is really the implementation of the free_output(), except that
+// it doesn't write trailer into the muxer. This is because trailer can only be
+// written if the header was written before - otherwise av_write_trailer() will
+// crash. Now, open_output() can fail somewhere between the begin of init work
+// and writing the header, hence the need for free_output() version without
+// writing the trailer. All other functions should use full version.
+static void free_output_no_trailer(struct output_ctx *octx, enum FreeOutputPolicy policy)
 {
   if (octx->oc) {
     if (!(octx->oc->oformat->flags & AVFMT_NOFILE) && octx->oc->pb) {
@@ -157,180 +258,128 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
+  if (octx->vc &&
+      ((octx->hw_type == AV_HWDEVICE_TYPE_NONE) || (FORCE_CLOSE_HW_ENCODER == policy))) {
+    avcodec_free_context(&octx->vc);
+  }
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
   octx->vf.pts_diff = INT64_MIN;
-}
-
-void free_output(struct output_ctx *octx)
-{
-  close_output(octx);
-  if (octx->vc) avcodec_free_context(&octx->vc);
-  free_filter(&octx->vf);
-  free_filter(&octx->af);
+  // TODO: this is a ugly hack. Basically, I believe that filters should be
+  // released/recreated every time (at least they are created again), but old
+  // code only close the vf filters on the lpms_transcode_stop, and it seems
+  // that retaining the filters has some effect on timestamps, so when new code
+  // started closing the video filter, TestTranscoderAPI_CountEncodedFrames
+  // was failing. And the fail had nothing to do with number of frames, just
+  // their timestamps were not the same as expected. I suppose new behavior is
+  // also correct, just different from what was hardcoded. So this is just a
+  // temporary solution to keep the test happy
+  // Update: as Ivan pointed out, some filters should be kept alive between
+  // segment, for example fps filter, or audio conversion filter, so for now
+  // I am expanding the hack to include audio filter as well
+  if (FORCE_CLOSE_HW_ENCODER == policy) {
+    free_filter(&octx->vf);
+    free_filter(&octx->af);
+  }
   free_filter(&octx->sf);
 }
 
-int open_remux_output(struct input_ctx *ictx, struct output_ctx *octx)
+// See comment on free_output_no_trailer() above
+void free_output(struct output_ctx *octx, enum FreeOutputPolicy policy)
 {
-  int ret = 0;
-  octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
-  octx->oc->flush_packets = 1;
-  for (int i = 0; i < ictx->ic->nb_streams; i++) {
-    ret = 0;
-    AVStream *st = avformat_new_stream(octx->oc, NULL);
-    if (!st) LPMS_ERR(open_output_err, "Unable to alloc stream");
-    if (octx->fps.den)
-      st->avg_frame_rate = octx->fps;
-    else
-      st->avg_frame_rate = ictx->ic->streams[i]->r_frame_rate;
-
-    AVStream *ist = ictx->ic->streams[i];
-    st->time_base = ist->time_base;
-    ret = avcodec_parameters_copy(st->codecpar, ist->codecpar);
-    if (ret < 0)
-      LPMS_ERR(open_output_err, "Error copying params from input stream");
-    // Sometimes the codec tag is wonky for some reason, so correct it
-    ret = av_codec_get_tag2(octx->oc->oformat->codec_tag,
-                            st->codecpar->codec_id, &st->codecpar->codec_tag);
-    avformat_transfer_internal_stream_timing_info(octx->oc->oformat, st, ist,
-                                                  AVFMT_TBCF_DEMUXER);
-
-  }
-  return 0;
-open_output_err:
-  return ret;
+  // in this function it is safe to write trailer, since it is only called
+  // when muxer setup was succesful and header was written in the muxer
+  // doing otherwise causes crash in av_write_trailer
+  if (octx->oc) av_write_trailer(octx->oc);
+  free_output_no_trailer(octx, policy);
 }
 
 int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
-  int ret = 0, inp_has_stream;
+  int ret = 0;
 
   AVOutputFormat *fmt = NULL;
-  AVFormatContext *oc = NULL;
-  AVCodecContext *vc  = NULL;
-  AVCodec *codec      = NULL;
 
-  // open muxer
+  // First thing to do is to get muxer format. It is needed for encoder
+  // initialization.
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
   if (!fmt) LPMS_ERR(open_output_err, "Unable to guess output format");
-  ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
-  if (ret < 0) LPMS_ERR(open_output_err, "Unable to alloc output context");
-  octx->oc = oc;
 
-  // add video encoder if a decoder exists and this output requires one
-  if (ictx->vc && needs_decoder(octx->video->name)) {
-    if (octx->dnn_filtergraph && !ictx->vc->hw_frames_ctx) {
-      // swap filtergraph with the pre-initialized DNN filtergraph for SW
-      // for HW we handle it later during filter re-init
-      octx->vf.graph = *octx->dnn_filtergraph;
-    }
-    ret = init_video_filters(ictx, octx);
-    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
-
-    codec = avcodec_find_encoder_by_name(octx->video->name);
-    if (!codec) LPMS_ERR(open_output_err, "Unable to find encoder");
-
-    // open video encoder
-    // XXX use avoptions rather than manual enumeration
-    vc = avcodec_alloc_context3(codec);
-    if (!vc) LPMS_ERR(open_output_err, "Unable to alloc video encoder");
-    octx->vc = vc;
-    vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
-    vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
-    if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
-    else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->framerate = ictx->vc->framerate;
-    else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate;
-    if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
-    else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
-    else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
-    if (octx->bitrate) vc->rc_min_rate = vc->bit_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
-    if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
-      vc->hw_frames_ctx =
-        av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
-      if (!vc->hw_frames_ctx) LPMS_ERR(open_output_err, "Unable to alloc hardware context");
-    }
-    vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
-    if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-	if(strcmp(octx->xcoderParams,"")!=0){
-	    av_opt_set(vc->priv_data, "xcoder-params", octx->xcoderParams, 0);
-	}
-    ret = avcodec_open2(vc, codec, &octx->video->opts);
-    if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
-    octx->hw_type = ictx->hw_type;
+  // Encoders block - video and audio
+  // add video encoder if needed and don't have one yet - this is because
+  // for HW contexts we do not destroy video encoder - see close_output()
+  // above for details
+  if (ictx->vc && needs_decoder(octx->video->name) && !octx->vc) {
+    ret = open_video_encoder(ictx, octx, fmt);
+    if (ret < 0) LPMS_ERR(open_output_err, "Error opening video output");
   }
 
-  if (!ictx->transmuxing) {
-    // add video stream if input contains video
-    inp_has_stream = ictx->vi >= 0;
-    if (inp_has_stream && !octx->dv) {
+  // add audio encoder if needed
+  if (ictx->ac && needs_decoder(octx->audio->name)) {
+    ret = open_audio_encoder(ictx, octx, fmt);
+    if (ret < 0) LPMS_ERR(open_output_err, "Error opening audio output");
+  }
+
+  // If we have muxer, we don't have to proceed further. This is when doing
+  // transcoding, it won't be closed between the transcode calls to facilitate
+  // joining of several segments into one transmuxed output
+  if (octx->oc) return 0;
+
+  // Now that the encoders are available, muxer can be created
+  ret = avformat_alloc_output_context2(&octx->oc, fmt, NULL, octx->fname);
+  if (ret < 0) LPMS_ERR(open_output_err, "Unable to alloc output context");
+
+  // Add streams
+  if (ictx->transmuxing) {
+    // when transmuxing we add all the streams to the output muxer
+    ret = add_remux_streams(ictx, octx);
+    if (ret < 0) LPMS_ERR(open_output_err, "Error adding remux output");
+  } else {
+    // add video stream if needed
+    if (!octx->dv) {
       ret = add_video_stream(octx, ictx);
       if (ret < 0) LPMS_ERR(open_output_err, "Error adding video stream");
     }
 
-    ret = open_audio_output(ictx, octx, fmt);
-    if (ret < 0) LPMS_ERR(open_output_err, "Error opening audio output");
-  } else {
-    ret = open_remux_output(ictx, octx);
-    if (ret < 0) {
-      goto open_output_err;
+    // add audio stream if needed
+    if (!octx->da) {
+      ret = add_audio_stream(ictx, octx);
+      if (ret < 0) LPMS_ERR(open_output_err, "Error adding audio stream")
     }
   }
 
+  // Muxer headers can be written now once streams were added
   if (!(fmt->flags & AVFMT_NOFILE)) {
     ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
   }
 
-  ret = avformat_write_header(oc, &octx->muxer->opts);
+  // IMPORTANT: notice how up to and including this point open_output_err is
+  // the error label. This is because free_output_no_trailer() is called there
+  // and it is actually the only place where we need that function. This is
+  // because avformat_write_trailer() which is called in free_output() will
+  // _crash_ if there wasn't corresponding avformat_write_header() call before.
+  // So up to the succesful completion of avformat_write_header() we need to
+  // call free_output_no_trailer() exclusively!
+  ret = avformat_write_header(octx->oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
 
+  // From now on it is normal free_output(), hence after_header error label
   if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
     ret = init_signature_filters(octx, NULL);
-    if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
+    if (ret < 0) LPMS_ERR(after_header_err, "Unable to open signature filter");
   }
 
   return 0;
 
 open_output_err:
-  free_output(octx);
+  // See comment above - here we have no header, so no trailer can be written
+  free_output_no_trailer(octx, FORCE_CLOSE_HW_ENCODER);
   return ret;
-}
-
-int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
-{
-  int ret = 0;
-  // re-open muxer for HW encoding
-  AVOutputFormat *fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
-  if (!fmt) LPMS_ERR(reopen_out_err, "Unable to guess format for reopen");
-  ret = avformat_alloc_output_context2(&octx->oc, fmt, NULL, octx->fname);
-  if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to alloc reopened out context");
-
-  // re-attach video encoder
-  if (octx->vc) {
-    ret = add_video_stream(octx, ictx);
-    if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add video stream");
-  } else LPMS_INFO("No video stream!?");
-
-  // re-attach audio encoder
-  ret = open_audio_output(ictx, octx, fmt);
-  if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add audio stream");
-
-  if (!(fmt->flags & AVFMT_NOFILE)) {
-    ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
-    if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-opening output file");
-  }
-  ret = avformat_write_header(octx->oc, &octx->muxer->opts);
-  if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-writing header");
-
-  if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
-    ret = init_signature_filters(octx, NULL);
-    if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to open signature filter");
-  }
-
-reopen_out_err:
+after_header_err:
+  // See comments above - header was written, we can finally call free_output()
+  free_output(octx, FORCE_CLOSE_HW_ENCODER);
   return ret;
 }
 

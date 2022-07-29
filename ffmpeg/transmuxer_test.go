@@ -50,6 +50,18 @@ func TestTransmuxer_Pipe(t *testing.T) {
 	}
 }
 
+// IMPORTANT: this test was originally checking "Frames" statistics from C code
+// of the Transcoder. "Frames" were increased on every video frame (when in
+// transcoding mode) and on every video _packet_ (when in transmuxing mode).
+// This could be misleading for modern codecs which don't necessarily have
+// direct 1 to 1 relationship between video packets and video frames, and so
+// was changed to separate count for audio/video frames, and audio/video/other
+// packet types.
+// Tests here were changed to pick up "video packets", because that was the
+// original authors intention (again, original transcoder updated "Frames" count
+// on every video packet while transmuxing). Remaining terminology, such as
+// getting the number of video _frames_ (not packets) via ffprobe remains the
+// same, since for given test streams it all adds up
 func TestTransmuxer_Join(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
@@ -90,8 +102,8 @@ func TestTransmuxer_Join(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Decoded.Frames != 120 {
-			t.Error(in.Fname, " Mismatched frame count: expected 120 got ", res.Decoded.Frames)
+		if res.Decoded.VideoPackets != 120 {
+			t.Error(in.Fname, " Mismatched video packet count: expected 120 got ", res.Decoded.VideoPackets)
 		}
 	}
 	tc.StopTranscoder()
@@ -141,8 +153,8 @@ func TestTransmuxer_Discontinuity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Decoded.Frames != 120 {
-			t.Error(in.Fname, " Mismatched frame count: expected 120 got ", res.Decoded.Frames)
+		if res.Decoded.VideoPackets != 120 {
+			t.Error(in.Fname, " Mismatched video packet count: expected 120 got ", res.Decoded.VideoPackets)
 		}
 	}
 	tc.Discontinuity()
@@ -155,8 +167,8 @@ func TestTransmuxer_Discontinuity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Decoded.Frames != 120 {
-			t.Error(in.Fname, " Mismatched frame count: expected 120 got ", res.Decoded.Frames)
+		if res.Decoded.VideoPackets != 120 {
+			t.Error(in.Fname, " Mismatched video packet count: expected 120 got ", res.Decoded.VideoPackets)
 		}
 	}
 

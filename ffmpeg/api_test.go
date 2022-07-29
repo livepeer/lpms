@@ -88,7 +88,7 @@ func TestAPI_SkippedSegment(t *testing.T) {
 }
 
 func TestTranscoderAPI_InvalidFile(t *testing.T) {
-	// Test the following file open results on input: fail, success, fail, success
+	// Test the following file open results on input: success, fail, success
 
 	tc := NewTranscoder()
 	defer tc.StopTranscoder()
@@ -100,18 +100,9 @@ func TestTranscoderAPI_InvalidFile(t *testing.T) {
 		Muxer:        ComponentOptions{Name: "null"},
 	}}
 
-	// fail # 1
-	in.Fname = "none"
-	_, err := tc.Transcode(in, out)
-	if err == nil || err.Error() != "TranscoderInvalidVideo" {
-		// Early codec check didn't find video in missing input file so we get `TranscoderInvalidVideo`
-		//  instead of `No such file or directory`
-		t.Error("Expected 'TranscoderInvalidVideo', got ", err)
-	}
-
 	// success # 1
 	in.Fname = "../transcoder/test.ts"
-	_, err = tc.Transcode(in, out)
+	_, err := tc.Transcode(in, out)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1217,27 +1208,6 @@ func audioOnlySegment(t *testing.T, accel Acceleration) {
 		}
 	}
 	tc.StopTranscoder()
-
-	// Test encoding with audio-only segment in start of stream
-	tc = NewTranscoder()
-	defer tc.StopTranscoder()
-	for i := 2; i < 4; i++ {
-		in := &TranscodeOptionsIn{
-			Fname: fmt.Sprintf("%s/test%d.ts", dir, i),
-			Accel: accel,
-		}
-		out := []TranscodeOptions{{
-			Oname:   fmt.Sprintf("%s/out2_%d.ts", dir, i),
-			Profile: prof,
-			Accel:   accel,
-		}}
-		_, err := tc.Transcode(in, out)
-		if i == 2 && (err == nil || err.Error() != "TranscoderInvalidVideo") {
-			t.Errorf("Expected to fail for audio-only segment but did not, instead got err=%v", err)
-		} else if i != 2 && err != nil {
-			t.Error(err)
-		}
-	}
 }
 
 func TestTranscoder_AudioOnly(t *testing.T) {
