@@ -252,12 +252,16 @@ video_encoder_err:
 static void free_output_no_trailer(struct output_ctx *octx, enum FreeOutputPolicy policy)
 {
   if (octx->oc) {
-    if (!(octx->oc->oformat->flags & AVFMT_NOFILE) && octx->oc->pb) {
+    // we check against AVFMT_FLAG_CUSTOM_IO to avoid trying to close file
+    // in case we are using custom i/o - this would cause crash
+    if (!(octx->oc->oformat->flags & AVFMT_NOFILE) &&
+        !(octx->oc->flags & AVFMT_FLAG_CUSTOM_IO) && octx->oc->pb) {
       avio_closep(&octx->oc->pb);
     }
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
+  queue_push_staging(&octx->write_context, END_OF_OUTPUT, -1);
   if (octx->vc &&
       ((octx->hw_type == AV_HWDEVICE_TYPE_NONE) || (FORCE_CLOSE_HW_ENCODER == policy))) {
     avcodec_free_context(&octx->vc);
@@ -295,7 +299,7 @@ void free_output(struct output_ctx *octx, enum FreeOutputPolicy policy)
   free_output_no_trailer(octx, policy);
 }
 
-int open_output(struct output_ctx *octx, struct input_ctx *ictx)
+int open_output(struct output_ctx *octx, struct input_ctx *ictx, OutputQueue *queue)
 {
   int ret = 0;
 
@@ -351,8 +355,27 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   // Muxer headers can be written now once streams were added
   if (!(fmt->flags & AVFMT_NOFILE)) {
-    ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
-    if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
+    if (queue) {
+      // output through queue
+      ret = queue_setup_as_output(queue, &octx->write_context, octx->oc);
+      if (ret < 0) LPMS_ERR(open_output_err, "Error setting up output queue");
+      // make sure muxer options are compatible with queue output
+      // TODO: not sure if that is the best option for detecting a container
+      // type but it is surprisingly hard to find guidance on that
+      if (fmt->mime_type && !strcmp("video/mp4", fmt->mime_type)) {
+        // Default configuration of MP4 muxer needs seekable output, which
+        // the queue is not able to provide. Passing the following flags removes
+        // seekable requirement. This is also configuration recommended for
+        // streaming purposes, so it seems better suited anyway (the whole point
+        // with queues is to provide Low Latency/streaming support)
+        ret = av_dict_set(&octx->muxer->opts, "movflags", "frag_keyframe+empty_moov", 0);
+        if (ret < 0) LPMS_ERR(open_output_err, "Error setting movflags for fragmented output");
+      }
+    } else {
+      // normal file output
+      ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
+      if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
+    }
   }
 
   // IMPORTANT: notice how up to and including this point open_output_err is
@@ -364,6 +387,10 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   // call free_output_no_trailer() exclusively!
   ret = avformat_write_header(octx->oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
+  // flush headers
+//  ret = av_interleaved_write_frame(octx->oc, NULL);
+  if (ret < 0) LPMS_ERR(open_output_err, "Error flushing headers");
+  queue_push_staging(&octx->write_context, BEGIN_OF_OUTPUT, 0);
 
   // From now on it is normal free_output(), hence after_header error label
   if(octx->sfilters != NULL && needs_decoder(octx->video->name) && octx->sf.active == 0) {
@@ -431,6 +458,8 @@ encode_cleanup:
 
 int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
 {
+  int ret;
+  int64_t pts = pkt->pts;
   pkt->stream_index = ost->index;
   if (av_cmp_q(tb, ost->time_base)) {
     av_packet_rescale_ts(pkt, tb, ost->time_base);
@@ -481,7 +510,15 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
       octx->last_video_dts = pkt->dts;
   }
 
-  return av_interleaved_write_frame(octx->oc, pkt);
+  // make sure correct timestamp will get carried through to output_queue
+  ret = av_interleaved_write_frame(octx->oc, pkt);
+  if (0 > ret) return ret;
+  // this means "flush output", we want to do it so that output_queue will get
+  // properly associated packets and timestamps
+  ret = av_interleaved_write_frame(octx->oc, NULL);
+  if (0 > ret) return ret;
+  queue_push_staging(&octx->write_context, PACKET_OUTPUT, pts);
+  return 0;
 }
 
 static int getmetadatainf(AVFrame *inf, struct output_ctx *octx)

@@ -3,6 +3,7 @@
 
 #include <libavfilter/avfilter.h>
 #include "decoder.h"
+#include "output_queue.h"
 
 struct filter_ctx {
   int active;
@@ -36,6 +37,7 @@ struct filter_ctx {
   int flushing;
 };
 
+// TODO move this away, this ain't filter
 struct output_ctx {
   char *fname;         // required output file name
   char *vfilters;      // required output video filters
@@ -74,6 +76,8 @@ struct output_ctx {
 
   output_results  *res; // data to return for this output
   char *xcoderParams;
+
+  WriteContext write_context;
 };
 
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx);

@@ -73,7 +73,7 @@ int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
   return AVERROR_EOF;
 }
 
-// FIXME: name me and the other function better
+// FIXME: name me and the other function better (and move to utilities...)
 enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
 {
   const AVCodec *decoder = ctx->codec;
@@ -254,7 +254,26 @@ static void close_video_decoder(struct input_ctx *ictx)
   if (ictx->last_frame_v) av_frame_free(&ictx->last_frame_v);
 }
 
-int open_input(input_params *params, struct input_ctx *ctx)
+int open_demuxer(input_params *params, struct input_ctx *ctx, StreamBuffer *buffer)
+{
+  int ret;
+  ctx->ic = avformat_alloc_context();
+  if (buffer) {
+    // using custom input
+    if (buffer_setup_as_input(buffer, ctx->ic) < 0) {
+      // memory allocation failure
+      return -1;
+    }
+    // instruct FFmpeg to use our input, note that file name is empty
+    ret = avformat_open_input(&ctx->ic, "", NULL, NULL);
+  } else {
+    // normal file-based input, note that file name is passed
+    ret = avformat_open_input(&ctx->ic, params->fname, NULL, NULL);
+  }
+  return ret;
+}
+
+int open_input(input_params *params, struct input_ctx *ctx, StreamBuffer *buffer)
 {
   char *inp = params->fname;
   int ret = 0;
@@ -268,7 +287,9 @@ int open_input(input_params *params, struct input_ctx *ctx)
   ctx->device = params->device;
 
   // open demuxer
-  ret = avformat_open_input(&ctx->ic, inp, NULL, NULL);
+  ret = open_demuxer(params, ctx, buffer);
+  // TODO: maybe move stuff below to open_demuxer? Could also remove
+  // indices on the input side, just like it was done for the output
   if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
   ret = avformat_find_stream_info(ctx->ic, NULL);
   if (ret < 0) LPMS_ERR(open_input_err, "Unable to find input info");
@@ -341,4 +362,3 @@ void free_input(struct input_ctx *ictx, enum FreeInputPolicy policy)
   // audio decoder is always closed
   close_audio_decoder(ictx);
 }
-
