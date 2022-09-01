@@ -16,7 +16,7 @@ func selectFile(files *[]string) filepath.WalkFunc {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || (filepath.Ext(path) != ".ts" /*&& filepath.Ext(path) != ".hash"*/) {
+		if info.IsDir() || (filepath.Ext(path) != ".hash" /*&& filepath.Ext(path) != ".hash"*/) {
 			return nil
 		}
 		*files = append(*files, path)
@@ -49,9 +49,10 @@ func main() {
 		var vinfo ffmpeg.VideoInfo
 
 		vinfo, _ = ffmpeg.GetVideoInfoByPath(infiles[i])
-		if vinfo.Audiosum[0] == 0 && vinfo.Audiosum[1] == 0 && vinfo.Audiosum[2] == 0 && vinfo.Audiosum[3] == 0 {
+		fmt.Printf("%v", vinfo)
+		/*if vinfo.Audiosum[0] == 0 && vinfo.Audiosum[1] == 0 && vinfo.Audiosum[2] == 0 && vinfo.Audiosum[3] == 0 {
 			missaudio++
-		}
+		}*/
 
 		sl := strings.Split(infiles[i], "-")
 
