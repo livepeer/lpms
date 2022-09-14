@@ -248,12 +248,15 @@ type MediaFormatInfo struct {
 	Width, Height  int
 }
 
+
+// h.264 only allows even resolutions, so both functions round up the results
+// to the nearest even number
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
-	return int(float32(width) * float32(f.Height) / float32(f.Width))
+	return int(float32(width) * float32(f.Height) / float32(f.Width) + 1) & (^1)
 }
 
 func (f *MediaFormatInfo) ScaledWidth(height int) int {
-	return int(float32(height) * float32(f.Width) / float32(f.Height))
+	return int(float32(height) * float32(f.Width) / float32(f.Height) + 1) & (^1)
 }
 
 func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
@@ -539,6 +542,11 @@ func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
 	w, h, err := VideoProfileResolution(*p)
 	if err != nil {
 		return err
+	}
+	// check if we _should_ clamp at all
+	if (l.WidthMin <= w) && (w <= l.WidthMax) && (l.HeightMin <= h) && (h <= l.HeightMax) {
+		// given video resolution is within encoder limits, no need for intervention
+		return nil
 	}
 	// detect correct rotation
 	outputAr := float32(w) / float32(h)
