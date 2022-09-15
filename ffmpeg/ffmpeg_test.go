@@ -1855,7 +1855,7 @@ func TestResolution_Clamp(t *testing.T) {
 	test(l, Size{1000, 500}, landscape, Size{700, 350})
 	test(l, Size{1000, 500}, portrait, Size{250, 500})
 	test(l, Size{500, 1000}, landscape, Size{700, 350})
-	test(l, Size{600, 300}, portrait, Size{250, 500})
+	test(l, Size{600, 300}, portrait, Size{600, 300})
 	test(l, Size{300, 600}, portrait, Size{250, 500})
 
 	// Test impossible limits for aspect ratio == 2
