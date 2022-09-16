@@ -577,7 +577,7 @@ func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
 
 // 7th Gen NVENC limits:
 var nvidiaCodecSizeLimts = map[VideoCodec]CodingSizeLimit{
-	H264: {146, 50, 4096, 4096},
+	H264: {146, 145, 4096, 4096},
 	H265: {132, 40, 8192, 8192},
 }
 
