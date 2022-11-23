@@ -860,7 +860,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if err != nil {
 			return nil, err
 		}
-		if status == CodecStatusOk {
+		videoTrackPresent := format.Vcodec != ""
+		if status == CodecStatusOk && videoTrackPresent {
 			// We don't return error in case status != CodecStatusOk because proper error would be returned later in the logic.
 			// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
 			// here we require input size and aspect ratio
