@@ -7,8 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"testing"
 	"time"
 )
@@ -170,110 +168,4 @@ func Test_SignDataCompare(t *testing.T) {
 			fmt.Printf("Processed %d times\n", i)
 		}
 	}
-}
-
-func getFileGroup(dir string, pattern string) []string {
-	files, _ := ioutil.ReadDir(dir)
-	var fileGroup []string
-	for _, f := range files {
-		if !strings.Contains(f.Name(), pattern) {
-			continue
-		}
-		fileGroup = append(fileGroup, fmt.Sprintf(dir+"/"+f.Name()))
-	}
-	sort.Strings(fileGroup)
-	return fileGroup
-}
-
-func createCartesianPairs(items []string) ([]string, []string) {
-	var pairs1 []string
-	var pairs2 []string
-	for i, item1 := range items {
-		for j := i + 1; j < len(items); j++ {
-			pairs1 = append(pairs1, item1)
-			pairs2 = append(pairs2, items[j])
-		}
-	}
-	return pairs1, pairs2
-}
-
-func compareSignsPairwise(items1 []string, items2 []string, reportMode int) (float64, float64) {
-	matchCount := 0.0
-	misMatchCount := 0.0
-	for i := 0; i < len(items1); i++ {
-		signFile1 := items1[i]
-		signFile2 := items2[i]
-		res, _ := CompareSignatureByPath(signFile1, signFile2)
-		if !res {
-			misMatchCount++
-		} else {
-			matchCount++
-		}
-		if res && reportMode == 1 {
-			fmt.Printf("Signature match: %s    %s\n", signFile1, signFile2)
-		}
-		if !res && reportMode == 2 {
-			fmt.Printf("Signature mismatch: %s    %s\n", signFile1, signFile2)
-		}
-	}
-	return matchCount, misMatchCount
-}
-
-func TestSignCompareClMetrics(t *testing.T) {
-	// the goal is to ensure we are close to <1% false negative rate (false negative is reported signature mismatch for matching videos)
-	// while also having a reasonably low false positive (signatures match for visually different videos) rate
-	// comparison of rendition signatures, when renditions are encoded with different encoders (hardware vs software), is more likely to produce false negatives
-	dir := "../data/bbb_signatures"
-
-	// find CPU FP rate
-	signs := getFileGroup(dir, "cpu_360")
-	signs1, signs2 := createCartesianPairs(signs)
-	cpuFp360, _ := compareSignsPairwise(signs1, signs2, 1)
-	cpu360FpRatio := cpuFp360 / float64(len(signs1))
-
-	// find CPU - Nvidia FN rate
-	signs1 = getFileGroup(dir, "cpu_360")
-	signs2 = getFileGroup(dir, "nv_360")
-	_, cpuNv360Fn := compareSignsPairwise(signs1, signs2, 2)
-	cpuNv360FnRatio := cpuNv360Fn / float64(len(signs1))
-
-	// find CPU FP rate
-	signs = getFileGroup(dir, "cpu_720")
-	signs1, signs2 = createCartesianPairs(signs)
-	cpu720Fp, _ := compareSignsPairwise(signs1, signs2, 1)
-	cpu720FpRatio := cpu720Fp / float64(len(signs1))
-
-	// find CPU - Nvidia FN rate
-	signs1 = getFileGroup(dir, "cpu_720")
-	signs2 = getFileGroup(dir, "nv_720")
-	_, cpuNv720Fn := compareSignsPairwise(signs1, signs2, 2)
-	cpuNv720FnRatio := cpuNv720Fn / float64(len(signs1))
-
-	// Nvidia FP rate
-	signs = getFileGroup(dir, "nv_720")
-	signs1, signs2 = createCartesianPairs(signs)
-	nv720Fp, _ := compareSignsPairwise(signs1, signs2, 1)
-	nv720FpRatio := nv720Fp / float64(len(signs1))
-
-	// Nvidia FP rate
-	signs = getFileGroup(dir, "nv_360")
-	signs1, signs2 = createCartesianPairs(signs)
-	nv360Fp, _ := compareSignsPairwise(signs1, signs2, 1)
-	nv360FpRatio := nv360Fp / float64(len(signs1))
-
-	fmt.Printf("----------------\n")
-	fmt.Printf("CPU 360p False Positive rate: %f\n", cpu360FpRatio)
-	fmt.Printf("CPU 720p False Positive rate: %f\n", cpu720FpRatio)
-	fmt.Printf("Nvidia 360p False Positive rate: %f\n", nv360FpRatio)
-	fmt.Printf("Nvidia 720p False Positive rate: %f\n", nv720FpRatio)
-	fmt.Printf("CPU - Nvidia 360p False Negative rate: %f\n", cpuNv360FnRatio)
-	fmt.Printf("CPU - Nvidia 720p False Negative rate: %f\n", cpuNv720FnRatio)
-
-	assert.True(t, cpuNv720FnRatio <= 0.01)
-	assert.True(t, cpuNv360FnRatio <= 0.01)
-
-	assert.True(t, cpu360FpRatio <= 0.15)
-	assert.True(t, cpu720FpRatio <= 0.15)
-	assert.True(t, nv720FpRatio <= 0.15)
-	assert.True(t, nv720FpRatio <= 0.15)
 }
