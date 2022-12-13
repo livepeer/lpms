@@ -74,8 +74,8 @@ var FfEncoderLookup = map[Acceleration]map[VideoCodec]string{
 		H265: "hevc_nvenc",
 	},
 	Netint: {
-		H264: "h264_ni_enc",
-		H265: "h265_ni_enc",
+		H264: "h264_ni_logan_enc",
+		H265: "h265_ni_logan_enc",
 	},
 }
 

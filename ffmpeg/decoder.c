@@ -254,9 +254,9 @@ char* get_hw_decoder(int ff_codec_id, int hw_type)
         case AV_HWDEVICE_TYPE_MEDIACODEC:
             switch (ff_codec_id) {
                 case AV_CODEC_ID_H264:
-                    return "h264_ni_dec";
+                    return "h264_ni_logan_dec";
                 case AV_CODEC_ID_HEVC:
-                    return "h265_ni_dec";
+                    return "h265_ni_logan_dec";
                 case AV_CODEC_ID_VP8:
                     return "";
                 case AV_CODEC_ID_VP9:
@@ -287,7 +287,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       }
       AVCodec *c = avcodec_find_decoder_by_name(decoder_name);
       if (c) codec = c;
-      else LPMS_WARN("Nvidia decoder not found; defaulting to software");
+      else LPMS_WARN("Hardware decoder not found; defaulting to software");
       if (AV_PIX_FMT_YUV420P != ic->streams[ctx->vi]->codecpar->format &&
           AV_PIX_FMT_YUVJ420P != ic->streams[ctx->vi]->codecpar->format) {
         // TODO check whether the color range is truncated if yuvj420p is used
