@@ -166,6 +166,22 @@ go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30f
 go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30fps16x9 nv 2
 ```
 
+### Testing GPU transcoding with failed segments from Livepeer production environment 
+To test transcoding of segments failed on production in Nvidia environment:
+1. Install Livepeer from sources by following the [installation guide](https://docs.livepeer.org/guides/orchestrating/install-go-livepeer#build-from-source)
+2. Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install-sdk)
+3. Make sure you have access to the bucket with the segments
+4. Download the segments: 
+    ```
+    gsutil cp -r gs://livepeer-production-failed-transcodes /home/livepeer-production-failed-transcodes
+    ```
+5. Run the test
+    ```
+    cd transcoder
+    FAILCASE_PATH="/home/livepeer-production-failed-transcodes" go test --tags=nvidia -timeout 6h -run TestNvidia_CheckFailCase
+    ```
+6. After the test has finished, it will display transcoding stats. Per-file results are logged to `results.csv` in the same directory
+
 ### Contribute
 
 Thank you for your interest in contributing to LPMS!
