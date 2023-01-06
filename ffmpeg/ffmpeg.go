@@ -967,6 +967,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	_, ok := os.LookupEnv("LPMS_USE_NEW_TRANSCODE")
 	var use_new_transcode C.int
 	if ok {
+		glog.Info("LPMS new transcode enabled")
 		use_new_transcode = 1
 	} else {
 		use_new_transcode = 0
