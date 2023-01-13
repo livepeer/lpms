@@ -5,6 +5,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/opt.h>
 #include "transcoder.h"
+#include "pts_correction.h"
 
 struct input_ctx {
   AVFormatContext *ic; // demuxer required
@@ -46,6 +47,8 @@ struct input_ctx {
   int64_t dts_diff[MAX_OUTPUT_SIZE];
   //
   int discontinuity[MAX_OUTPUT_SIZE];
+  // For adjusting output pts to match input pts in case of B-frames
+  struct first_pts start_pts_correction[MAX_OUTPUT_SIZE];
   // Transmuxing mode. Close output in lpms_transcode_stop instead of
   // at the end of lpms_transcode call.
   int transmuxing;

@@ -6,6 +6,7 @@ package ffmpeg
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
 	"testing"
@@ -792,4 +793,27 @@ func TestTranscoder_Portrait(t *testing.T) {
 
 func TestNvidia_DiscontinuityAudioSegment(t *testing.T) {
 	discontinuityAudioSegment(t, Nvidia)
+}
+
+func TestTranscoder_offsetStartPTS(t *testing.T) {
+	// Test media file frames:
+	// [PTS 5.999s] [DTS 5.966s] [Payload 255143]
+	// [PTS 5.967s] [DTS 6.000s] [Payload 152224]
+	// [PTS 6.066s] [DTS 6.033s] [Payload 204143]
+	// [PTS 6.033s] [DTS 6.066s] [Payload 157830]
+	// [PTS 6.133s] [DTS 6.100s] [Payload 188788]
+	// [PTS 6.100s] [DTS 6.133s] [Payload 154605]
+	// [PTS 6.199s] [DTS 6.166s] [Payload 178783]
+	// [PTS 6.167s] [DTS 6.200s] [Payload 145308]
+	// [PTS 6.266s] [DTS 6.233s] [Payload 134474]
+	// We want output to start from PTS=5.967s
+	in := &TranscodeOptionsIn{Fname: "../data/problem/start_pts_problem.ts", Accel: Nvidia}
+	profile := VideoProfile{Name: "p720", Bitrate: "3000000", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
+	out := []TranscodeOptions{{Profile: profile, Oname: "../data/problem/start_pts_problem_encoded.ts", Accel: Nvidia}}
+	_ /*result*/, err := Transcode3(in, out)
+	require.NoError(t, err)
+	result, err := exec.Command("ffprobe", "-v", "0", "-show_entries", "packet=pts_time", "-of", "compact=p=0:nk=1", "-read_intervals", "%+#1", "-select_streams", "v", "../data/problem/start_pts_problem_encoded.ts").CombinedOutput()
+	require.NoError(t, err)
+	firstOutputPts := strings.TrimSpace(string(result))
+	require.Equal(t, "5.966667", firstOutputPts)
 }

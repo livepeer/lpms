@@ -20,6 +20,8 @@ const int lpms_ERR_FILTER_FLUSHED = FFERRTAG('F','L','F','L');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
 const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 
+#define FLUSH_FRAME_PTS_VALUE -1
+
 //
 //  Notes on transcoder internals:
 //
@@ -321,6 +323,7 @@ int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results
 }
 
 int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results *decoded_results, AVFrame *dframe)
+int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results *decoded_results, AVFrame *dframe, struct first_pts *fp)
 {
   struct input_ctx *ictx = &h->ictx;
 
@@ -346,6 +349,15 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
   av_frame_unref(ictx->last_frame_v);
   av_frame_ref(ictx->last_frame_v, dframe);
 
+  // Frames come from the decoder in increasing PTS order.
+  // ts_offset will be amount to correct decoded stream timing to match input container timing. Usually few frames in size.
+  if(dframe->pts != AV_NOPTS_VALUE && dframe->pts != FLUSH_FRAME_PTS_VALUE) {
+    int64_t ts_offset = get_first_pts_offset(fp, dframe->pts);
+    dframe->pts += ts_offset;
+    dframe->pkt_pts += ts_offset;
+    if(dframe->pkt_dts != AV_NOPTS_VALUE) dframe->pkt_dts += ts_offset;
+    dframe->best_effort_timestamp += ts_offset;
+  }
   for (int i = 0; i < h->nb_outputs; i++) {
     struct output_ctx *octx = h->outputs + i;
         
@@ -454,6 +466,12 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
   AVStream *ist = ictx->ic->streams[pkt->stream_index];
   int ret = 0;
 
+  // Remember earliest PTS value we receive from input.
+  // In case stream contains B-frames this is not the first frame.
+  // First frame in decoding order might not be first frame in presentation order.
+  struct first_pts *fp = &ictx->start_pts_correction[pkt->stream_index];
+  capture_pts(fp, pkt->pts);
+
   // TODO: separate counter for the video packets. Old code was increasing
   // video frames counter on video packets when transmuxing, which was
   // misleading at best. Video packet counter can be updated on both
@@ -463,7 +481,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
     // very first video packet, keep it
     // TODO: this should be called first_video_pkt
     ictx->first_pkt = av_packet_clone(pkt);
-    ictx->first_pkt->pts = -1;
+    ictx->first_pkt->pts = FLUSH_FRAME_PTS_VALUE;
   }
 
   // TODO: this could probably be done always, because it is a no-op if
@@ -526,7 +544,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
       if (ictx->flushing) ictx->sentinel_count = 0;
     }
     // Fine, we have frame, process it
-    return handle_video_frame(h, ist, decoded_results, frame);
+    return handle_video_frame(h, ist, decoded_results, frame, fp);
   }
 }
 
@@ -654,7 +672,7 @@ int transcode2(struct transcode_thread *h,
     if (ret < 0) LPMS_ERR_BREAK("Flushing failed");
     ist = ictx->ic->streams[stream_index];
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
-      handle_video_frame(h, ist, decoded_results, iframe);
+      handle_video_frame(h, ist, decoded_results, iframe, &ictx->start_pts_correction[stream_index]);
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
       handle_audio_frame(h, ist, decoded_results, iframe);
     }
@@ -783,7 +801,7 @@ int transcode(struct transcode_thread *h,
         // allow dropping packets (like nonref picture slices in h.264 or frames
         // other than keyframes in vp8), but it needs to be done with care and
         // understanding of the packet role, not arbitrarily
-        if (ictx->last_dts[stream_index] > -1 && ipkt->dts <= ictx->last_dts[stream_index])  {
+        if (ictx->last_dts[stream_index] > FLUSH_FRAME_PTS_VALUE && ipkt->dts <= ictx->last_dts[stream_index])  {
           // skip packet if dts is equal or less than previous one
           goto whileloop_end;
         }
@@ -983,7 +1001,7 @@ struct transcode_thread* lpms_transcode_new() {
   // keep track of last dts in each stream.
   // used while transmuxing, to skip packets with invalid dts.
   for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
-    h->ictx.last_dts[i] = -1;
+    h->ictx.last_dts[i] = FLUSH_FRAME_PTS_VALUE;
   }
   return h;
 }
