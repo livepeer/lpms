@@ -322,7 +322,6 @@ int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results
   return 0;
 }
 
-int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results *decoded_results, AVFrame *dframe)
 int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results *decoded_results, AVFrame *dframe, struct first_pts *fp)
 {
   struct input_ctx *ictx = &h->ictx;
