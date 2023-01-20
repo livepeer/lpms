@@ -563,6 +563,9 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
          ret = calc_signature(frame, octx);
          if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
       }
+//      av_log(NULL, AV_LOG_ERROR, "Output resolution: %d %d\n", octx->width, octx->height);
+//      av_log(NULL, AV_LOG_ERROR, "Frame resolution: %d %d\n", frame->width, frame->height);
+//      av_log(NULL, AV_LOG_ERROR, "Encoder resolution: %d %d\n", encoder->width, encoder->height);
       ret = encode(encoder, frame, octx, ost);
     }
 skip:

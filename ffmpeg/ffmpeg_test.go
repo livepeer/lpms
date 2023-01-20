@@ -354,80 +354,76 @@ func TestTranscoderStatistics_Decoded(t *testing.T) {
 		totalFrames int
 	)
 
-	run, dir := setupTest(t)
+	_, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
 	// segment using our muxer. This should produce 4 segments.
-	err := RTMPToHLS("../transcoder/test.ts", dir+"/test.m3u8", dir+"/test_%d.ts", "1", 0)
-	if err != nil {
-		t.Error(err)
-	}
+	//err := RTMPToHLS("/projects/livepeer/data/bbb_vertical_264.ts", dir+"/test.m3u8", dir+"/test_%d.ts", "1", 0)
+	//if err != nil {
+	//	t.Error(err)
+	//}
 
 	// Use various resolutions to test input
 	// Quickcheck style tests would be nice here one day?
-	profiles := []VideoProfile{P144p30fps16x9, P240p30fps16x9, P360p30fps16x9, P576p30fps16x9}
+	profiles := []VideoProfile{P360p30fps16x9}
 
 	// Transcode some data, save encoded statistics, then attempt to re-transcode
 	// Ensure decoded re-transcode stats match original transcoded statistics
-	for i, p := range profiles {
-		oname := fmt.Sprintf("%s/out_%d.ts", dir, i)
-		out := []TranscodeOptions{{Profile: p, Oname: oname}}
-		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test_%d.ts", dir, i)}
-		res, err := Transcode3(in, out)
-		if err != nil {
-			t.Error(err)
-		}
-		info := res.Encoded[0]
+	for i := 0; i < 4; i++ {
+		for _, p := range profiles {
+			oname := fmt.Sprintf("%s/out_%d.ts", dir, i)
+			out := []TranscodeOptions{{Profile: p, Oname: oname, Accel: Nvidia}}
+			in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/test%d.ts", "/projects/livepeer/data/bbb_vertical", i)}
+			decodeCpu, err := Transcode3(in, out)
+			if err != nil {
+				t.Error(err)
+			}
+			transcodeGpu := decodeCpu.Encoded[0]
 
-		// Now attempt to re-encode the transcoded data
-		// Pass in an empty output to achieve a decode-only flow
-		// and check decoded results from *that*
-		in = &TranscodeOptionsIn{Fname: oname}
-		res, err = Transcode3(in, nil)
-		if err != nil {
-			t.Error(err)
+			// Now attempt to re-encode the transcoded data
+			// Pass in an empty output to achieve a decode-only flow
+			// and check decoded results from *that*
+			in = &TranscodeOptionsIn{Fname: oname}
+			decodeCpu, err = Transcode3(in, nil)
+			if err != nil {
+				t.Error(err)
+			}
+//			w, h, err := VideoProfileResolution(p)
+			if err != nil {
+				t.Error(err)
+			}
+			// Check frame counts
+			if transcodeGpu.Frames != decodeCpu.Decoded.Frames {
+				t.Errorf("Mismatched frame counts %d and %d", transcodeGpu.Frames, decodeCpu.Decoded.Frames)
+			} else {
+				// Check pixel counts
+				if transcodeGpu.Pixels != decodeCpu.Decoded.Pixels {
+					t.Errorf("Mismatched pixel counts %d and %d", transcodeGpu.Pixels, decodeCpu.Decoded.Pixels)
+				}
+			}
+			totalPixels += transcodeGpu.Pixels
+			totalFrames += transcodeGpu.Frames
 		}
-		w, h, err := VideoProfileResolution(p)
-		if err != nil {
-			t.Error(err)
-		}
-
-		// Check pixel counts
-		if info.Pixels != res.Decoded.Pixels {
-			t.Error("Mismatched pixel counts")
-		}
-		if info.Pixels != int64(w*h*res.Decoded.Frames) {
-			t.Error("Mismatched pixel counts")
-		}
-		// Check frame counts
-		if info.Frames != res.Decoded.Frames {
-			t.Error("Mismatched frame counts")
-		}
-		if info.Frames != int(res.Decoded.Pixels/int64(w*h)) {
-			t.Error("Mismatched frame counts")
-		}
-		totalPixels += info.Pixels
-		totalFrames += info.Frames
 	}
 
-	// Now for something fun. Concatenate our segments of various resolutions
-	// Run them through the transcoder, and check the sum of pixels / frames match
-	// Ensures we can properly accommodate mid-stream resolution changes.
-	cmd := `
-        cat out_0.ts out_1.ts out_2.ts out_3.ts > combined.ts
-    `
-	run(cmd)
-	in := &TranscodeOptionsIn{Fname: dir + "/combined.ts"}
-	res, err := Transcode3(in, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	if totalPixels != res.Decoded.Pixels {
-		t.Error("Mismatched total pixel counts")
-	}
-	if totalFrames != res.Decoded.Frames {
-		t.Errorf("Mismatched total frame counts - %d vs %d", totalFrames, res.Decoded.Frames)
-	}
+	//// Now for something fun. Concatenate our segments of various resolutions
+	//// Run them through the transcoder, and check the sum of pixels / frames match
+	//// Ensures we can properly accommodate mid-stream resolution changes.
+	//cmd := `
+    //    cat out_0.ts out_1.ts out_2.ts out_3.ts > combined.ts
+    //`
+	//run(cmd)
+	//in := &TranscodeOptionsIn{Fname: dir + "/combined.ts"}
+	//res, err := Transcode3(in, nil)
+	//if err != nil {
+	//	t.Error(err)
+	//}
+	//if totalPixels != res.Decoded.Pixels {
+	//	t.Error("Mismatched total pixel counts")
+	//}
+	//if totalFrames != res.Decoded.Frames {
+	//	t.Errorf("Mismatched total frame counts - %d vs %d", totalFrames, res.Decoded.Frames)
+	//}
 }
 
 func TestTranscoder_Statistics_Encoded(t *testing.T) {

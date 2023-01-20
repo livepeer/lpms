@@ -557,6 +557,9 @@ func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
 	adjustedWidth.H = format.ScaledHeight(adjustedWidth.W)
 	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
 	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
+	// make final width a multiple of 32 to work around https://github.com/livepeer/go-livepeer/issues/2649
+	//adjustedHeight.W = int(math.Ceil(float64(adjustedHeight.W) / 32.0)) * 32
+	//adjustedWidth.W = int(math.Ceil(float64(adjustedWidth.W) / 32.0)) * 32
 	if adjustedWidth.Valid(l) {
 		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
 		return nil

@@ -752,16 +752,25 @@ func portraitTest(t *testing.T, input string, checkResults bool, profiles []Vide
 		})
 		outFilenames = append(outFilenames, filename)
 	}
-	_, resultErr := Transcode3(in, out)
+	nvidiaTranscodeRes, resultErr := Transcode3(in, out)
 	if resultErr == nil && checkResults {
-		for _, filename := range outFilenames {
+		for i, filename := range outFilenames {
 			outInfo, err := os.Stat(filename)
 			if os.IsNotExist(err) {
 				require.NoError(t, err, fmt.Sprintf("output missing %s", filename))
 			} else {
 				defer os.Remove(filename)
+				// check size
+				require.NotEqual(t, outInfo.Size(), 0, "must produce output %s", filename)
+				// software decode to get pixel counts for validation
+				cpuDecodeRes, cpuErr := Transcode3(&TranscodeOptionsIn{Fname: filename}, nil)
+				require.NoError(t, cpuErr, "Software decoder error")
+				if cpuDecodeRes.Decoded.Pixels!=nvidiaTranscodeRes.Encoded[i].Pixels {
+					fmt.Printf("woo")
+				}
+				require.Equal(t, cpuDecodeRes.Decoded.Pixels, nvidiaTranscodeRes.Encoded[i].Pixels, "GPU encoder and CPU decoder pixel count mismatch for profile %s: %d vs %d",
+					profiles[i].Name, cpuDecodeRes.Decoded.Pixels, nvidiaTranscodeRes.Encoded[i].Pixels)
 			}
-			require.NotEqual(t, outInfo.Size(), 0, "must produce output %s", filename)
 		}
 	}
 	return resultErr
@@ -770,7 +779,7 @@ func portraitTest(t *testing.T, input string, checkResults bool, profiles []Vide
 func TestTranscoder_Portrait(t *testing.T) {
 	hevc := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
 
-	// Usuall portrait input sample
+	// Usual portrait input sample
 	require.NoError(t, portraitTest(t, "portrait.ts", true, []VideoProfile{
 		P360p30fps16x9, hevc, P144p30fps16x9,
 	}))
