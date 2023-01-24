@@ -3,6 +3,7 @@
 #include "filter.h"
 #include "encoder.h"
 #include "logging.h"
+#include "flushing.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -463,7 +464,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
     // very first video packet, keep it
     // TODO: this should be called first_video_pkt
     ictx->first_pkt = av_packet_clone(pkt);
-    ictx->first_pkt->pts = -1;
+    ictx->first_pkt->pts = FLUSH_FRAME_PTS;
   }
 
   // TODO: this could probably be done always, because it is a no-op if
@@ -983,7 +984,7 @@ struct transcode_thread* lpms_transcode_new() {
   // keep track of last dts in each stream.
   // used while transmuxing, to skip packets with invalid dts.
   for (int i = 0; i < MAX_OUTPUT_SIZE; i++) {
-    h->ictx.last_dts[i] = -1;
+    h->ictx.last_dts[i] = FLUSH_FRAME_PTS;
   }
   return h;
 }

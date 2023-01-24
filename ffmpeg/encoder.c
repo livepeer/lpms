@@ -1,5 +1,6 @@
 #include "encoder.h"
 #include "logging.h"
+#include "flushing.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavfilter/buffersrc.h>
@@ -371,6 +372,10 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     ret = avcodec_receive_packet(encoder, pkt);
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
     if (ret < 0) LPMS_ERR(encode_cleanup, "Error receiving packet from encoder");
+    if(pkt->pts == FLUSH_FRAME_PTS) {
+      // This is flush-sentinel frame, do not leak into output
+      return ret;
+    }
     ret = mux(pkt, encoder->time_base, octx, ost);
     if (ret < 0) goto encode_cleanup;
   }

@@ -1,5 +1,6 @@
 #include "filter.h"
 #include "logging.h"
+#include "flushing.h"
 
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
@@ -314,7 +315,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
   } else if (!filter->flushed) { // Flush Frame
     int ts_step;
     inf = (is_video) ? ictx->last_frame_v : ictx->last_frame_a;
-    inf->opaque = (void *) (INT64_MIN); // Store INT64_MIN as pts for flush frames
+    inf->opaque = (void *) (FLUSH_FRAME_PTS);
     filter->flushing = 1;
     if (is_video) {
       ts_step = av_rescale_q(1, av_inv_q(vst->r_frame_rate), vst->time_base);
@@ -344,6 +345,7 @@ fg_write_cleanup:
 
 int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video)
 {
+    int64_t original_input_pts;
     AVFrame *frame = filter->frame;
     av_frame_unref(frame);
 
@@ -353,22 +355,24 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) return ret;
     else if (ret < 0) LPMS_ERR(fg_read_cleanup, "Error consuming the filtergraph");
 
-    if (frame && ((int64_t) frame->opaque == INT64_MIN)) {
-      // opaque being INT64_MIN means it's a flush packet
-      // don't set flushed flag in case this is a flush from a previous segment
+    original_input_pts = (int64_t)frame->opaque;
+
+    if (frame && ((int64_t) frame->opaque == FLUSH_FRAME_PTS)) {
+      // it's a flush packet. don't set flushed flag in case this is a flush from a previous segment
       if (filter->flushing) filter->flushed = 1;
       ret = lpms_ERR_FILTER_FLUSHED;
     } else if (frame && is_video && octx->fps.den) {
       // We set custom PTS as an input of the filtergraph so we need to
       // re-calculate our output PTS before passing it on to the encoder
       if (filter->pts_diff == INT64_MIN) {
-        int64_t pts = (int64_t)frame->opaque; // original input PTS
-        pts = av_rescale_q_rnd(pts, ictx->ic->streams[ictx->vi]->time_base, av_buffersink_get_time_base(filter->sink_ctx), AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+        int64_t pts = av_rescale_q_rnd(original_input_pts, ictx->ic->streams[ictx->vi]->time_base, av_buffersink_get_time_base(filter->sink_ctx), AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
         // difference between rescaled input PTS and the segment's first frame PTS of the filtergraph output
         filter->pts_diff = pts - frame->pts;
       }
       frame->pts += filter->pts_diff; // Re-calculate by adding back this segment's difference calculated at start
     }
+
+    if(original_input_pts == FLUSH_FRAME_PTS) frame->pts = FLUSH_FRAME_PTS;
 fg_read_cleanup:
     return ret;
 }
