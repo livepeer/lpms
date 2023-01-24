@@ -793,3 +793,13 @@ func TestTranscoder_Portrait(t *testing.T) {
 func TestNvidia_DiscontinuityAudioSegment(t *testing.T) {
 	discontinuityAudioSegment(t, Nvidia)
 }
+
+func TestTranscoder_FlushFrameLeak(t *testing.T) {
+	in := &TranscodeOptionsIn{Fname: "../data/stopwatch_8frames.ts", Accel: Nvidia}
+	profile := VideoProfile{Name: "p720", Bitrate: "3000000", Framerate: 5994, FramerateDen: 100, AspectRatio: "16:9", Resolution: "1280x720"}
+	out := []TranscodeOptions{{Profile: profile, Oname: "../data/stopwatch_8frames_720p.ts", Accel: Nvidia}}
+	result, err := Transcode3(in, out)
+	require.NoError(t, err)
+	require.Equal(t, 8, result.Decoded.Frames)
+	require.Equal(t, 8, result.Encoded[0].Frames)
+}
