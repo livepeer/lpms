@@ -540,6 +540,9 @@ func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
 	if err != nil {
 		return err
 	}
+	if w <= 0 || h <= 0 {
+		return fmt.Errorf("input resolution invalid; probe found w=%d h=%d", w, h)
+	}
 	// detect correct rotation
 	outputAr := float32(w) / float32(h)
 	inputAr := float32(format.Width) / float32(format.Height)
@@ -583,10 +586,18 @@ func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) err
 			if haveLimits && resolutionSpecified {
 				err := limits.Clamp(&outputs[i].Profile, format)
 				if err != nil {
-					// if err == ErrTranscoderRes {
-					// 	return fmt.Errorf("Found profile [%d] without resolution %v", i, outputs[i])
-					// }
-					return err
+					// add more context to returned error
+					p := outputs[i].Profile
+					return fmt.Errorf(
+						"%w; profile index=%d Resolution=%s FPS=%d/%d bps=%s codec=%d input ac=%s vc=%s w=%d h=%d",
+						err, i,
+						p.Resolution,
+						p.Framerate, p.FramerateDen, // given FramerateDen == 0 is corrected to be 1
+						p.Bitrate,
+						p.Encoder,
+						format.Acodec, format.Vcodec,
+						format.Width, format.Height,
+					)
 				}
 			}
 		}
