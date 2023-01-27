@@ -13,8 +13,8 @@ import (
 	"testing"
 )
 
-const SignCompareMaxFalseNegativeRate = 0.01;
-const SignCompareMaxFalsePositiveRate = 0.15;
+const SignCompareMaxFalseNegativeRate = 0.01
+const SignCompareMaxFalsePositiveRate = 0.15
 
 func TestNvidia_SignDataCreate(t *testing.T) {
 	_, dir := setupTest(t)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -118,6 +119,8 @@ type MediaInfo struct {
 	Frames     int
 	Pixels     int64
 	DetectData DetectData
+	Width      int
+	Height     int
 }
 
 type TranscodeResults struct {
@@ -298,6 +301,42 @@ func GetCodecInfoBytes(data []byte) (CodecStatus, MediaFormatInfo, error) {
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	status, format, err = GetCodecInfo(fname)
 	return status, format, err
+}
+
+func GetDecoderStatsBytes(data []byte) (*MediaInfo, error) {
+	// write the data to a temp file
+	tempfile, err := ioutil.TempFile("", "")
+	if err != nil {
+		return nil, fmt.Errorf("error creating temp file for pixels verification: %w", err)
+	}
+	defer os.Remove(tempfile.Name())
+
+	if _, err := tempfile.Write(data); err != nil {
+		tempfile.Close()
+		return nil, fmt.Errorf("error writing temp file for pixels verification: %w", err)
+	}
+
+	if err = tempfile.Close(); err != nil {
+		return nil, fmt.Errorf("error closing temp file for pixels verification: %w", err)
+	}
+
+	mi, err := GetDecoderStats(tempfile.Name())
+	if err != nil {
+		return nil, err
+	}
+
+	return mi, nil
+}
+
+// Calculates media file stats by fully decoding it. Use GetCodecInfo, if you need
+// metadata from the start of the container.
+func GetDecoderStats(fname string) (*MediaInfo, error) {
+	in := &TranscodeOptionsIn{Fname: fname}
+	res, err := Transcode3(in, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &res.Decoded, nil
 }
 
 // HasZeroVideoFrameBytes  opens video and returns true if it has video stream with 0-frame
@@ -1019,6 +1058,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	dec := MediaInfo{
 		Frames: int(decoded.frames),
 		Pixels: int64(decoded.pixels),
+		Width:  int(decoded.width),
+		Height: int(decoded.height),
 	}
 	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
 }

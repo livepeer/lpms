@@ -654,6 +654,11 @@ int transcode2(struct transcode_thread *h,
     if (ret < 0) LPMS_ERR_BREAK("Flushing failed");
     ist = ictx->ic->streams[stream_index];
     if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+      // assume resolution won't change mid-segment
+      if (!decoded_results->frames) {
+        decoded_results->width = iframe->width;
+        decoded_results->height = iframe->height;
+      }
       handle_video_frame(h, ist, decoded_results, iframe);
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
       handle_audio_frame(h, ist, decoded_results, iframe);
@@ -743,6 +748,11 @@ int transcode(struct transcode_thread *h,
       // width / height will be zero for pure streamcopy (no decoding)
       decoded_results->frames += dframe->width && dframe->height;
       decoded_results->pixels += dframe->width * dframe->height;
+      // assume resolution won't change mid-segment
+      if (decoded_results->frames == 1) {
+        decoded_results->width = dframe->width;
+        decoded_results->height = dframe->height;
+      }
       has_frame = has_frame && dframe->width && dframe->height;
       if (has_frame) last_frame = ictx->last_frame_v;
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {

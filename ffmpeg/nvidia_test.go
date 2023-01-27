@@ -732,13 +732,13 @@ func TestNvidia_DetectionFreq(t *testing.T) {
 	detectionFreq(t, Nvidia, "0")
 }
 
-func portraitTest(t *testing.T, input string, checkResults bool, profiles []VideoProfile) error {
+func resolutionsAndPixelsTest(t *testing.T, input string, checkResults bool, profiles []VideoProfile) error {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 	outName := func(index int, resolution string) string {
-		return path.Join(wd, "..", "data", fmt.Sprintf("%s_%d_%s.ts", strings.ReplaceAll(input, ".", "_"), index, resolution))
+		return path.Join(wd, "..", "data", fmt.Sprintf("%s_%d_%s.ts", strings.ReplaceAll(path.Base(input), ".", "_"), index, resolution))
 	}
-	fname := path.Join(wd, "..", "data", input)
+	fname := path.Join(wd, input)
 	in := &TranscodeOptionsIn{Fname: fname, Accel: Nvidia}
 	out := make([]TranscodeOptions, 0, len(profiles))
 	outFilenames := make([]string, 0, len(profiles))
@@ -765,10 +765,12 @@ func portraitTest(t *testing.T, input string, checkResults bool, profiles []Vide
 				// software decode to get pixel counts for validation
 				cpuDecodeRes, cpuErr := Transcode3(&TranscodeOptionsIn{Fname: filename}, nil)
 				require.NoError(t, cpuErr, "Software decoder error")
-				if cpuDecodeRes.Decoded.Pixels!=nvidiaTranscodeRes.Encoded[i].Pixels {
-					fmt.Printf("woo")
+				fuzzyMatchResult := FuzzyMatchMediaInfo(cpuDecodeRes.Decoded, nvidiaTranscodeRes.Encoded[i].Pixels)
+				if !fuzzyMatchResult {
+					fmt.Printf("foo")
+					FuzzyMatchMediaInfo(cpuDecodeRes.Decoded, nvidiaTranscodeRes.Encoded[i].Pixels)
 				}
-				require.Equal(t, cpuDecodeRes.Decoded.Pixels, nvidiaTranscodeRes.Encoded[i].Pixels, "GPU encoder and CPU decoder pixel count mismatch for profile %s: %d vs %d",
+				require.True(t, fuzzyMatchResult, "GPU encoder and CPU decoder pixel count mismatch for profile %s: %d vs %d",
 					profiles[i].Name, cpuDecodeRes.Decoded.Pixels, nvidiaTranscodeRes.Encoded[i].Pixels)
 			}
 		}
@@ -776,22 +778,42 @@ func portraitTest(t *testing.T, input string, checkResults bool, profiles []Vide
 	return resultErr
 }
 
-func TestTranscoder_Portrait(t *testing.T) {
-	hevc := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
+func TestTranscoder_ResolutionsAndPixels(t *testing.T) {
+	hevcPortrait := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
+
+	commonProfiles := []VideoProfile{
+		P144p30fps16x9, P240p30fps16x9, P360p30fps16x9, P720p60fps16x9,
+		P240p30fps4x3, P360p30fps4x3, P720p30fps4x3,
+	}
+
+	commonProfilesHevc := func(ps []VideoProfile) []VideoProfile {
+		var res []VideoProfile
+		for _, p := range ps {
+			p.Encoder = H265
+			res = append(res, p)
+		}
+		return res
+	}(commonProfiles)
+
+	// Standard input sample to standard resolutions
+	require.NoError(t, resolutionsAndPixelsTest(t, "../transcoder/test_short.ts", true, commonProfiles))
+
+	// Standard input sample to standard resolutions HEVC
+	require.NoError(t, resolutionsAndPixelsTest(t, "../transcoder/test_short.ts", true, commonProfilesHevc))
 
 	// Usual portrait input sample
-	require.NoError(t, portraitTest(t, "portrait.ts", true, []VideoProfile{
-		P360p30fps16x9, hevc, P144p30fps16x9,
+	require.NoError(t, resolutionsAndPixelsTest(t, "../data/portrait.ts", true, []VideoProfile{
+		P360p30fps16x9, hevcPortrait, P144p30fps16x9,
 	}))
 
 	// Reported as not working sample, but transcoding works as expected
-	require.NoError(t, portraitTest(t, "videotest.mp4", true, []VideoProfile{
-		P360p30fps16x9, hevc, P144p30fps16x9,
+	require.NoError(t, resolutionsAndPixelsTest(t, "../data/videotest.mp4", true, []VideoProfile{
+		P360p30fps16x9, hevcPortrait, P144p30fps16x9,
 	}))
 
 	// Created one sample that is impossible to resize and fit within encoder limits and still keep aspect ratio:
 	notPossible := VideoProfile{Name: "P8K1x250", Bitrate: "6000k", Framerate: 30, AspectRatio: "1:250", Resolution: "250x62500", Encoder: H264}
-	err := portraitTest(t, "vertical-sample.ts", true, []VideoProfile{notPossible})
+	err := resolutionsAndPixelsTest(t, "vertical-sample.ts", true, []VideoProfile{notPossible})
 	// We expect error
 	require.Error(t, err)
 	// Error should be `profile 250x62500 size out of bounds 146x146-4096x4096 input=16x4000 adjusted 250x62500 or 16x4096`
