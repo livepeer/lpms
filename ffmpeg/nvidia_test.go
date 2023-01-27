@@ -766,10 +766,6 @@ func resolutionsAndPixelsTest(t *testing.T, input string, checkResults bool, pro
 				cpuDecodeRes, cpuErr := Transcode3(&TranscodeOptionsIn{Fname: filename}, nil)
 				require.NoError(t, cpuErr, "Software decoder error")
 				fuzzyMatchResult := FuzzyMatchMediaInfo(cpuDecodeRes.Decoded, nvidiaTranscodeRes.Encoded[i].Pixels)
-				if !fuzzyMatchResult {
-					fmt.Printf("foo")
-					FuzzyMatchMediaInfo(cpuDecodeRes.Decoded, nvidiaTranscodeRes.Encoded[i].Pixels)
-				}
 				require.True(t, fuzzyMatchResult, "GPU encoder and CPU decoder pixel count mismatch for profile %s: %d vs %d",
 					profiles[i].Name, cpuDecodeRes.Decoded.Pixels, nvidiaTranscodeRes.Encoded[i].Pixels)
 			}

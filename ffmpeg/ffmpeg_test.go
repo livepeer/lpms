@@ -354,14 +354,14 @@ func TestTranscoderStatistics_Decoded(t *testing.T) {
 		totalFrames int
 	)
 
-	_, dir := setupTest(t)
+	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
 	// segment using our muxer. This should produce 4 segments.
-	//err := RTMPToHLS("/projects/livepeer/data/bbb_vertical_264.ts", dir+"/test.m3u8", dir+"/test_%d.ts", "1", 0)
-	//if err != nil {
-	//	t.Error(err)
-	//}
+	err := RTMPToHLS("../transcoder/test.ts", dir+"/test.m3u8", dir+"/test_%d.ts", "1", 0)
+	if err != nil {
+		t.Error(err)
+	}
 
 	// Use various resolutions to test input
 	// Quickcheck style tests would be nice here one day?
@@ -406,24 +406,24 @@ func TestTranscoderStatistics_Decoded(t *testing.T) {
 		}
 	}
 
-	//// Now for something fun. Concatenate our segments of various resolutions
-	//// Run them through the transcoder, and check the sum of pixels / frames match
-	//// Ensures we can properly accommodate mid-stream resolution changes.
-	//cmd := `
-	//    cat out_0.ts out_1.ts out_2.ts out_3.ts > combined.ts
-	//`
-	//run(cmd)
-	//in := &TranscodeOptionsIn{Fname: dir + "/combined.ts"}
-	//res, err := Transcode3(in, nil)
-	//if err != nil {
-	//	t.Error(err)
-	//}
-	//if totalPixels != res.Decoded.Pixels {
-	//	t.Error("Mismatched total pixel counts")
-	//}
-	//if totalFrames != res.Decoded.Frames {
-	//	t.Errorf("Mismatched total frame counts - %d vs %d", totalFrames, res.Decoded.Frames)
-	//}
+	// Now for something fun. Concatenate our segments of various resolutions
+	// Run them through the transcoder, and check the sum of pixels / frames match
+	// Ensures we can properly accommodate mid-stream resolution changes.
+	cmd := `
+	   cat out_0.ts out_1.ts out_2.ts out_3.ts > combined.ts
+	`
+	run(cmd)
+	in := &TranscodeOptionsIn{Fname: dir + "/combined.ts"}
+	res, err := Transcode3(in, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	if totalPixels != res.Decoded.Pixels {
+		t.Error("Mismatched total pixel counts")
+	}
+	if totalFrames != res.Decoded.Frames {
+		t.Errorf("Mismatched total frame counts - %d vs %d", totalFrames, res.Decoded.Frames)
+	}
 }
 
 func TestTranscoder_Statistics_Encoded(t *testing.T) {
@@ -535,6 +535,9 @@ func TestGetDecoderStats(t *testing.T) {
 	require.Equal(t, 1280, stats.Width)
 	require.Equal(t, 720, stats.Height)
 	require.Equal(t, 480, stats.Frames)
+	// check for correct error
+	_, err = GetDecoderStats(path.Join(wd, "foo"))
+	require.EqualError(t, err, "TranscoderInvalidVideo")
 }
 
 func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
