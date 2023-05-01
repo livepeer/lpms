@@ -11,6 +11,8 @@ import (
 	"github.com/livepeer/m3u8"
 )
 
+import "C"
+
 var ErrProfName = fmt.Errorf("unknown VideoProfile profile name")
 var ErrCodecName = fmt.Errorf("unknown codec name")
 

@@ -20,6 +20,8 @@ import (
 	"github.com/livepeer/m3u8"
 )
 
+import "C"
+
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")
 var ErrSegmenter = errors.New("SegmenterError")
 var PlaylistRetryCount = 5
