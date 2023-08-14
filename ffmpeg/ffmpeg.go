@@ -431,6 +431,7 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 		Fname: input,
 		Accel: Software,
 	}
+	fmt.Printf("inopts: %v, opts: %v\n", inopts, opts)
 	return Transcode2(inopts, opts)
 }
 
@@ -929,6 +930,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	// Output configuration
 	params, finalizer, err := createCOutputParams(input, ps)
+	fmt.Printf("Output configuration, input: %v, ps: %v, params: %v\n", input, ps, params)
 	// This prevents C memory leaks
 	defer finalizer()
 	// Only now can we do this

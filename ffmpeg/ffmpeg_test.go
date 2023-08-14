@@ -155,6 +155,15 @@ func TestSegmenter_DropLatePackets(t *testing.T) {
 	run(cmd)
 }
 
+func TestTranscoder_Quality(t *testing.T) {
+	err := Transcode(
+		"/Users/rafalleszko/repos/lpms/test/input/hunter/source/1.ts", "/Users/rafalleszko/repos/lpms/test/output/hunter-locally/",
+		[]VideoProfile{CatalystDefault})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 func TestTranscoder_UnevenRes(t *testing.T) {
 	// Ensure transcoding still works on input with uneven resolutions
 	// and that aspect ratio is maintained
