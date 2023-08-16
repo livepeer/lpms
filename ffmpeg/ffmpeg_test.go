@@ -157,7 +157,7 @@ func TestSegmenter_DropLatePackets(t *testing.T) {
 
 func TestTranscoder_Quality(t *testing.T) {
 	err := Transcode(
-		"/Users/rafalleszko/repos/lpms/test/input/hunter/source/1.ts", "/Users/rafalleszko/repos/lpms/test/output/hunter-locally/",
+		"/home/rafal/lpms/test/input/hunter/source/1.ts", "/home/rafal/lpms/test/output/hunter/",
 		[]VideoProfile{CatalystDefault})
 	if err != nil {
 		t.Error(err)

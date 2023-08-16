@@ -423,13 +423,13 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 		opt := TranscodeOptions{
 			Oname:   oname,
 			Profile: param,
-			Accel:   Software,
+			Accel:   Nvidia,
 		}
 		opts[i] = opt
 	}
 	inopts := &TranscodeOptionsIn{
 		Fname: input,
-		Accel: Software,
+		Accel: Nvidia,
 	}
 	fmt.Printf("inopts: %v, opts: %v\n", inopts, opts)
 	return Transcode2(inopts, opts)
