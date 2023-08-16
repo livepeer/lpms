@@ -424,6 +424,9 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 			Oname:   oname,
 			Profile: param,
 			Accel:   Nvidia,
+			VideoEncoder: ComponentOptions{Opts: map[string]string{
+				"crf": "30",
+			}},
 		}
 		opts[i] = opt
 	}
