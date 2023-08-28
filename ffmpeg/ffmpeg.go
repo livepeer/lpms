@@ -424,9 +424,6 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 			Oname:   oname,
 			Profile: param,
 			Accel:   Nvidia,
-			VideoEncoder: ComponentOptions{Opts: map[string]string{
-				"crf": "30",
-			}},
 		}
 		opts[i] = opt
 	}
@@ -698,6 +695,8 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 		if len(p.VideoEncoder.Name) <= 0 && len(p.VideoEncoder.Opts) <= 0 {
 			p.VideoEncoder.Opts = map[string]string{
 				"forced-idr": "1",
+				"preset":     "slow",
+				"tier":       "high",
 			}
 			switch p.Profile.Profile {
 			case ProfileH264Baseline, ProfileH264ConstrainedHigh:
