@@ -699,9 +699,11 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 				"tier":       "high",
 			}
 			if p.Profile.CRF != 0 {
-				crfStr := strconv.Itoa(int(p.Profile.CRF))
-				p.VideoEncoder.Opts["crf"] = crfStr
-				p.VideoEncoder.Opts["cq"] = crfStr
+				p.VideoEncoder.Opts["crf"] = strconv.Itoa(int(p.Profile.CRF))
+				// There's no direct numerical correspondence between CQ and CRF.
+				// From some experiments, it seems that setting CQ = CRF + 7 gives similar visual effects.
+				cq := p.Profile.CRF + 7
+				p.VideoEncoder.Opts["cq"] = strconv.Itoa(int(cq))
 			}
 			switch p.Profile.Profile {
 			case ProfileH264Baseline, ProfileH264ConstrainedHigh:
