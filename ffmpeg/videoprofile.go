@@ -85,7 +85,8 @@ var FfmpegNameToVideoCodec = map[string]VideoCodec{
 // 240p30fps: 700kbps
 // 144p30fps: 400kbps
 type VideoProfile struct {
-	Name         string
+	Name string
+	// Bitrate is used to set min, avg, and max bitrate
 	Bitrate      string
 	Framerate    uint
 	FramerateDen uint
@@ -97,6 +98,10 @@ type VideoProfile struct {
 	Encoder      VideoCodec
 	ColorDepth   ColorDepthBits
 	ChromaFormat ChromaSubsampling
+	// CRF is used to set CRF and CQ
+	// If set, then constant rate factor is used instead of constant bitrate
+	// If both CRF and Bitrate are set, then Bitrate is used only as max bitrate
+	CRF uint
 }
 
 // Some sample video profiles
@@ -116,16 +121,18 @@ var (
 	P144p30fps16x9  = VideoProfile{Name: "P144p30fps16x9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256x144"}
 	P144p25fps16x9  = VideoProfile{Name: "P144p25fps16x9", Bitrate: "400k", Framerate: 25, AspectRatio: "16:9", Resolution: "256x144"}
 	CatalystDefault = VideoProfile{
-		Name: "360p0",
+		Name: "720p0",
 		// Check what Catalyst sends for FPS
 		//FPS:        0,
 		// Check what Catalyst sends for Bitrate
 		//Bitrate:    1_000_000,
-		Bitrate:    "1000k",
-		Resolution: "640x360",
+		Bitrate:    "600k",
+		Resolution: "1280x720",
 		// Check if these values are what Catalyst sends
 		Framerate:   30,
 		AspectRatio: "16:9",
+		CRF:         35,
+		Profile:     ProfileH264High,
 	}
 )
 

@@ -698,6 +698,11 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 				"preset":     "slow",
 				"tier":       "high",
 			}
+			if p.Profile.CRF != 0 {
+				crfStr := strconv.Itoa(int(p.Profile.CRF))
+				p.VideoEncoder.Opts["crf"] = crfStr
+				p.VideoEncoder.Opts["cq"] = crfStr
+			}
 			switch p.Profile.Profile {
 			case ProfileH264Baseline, ProfileH264ConstrainedHigh:
 				if p.Accel != Netint {
