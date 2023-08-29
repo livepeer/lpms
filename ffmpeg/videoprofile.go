@@ -106,34 +106,20 @@ type VideoProfile struct {
 
 // Some sample video profiles
 var (
-	P720p60fps16x9  = VideoProfile{Name: "P720p60fps16x9", Bitrate: "6000k", Framerate: 60, AspectRatio: "16:9", Resolution: "1280x720"}
-	P720p30fps16x9  = VideoProfile{Name: "P720p30fps16x9", Bitrate: "4000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
-	P720p25fps16x9  = VideoProfile{Name: "P720p25fps16x9", Bitrate: "3500k", Framerate: 25, AspectRatio: "16:9", Resolution: "1280x720"}
-	P720p30fps4x3   = VideoProfile{Name: "P720p30fps4x3", Bitrate: "3500k", Framerate: 30, AspectRatio: "4:3", Resolution: "960x720"}
-	P576p30fps16x9  = VideoProfile{Name: "P576p30fps16x9", Bitrate: "1500k", Framerate: 30, AspectRatio: "16:9", Resolution: "1024x576"}
-	P576p25fps16x9  = VideoProfile{Name: "P576p25fps16x9", Bitrate: "1500k", Framerate: 25, AspectRatio: "16:9", Resolution: "1024x576"}
-	P360p30fps16x9  = VideoProfile{Name: "P360p30fps16x9", Bitrate: "1200k", Framerate: 30, AspectRatio: "16:9", Resolution: "640x360"}
-	P360p25fps16x9  = VideoProfile{Name: "P360p25fps16x9", Bitrate: "1000k", Framerate: 25, AspectRatio: "16:9", Resolution: "640x360"}
-	P360p30fps4x3   = VideoProfile{Name: "P360p30fps4x3", Bitrate: "1000k", Framerate: 30, AspectRatio: "4:3", Resolution: "480x360"}
-	P240p30fps16x9  = VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240"}
-	P240p25fps16x9  = VideoProfile{Name: "P240p25fps16x9", Bitrate: "600k", Framerate: 25, AspectRatio: "16:9", Resolution: "426x240"}
-	P240p30fps4x3   = VideoProfile{Name: "P240p30fps4x3", Bitrate: "600k", Framerate: 30, AspectRatio: "4:3", Resolution: "320x240"}
-	P144p30fps16x9  = VideoProfile{Name: "P144p30fps16x9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256x144"}
-	P144p25fps16x9  = VideoProfile{Name: "P144p25fps16x9", Bitrate: "400k", Framerate: 25, AspectRatio: "16:9", Resolution: "256x144"}
-	CatalystDefault = VideoProfile{
-		Name: "720p0",
-		// Check what Catalyst sends for FPS
-		//FPS:        0,
-		// Check what Catalyst sends for Bitrate
-		//Bitrate:    1_000_000,
-		Bitrate:    "1000k",
-		Resolution: "1280x720",
-		// Check if these values are what Catalyst sends
-		Framerate:   30,
-		AspectRatio: "16:9",
-		CRF:         23,
-		Profile:     ProfileH264High,
-	}
+	P720p60fps16x9 = VideoProfile{Name: "P720p60fps16x9", Bitrate: "6000k", Framerate: 60, AspectRatio: "16:9", Resolution: "1280x720"}
+	P720p30fps16x9 = VideoProfile{Name: "P720p30fps16x9", Bitrate: "4000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
+	P720p25fps16x9 = VideoProfile{Name: "P720p25fps16x9", Bitrate: "3500k", Framerate: 25, AspectRatio: "16:9", Resolution: "1280x720"}
+	P720p30fps4x3  = VideoProfile{Name: "P720p30fps4x3", Bitrate: "3500k", Framerate: 30, AspectRatio: "4:3", Resolution: "960x720"}
+	P576p30fps16x9 = VideoProfile{Name: "P576p30fps16x9", Bitrate: "1500k", Framerate: 30, AspectRatio: "16:9", Resolution: "1024x576"}
+	P576p25fps16x9 = VideoProfile{Name: "P576p25fps16x9", Bitrate: "1500k", Framerate: 25, AspectRatio: "16:9", Resolution: "1024x576"}
+	P360p30fps16x9 = VideoProfile{Name: "P360p30fps16x9", Bitrate: "1200k", Framerate: 30, AspectRatio: "16:9", Resolution: "640x360"}
+	P360p25fps16x9 = VideoProfile{Name: "P360p25fps16x9", Bitrate: "1000k", Framerate: 25, AspectRatio: "16:9", Resolution: "640x360"}
+	P360p30fps4x3  = VideoProfile{Name: "P360p30fps4x3", Bitrate: "1000k", Framerate: 30, AspectRatio: "4:3", Resolution: "480x360"}
+	P240p30fps16x9 = VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240"}
+	P240p25fps16x9 = VideoProfile{Name: "P240p25fps16x9", Bitrate: "600k", Framerate: 25, AspectRatio: "16:9", Resolution: "426x240"}
+	P240p30fps4x3  = VideoProfile{Name: "P240p30fps4x3", Bitrate: "600k", Framerate: 30, AspectRatio: "4:3", Resolution: "320x240"}
+	P144p30fps16x9 = VideoProfile{Name: "P144p30fps16x9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256x144"}
+	P144p25fps16x9 = VideoProfile{Name: "P144p25fps16x9", Bitrate: "400k", Framerate: 25, AspectRatio: "16:9", Resolution: "256x144"}
 )
 
 var VideoProfileLookup = map[string]VideoProfile{

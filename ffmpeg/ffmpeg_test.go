@@ -155,15 +155,6 @@ func TestSegmenter_DropLatePackets(t *testing.T) {
 	run(cmd)
 }
 
-func TestTranscoder_Quality(t *testing.T) {
-	err := Transcode(
-		"/home/rafal/lpms/test/input/chrome/0.ts", "/home/rafal/lpms/test/output/chrome/",
-		[]VideoProfile{CatalystDefault})
-	if err != nil {
-		t.Error(err)
-	}
-}
-
 func TestTranscoder_UnevenRes(t *testing.T) {
 	// Ensure transcoding still works on input with uneven resolutions
 	// and that aspect ratio is maintained
