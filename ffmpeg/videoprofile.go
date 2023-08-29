@@ -126,12 +126,12 @@ var (
 		//FPS:        0,
 		// Check what Catalyst sends for Bitrate
 		//Bitrate:    1_000_000,
-		Bitrate:    "600k",
+		Bitrate:    "1000k",
 		Resolution: "1280x720",
 		// Check if these values are what Catalyst sends
 		Framerate:   30,
 		AspectRatio: "16:9",
-		CRF:         35,
+		CRF:         23,
 		Profile:     ProfileH264High,
 	}
 )
