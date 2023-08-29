@@ -235,6 +235,7 @@ type JsonProfile struct {
 	Encoder      string            `json:"encoder"`
 	ColorDepth   ColorDepthBits    `json:"colorDepth"`
 	ChromaFormat ChromaSubsampling `json:"chromaFormat"`
+	CRF          uint              `json:"crf"`
 }
 
 func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, error) {
@@ -280,6 +281,7 @@ func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, 
 			ColorDepth:   profile.ColorDepth,
 			// profile.ChromaFormat of 0 is default ChromaSubsampling420
 			ChromaFormat: profile.ChromaFormat,
+			CRF:          profile.CRF,
 		}
 		parsedProfiles = append(parsedProfiles, prof)
 	}
