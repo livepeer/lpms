@@ -75,17 +75,18 @@ var FfmpegNameToVideoCodec = map[string]VideoCodec{
 	"vp9":  VP9,
 }
 
-//Standard Profiles:
-//1080p60fps: 9000kbps
-//1080p30fps: 6000kbps
-//720p60fps: 6000kbps
-//720p30fps: 4000kbps
-//480p30fps: 2000kbps
-//360p30fps: 1000kbps
-//240p30fps: 700kbps
-//144p30fps: 400kbps
+// Standard Profiles:
+// 1080p60fps: 9000kbps
+// 1080p30fps: 6000kbps
+// 720p60fps: 6000kbps
+// 720p30fps: 4000kbps
+// 480p30fps: 2000kbps
+// 360p30fps: 1000kbps
+// 240p30fps: 700kbps
+// 144p30fps: 400kbps
 type VideoProfile struct {
-	Name         string
+	Name string
+	// Bitrate is used to set min, avg, and max bitrate
 	Bitrate      string
 	Framerate    uint
 	FramerateDen uint
@@ -97,9 +98,13 @@ type VideoProfile struct {
 	Encoder      VideoCodec
 	ColorDepth   ColorDepthBits
 	ChromaFormat ChromaSubsampling
+	// CRF is used to set CRF and CQ
+	// If set, then constant rate factor is used instead of constant bitrate
+	// If both CRF and Bitrate are set, then Bitrate is used only as max bitrate
+	CRF uint
 }
 
-//Some sample video profiles
+// Some sample video profiles
 var (
 	P720p60fps16x9 = VideoProfile{Name: "P720p60fps16x9", Bitrate: "6000k", Framerate: 60, AspectRatio: "16:9", Resolution: "1280x720"}
 	P720p30fps16x9 = VideoProfile{Name: "P720p30fps16x9", Bitrate: "4000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
@@ -230,6 +235,7 @@ type JsonProfile struct {
 	Encoder      string            `json:"encoder"`
 	ColorDepth   ColorDepthBits    `json:"colorDepth"`
 	ChromaFormat ChromaSubsampling `json:"chromaFormat"`
+	CRF          uint              `json:"crf"`
 }
 
 func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, error) {
@@ -275,6 +281,7 @@ func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, 
 			ColorDepth:   profile.ColorDepth,
 			// profile.ChromaFormat of 0 is default ChromaSubsampling420
 			ChromaFormat: profile.ChromaFormat,
+			CRF:          profile.CRF,
 		}
 		parsedProfiles = append(parsedProfiles, prof)
 	}
