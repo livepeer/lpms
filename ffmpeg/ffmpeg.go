@@ -700,8 +700,8 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 			if p.Profile.CRF != 0 {
 				p.VideoEncoder.Opts["crf"] = strconv.Itoa(int(p.Profile.CRF))
 				// There's no direct numerical correspondence between CQ and CRF.
-				// From some experiments, it seems that setting CQ = CRF + 7 gives similar visual effects.
-				cq := p.Profile.CRF + 7
+				// From some experiments, it seems that setting CQ = CRF + 6 gives similar visual effects.
+				cq := p.Profile.CRF + 6
 				p.VideoEncoder.Opts["cq"] = strconv.Itoa(int(cq))
 			}
 			switch p.Profile.Profile {
