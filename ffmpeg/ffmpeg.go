@@ -20,6 +20,7 @@ import (
 	pb "github.com/livepeer/lpms/ffmpeg/proto"
 )
 
+// #cgo LDFLAGS: -L/usr/local/cuda/lib64:/home/rafal/compiled/lib
 // #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale
 // #include <stdlib.h>
 // #include "transcoder.h"
@@ -423,13 +424,13 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 		opt := TranscodeOptions{
 			Oname:   oname,
 			Profile: param,
-			Accel:   Software,
+			Accel:   Nvidia,
 		}
 		opts[i] = opt
 	}
 	inopts := &TranscodeOptionsIn{
 		Fname: input,
-		Accel: Software,
+		Accel: Nvidia,
 	}
 	return Transcode2(inopts, opts)
 }
@@ -472,7 +473,7 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string
 			if outDev != "" && outDev != inDev {
 				return "", "", ErrTranscoderDev // XXX not allowed
 			}
-			return encoder, "scale_cuda", nil
+			return encoder, "scale_npp", nil
 		}
 	case Netint:
 		switch outOpts.Accel {
@@ -804,6 +805,8 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 		}
 		fromMs := int(p.From.Milliseconds())
 		toMs := int(p.To.Milliseconds())
+		fmt.Println("FILTERS!!!!")
+		fmt.Println(filters)
 		vfilt := C.CString(filters)
 		isDNN := C.int(0)
 		if p.Detector != nil {
