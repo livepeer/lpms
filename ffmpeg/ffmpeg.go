@@ -461,12 +461,12 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string
 			if outDev != "" {
 				upload = upload + "=device=" + outDev
 			}
-			return encoder, upload + ",scale_cuda", nil
+			return encoder, upload + ",scale_npp", nil
 		}
 	case Nvidia:
 		switch outOpts.Accel {
 		case Software:
-			return encoder, "scale_cuda", nil
+			return encoder, "scale_npp", nil
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
