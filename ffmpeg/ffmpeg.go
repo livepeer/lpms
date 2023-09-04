@@ -447,7 +447,7 @@ func newAVOpts(opts map[string]string) *C.AVDictionary {
 }
 
 // return encoding specific options for the given accel
-func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string, string, error) {
+func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string, string, string, error) {
 	inDev := inOpts.Device
 	outDev := outOpts.Device
 	encoder := FfEncoderLookup[outOpts.Accel][outOpts.Profile.Encoder]
@@ -455,35 +455,35 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string
 	case Software:
 		switch outOpts.Accel {
 		case Software:
-			return encoder, "scale", nil
+			return encoder, "scale", "", nil
 		case Nvidia:
 			upload := "hwupload_cuda"
 			if outDev != "" {
 				upload = upload + "=device=" + outDev
 			}
-			return encoder, upload + ",scale_npp", nil
+			return encoder, upload + ",scale_npp", "super", nil
 		}
 	case Nvidia:
 		switch outOpts.Accel {
 		case Software:
-			return encoder, "scale_npp", nil
+			return encoder, "scale_npp", "super", nil
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
-				return "", "", ErrTranscoderDev // XXX not allowed
+				return "", "", "", ErrTranscoderDev // XXX not allowed
 			}
-			return encoder, "scale_npp", nil
+			return encoder, "scale_npp", "super", nil
 		}
 	case Netint:
 		switch outOpts.Accel {
 		case Software, Nvidia:
-			return "", "", ErrTranscoderDev // XXX don't allow mix-match between NETINT and sw/nv
+			return "", "", "", ErrTranscoderDev // XXX don't allow mix-match between NETINT and sw/nv
 		case Netint:
 			// Use software scale filter
-			return encoder, "scale", nil
+			return encoder, "scale", "", nil
 		}
 	}
-	return "", "", ErrTranscoderHw
+	return "", "", "", ErrTranscoderHw
 }
 func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 	switch accel {
@@ -643,15 +643,18 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 			}
 		}
 		encoder, scale_filter := p.VideoEncoder.Name, "scale"
+		var interpAlgo string
 		if encoder == "" {
-			encoder, scale_filter, err = configEncoder(input, p)
+			encoder, scale_filter, interpAlgo, err = configEncoder(input, p)
 			if err != nil {
 				return params, finalizer, err
 			}
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
-		var filters string
-		filters = fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
+		filters := fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
+		if interpAlgo != "" {
+			filters = fmt.Sprintf("%s:interp_algo=%s", filters, interpAlgo)
+		}
 		if input.Accel == Nvidia && p.Accel == Software {
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ",hwdownload,format=nv12"
