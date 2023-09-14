@@ -98,10 +98,10 @@ type VideoProfile struct {
 	Encoder      VideoCodec
 	ColorDepth   ColorDepthBits
 	ChromaFormat ChromaSubsampling
-	// CRF is used to set CRF and CQ
+	// Quality is used to set CRF and CQ
 	// If set, then constant rate factor is used instead of constant bitrate
-	// If both CRF and Bitrate are set, then Bitrate is used only as max bitrate
-	CRF uint
+	// If both Quality and Bitrate are set, then Bitrate is used only as max bitrate
+	Quality uint
 }
 
 // Some sample video profiles
@@ -235,7 +235,7 @@ type JsonProfile struct {
 	Encoder      string            `json:"encoder"`
 	ColorDepth   ColorDepthBits    `json:"colorDepth"`
 	ChromaFormat ChromaSubsampling `json:"chromaFormat"`
-	CRF          uint              `json:"crf"`
+	Quality      uint              `json:"quality"`
 }
 
 func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, error) {
@@ -281,7 +281,7 @@ func ParseProfilesFromJsonProfileArray(profiles []JsonProfile) ([]VideoProfile, 
 			ColorDepth:   profile.ColorDepth,
 			// profile.ChromaFormat of 0 is default ChromaSubsampling420
 			ChromaFormat: profile.ChromaFormat,
-			CRF:          profile.CRF,
+			Quality:      profile.Quality,
 		}
 		parsedProfiles = append(parsedProfiles, prof)
 	}

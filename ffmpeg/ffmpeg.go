@@ -697,16 +697,16 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 				"preset":     "slow",
 				"tier":       "high",
 			}
-			if p.Profile.CRF != 0 {
-				if p.Profile.CRF <= 63 {
-					p.VideoEncoder.Opts["crf"] = strconv.Itoa(int(p.Profile.CRF))
+			if p.Profile.Quality != 0 {
+				if p.Profile.Quality <= 63 {
+					p.VideoEncoder.Opts["crf"] = strconv.Itoa(int(p.Profile.Quality))
 				} else {
 					glog.Warning("Cannot use CRF param, value out of range (0-63)")
 				}
 
 				// There's no direct numerical correspondence between CQ and CRF.
 				// From some experiments, it seems that setting CQ = CRF + 7 gives similar visual effects.
-				cq := p.Profile.CRF + 7
+				cq := p.Profile.Quality + 7
 				if cq <= 51 {
 					p.VideoEncoder.Opts["cq"] = strconv.Itoa(int(cq))
 				} else {
