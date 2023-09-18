@@ -550,7 +550,7 @@ func TestNvidia_API_MixedOutput(t *testing.T) {
       diff -u $1.md5 ffmpeg_$1.md5
 
       ffmpeg -loglevel warning -i out_$1.ts -c:a aac -ar 44100 -ac 2 \
-        -vf hwupload_cuda,fps=123,scale_cuda=w=256:h=144 -c:v h264_nvenc \
+        -vf hwupload_cuda,fps=123,scale_npp=w=256:h=144 -c:v h264_nvenc \
         ffmpeg_nv_$1.ts
 
       # sanity check ffmpeg frame count against ours
@@ -640,7 +640,7 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
       diff -u $1.md5 ffmpeg_$1.md5
 
       ffmpeg -loglevel warning -i out_$1.ts -c:a aac -ar 44100 -ac 2 \
-        -vf hwupload_cuda,fps=123,scale_cuda=w=256:h=144 -c:v h264_nvenc \
+        -vf hwupload_cuda,fps=123,scale_npp=w=256:h=144 -c:v h264_nvenc \
         -muxdelay 0 -copyts \
         ffmpeg_nv_$1.ts
 
