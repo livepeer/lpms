@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -461,18 +462,18 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string
 			if outDev != "" {
 				upload = upload + "=device=" + outDev
 			}
-			return encoder, upload + ",scale_npp", "super", nil
+			return encoder, upload + "," + hwScale(), "super", nil
 		}
 	case Nvidia:
 		switch outOpts.Accel {
 		case Software:
-			return encoder, "scale_npp", "super", nil
+			return encoder, hwScale(), "super", nil
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
 				return "", "", "", ErrTranscoderDev // XXX not allowed
 			}
-			return encoder, "scale_npp", "super", nil
+			return encoder, hwScale(), "super", nil
 		}
 	case Netint:
 		switch outOpts.Accel {
@@ -1132,6 +1133,15 @@ func ffmpegStrEscape(origStr string) string {
 	tmpStr := strings.ReplaceAll(origStr, "\\", "\\\\")
 	outStr := strings.ReplaceAll(tmpStr, ":", "\\:")
 	return outStr
+}
+
+func hwScale() string {
+	if runtime.GOOS == "windows" {
+		// we don't build windows binaries with CUDA SDK, so need to use scale_cuda instead of scale_npp
+		return "scale_cuda"
+	} else {
+		return "scale_npp"
+	}
 }
 
 func FfmpegSetLogLevel(level int) {
