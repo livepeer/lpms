@@ -462,18 +462,18 @@ func configEncoder(inOpts *TranscodeOptionsIn, outOpts TranscodeOptions) (string
 			if outDev != "" {
 				upload = upload + "=device=" + outDev
 			}
-			return encoder, upload + "," + hwScale(), "super", nil
+			return encoder, upload + "," + hwScale(), hwScaleAlgo(), nil
 		}
 	case Nvidia:
 		switch outOpts.Accel {
 		case Software:
-			return encoder, hwScale(), "super", nil
+			return encoder, hwScale(), hwScaleAlgo(), nil
 		case Nvidia:
 			// If we encode on a different device from decode then need to transfer
 			if outDev != "" && outDev != inDev {
 				return "", "", "", ErrTranscoderDev // XXX not allowed
 			}
-			return encoder, hwScale(), "super", nil
+			return encoder, hwScale(), hwScaleAlgo(), nil
 		}
 	case Netint:
 		switch outOpts.Accel {
@@ -1141,6 +1141,15 @@ func hwScale() string {
 		return "scale_cuda"
 	} else {
 		return "scale_npp"
+	}
+}
+
+func hwScaleAlgo() string {
+	if runtime.GOOS == "windows" {
+		// we don't build windows binaries with CUDA SDK, so need to use the default scale algorithm
+		return ""
+	} else {
+		return "super"
 	}
 }
 
