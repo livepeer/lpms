@@ -516,6 +516,34 @@ nb_read_frames=%d
 	}
 }
 
+func TestFuzzyMatchMediaInfo(t *testing.T) {
+	actualInfo := MediaInfo{Frames: 60, Pixels: 20736000, Width: 720, Height: 480}
+	// all match
+	result := FuzzyMatchMediaInfo(actualInfo, 20736000)
+	require.True(t, result)
+	// custom profile, pixel count mismatch reported transcoded < actual within tolerance - pass
+	result = FuzzyMatchMediaInfo(actualInfo, 717*480*60)
+	require.True(t, result)
+	// custom profile, reported transcoded > actual - fail
+	result = FuzzyMatchMediaInfo(actualInfo, 20736001)
+	require.False(t, result)
+	// custom profile, too significant difference - fail
+	result = FuzzyMatchMediaInfo(actualInfo, 716*480*60)
+	require.False(t, result)
+}
+
+func TestGetDecoderStats(t *testing.T) {
+	wd, _ := os.Getwd()
+	stats, err := GetDecoderStats(path.Join(wd, "../transcoder/test.ts"))
+	require.NoError(t, err)
+	require.Equal(t, 1280, stats.Width)
+	require.Equal(t, 720, stats.Height)
+	require.Equal(t, 480, stats.Frames)
+	// check for correct error
+	_, err = GetDecoderStats(path.Join(wd, "foo"))
+	require.EqualError(t, err, "TranscoderInvalidVideo")
+}
+
 func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
 	// Check that we correctly account for aspect ratio adjustments
 	//  Eg, the transcoded resolution we receive may be smaller than

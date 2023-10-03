@@ -75,6 +75,8 @@ typedef struct {
     int64_t pixels;
     //for scene classification  
     float probs[MAX_CLASSIFY_SIZE];//probability
+    int width;
+    int height;
 } output_results;
 
 enum LPMSLogLevel {

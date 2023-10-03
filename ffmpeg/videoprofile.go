@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -298,4 +299,15 @@ func ParseProfiles(injson []byte) ([]VideoProfile, error) {
 		return []VideoProfile{}, fmt.Errorf("unable to unmarshal the passed transcoding option: %w", err)
 	}
 	return ParseProfilesFromJsonProfileArray(decodedJson.Profiles)
+}
+
+// checks whether the video's MediaInfo is plausible, given reported pixel count
+func FuzzyMatchMediaInfo(actualInfo MediaInfo, transcodedPixelCount int64) bool {
+	// apply tolerance to larger dimension to account for portrait resolutions, and calculate max pixel mismatch with smaller dimension
+	smallerDim := int(math.Min(float64(actualInfo.Width), float64(actualInfo.Height)))
+	tol := 3
+	pixelDiffTol := int64(tol * smallerDim * actualInfo.Frames)
+	pixelDiff := actualInfo.Pixels - transcodedPixelCount
+	// it should never report *more* pixels encoded, than rendition actually has
+	return pixelDiff >= 0 && pixelDiff <= pixelDiffTol
 }
