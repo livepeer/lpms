@@ -247,6 +247,8 @@ type MediaFormatInfo struct {
 	Acodec, Vcodec string
 	PixFormat      PixelFormat
 	Width, Height  int
+	FPS            float32
+	Dur            float32
 }
 
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
@@ -279,6 +281,9 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format.PixFormat = PixelFormat{int(params_c.pixel_format)}
 	format.Width = int(params_c.width)
 	format.Height = int(params_c.height)
+	format.FPS = float32(params_c.fps)
+	format.Dur = float32(params_c.dur)
+
 	return status, format, nil
 }
 
