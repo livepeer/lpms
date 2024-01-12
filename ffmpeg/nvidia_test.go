@@ -728,10 +728,6 @@ func TestNvidia_CompareVideo(t *testing.T) {
 	compareVideo(t, Nvidia)
 }
 
-func TestNvidia_DetectionFreq(t *testing.T) {
-	detectionFreq(t, Nvidia, "0")
-}
-
 func portraitTest(t *testing.T, input string, checkResults bool, profiles []VideoProfile) error {
 	wd, err := os.Getwd()
 	require.NoError(t, err)

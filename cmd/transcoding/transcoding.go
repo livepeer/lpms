@@ -64,9 +64,7 @@ func main() {
 			o := ffmpeg.TranscodeOptions{
 				Oname:   fmt.Sprintf("out_%s_%d_out.mp4", lbl, i),
 				Profile: profs[i],
-				// Uncomment the following to test scene classifier
-				// Detector: &ffmpeg.DSceneAdultSoccer,
-				Accel: accel,
+				Accel:   accel,
 			}
 			o.From = *from
 			o.To = *to
@@ -99,11 +97,7 @@ func main() {
 	end := time.Now()
 	fmt.Printf("profile=input frames=%v pixels=%v\n", res.Decoded.Frames, res.Decoded.Pixels)
 	for i, r := range res.Encoded {
-		if r.DetectData != nil {
-			fmt.Printf("profile=%v frames=%v pixels=%v detectdata=%v\n", profiles[i].Name, r.Frames, r.Pixels, r.DetectData)
-		} else {
-			fmt.Printf("profile=%v frames=%v pixels=%v\n", profiles[i].Name, r.Frames, r.Pixels)
-		}
+		fmt.Printf("profile=%v frames=%v pixels=%v\n", profiles[i].Name, r.Frames, r.Pixels)
 	}
 	fmt.Printf("Transcoding time %0.4v\n", end.Sub(t).Seconds())
 }
