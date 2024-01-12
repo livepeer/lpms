@@ -42,6 +42,7 @@ jobs:
       shell: bash
       run: |
         go get ./cmd/example
+	echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
         go build cmd/example/*.go
 
     - name: Download ML model
