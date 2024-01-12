@@ -43,9 +43,9 @@ jobs:
     - name: Build LPMS
       shell: bash
       run: |
+        echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
+        echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
         go get ./cmd/example
-	echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
-	echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
         go build cmd/example/*.go
 
     - name: Download ML model
