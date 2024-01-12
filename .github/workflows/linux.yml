@@ -1,17 +1,12 @@
 name: Build LPMS in Linux
-
 on:
   pull_request:
   push:
     branches:
       - master
-
-env:
-  PKG_CONFIG_PATH: ~/compiled/lib/pkgconfig
-
 jobs:
   build:
-    runs-on: linux-amd64
+    runs-on: lpms-linux-runner
     steps:
     - name: Checkout
       uses: actions/checkout@v2 
@@ -38,14 +33,6 @@ jobs:
           /home/devops/compiled
         key: ffmpeg-cache-v1-${{ hashFiles('**/install_ffmpeg.sh') }}
 
-    - name: Set up go
-      id: go
-      uses: actions/setup-go@v5
-      with:
-        go-version: 1.20.4
-        cache: true
-        cache-dependency-path: go.sum
-
     - name: Install ffmpeg
       if: steps.cache-packages.outputs.cache-hit != 'true'
       run: |
@@ -54,8 +41,6 @@ jobs:
     - name: Build LPMS
       shell: bash
       run: |
-        echo "PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
-        echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
         go get ./cmd/example
         go build cmd/example/*.go
 

@@ -37,6 +37,11 @@ RUN cd /home/devops && mkdir actions-runner && cd actions-runner \
     && curl -O -L https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
     && tar xzf ./actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz && chown -R devops ~devops
 
+RUN LIBTENSORFLOW_VERSION=2.6.3 \
+  && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+  && sudo ldconfig
+
 # Add mime type for ts
 RUN sudo echo '<?xml version="1.0" encoding="UTF-8"?><mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info"><mime-type type="video/mp2t"><comment>ts</comment><glob pattern="*.ts"/></mime-type></mime-info>'>>/usr/share/mime/packages/custom_mime_type.xml
 RUN sudo update-mime-database /usr/share/mime
