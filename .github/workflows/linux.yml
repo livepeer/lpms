@@ -43,6 +43,10 @@ jobs:
         cache: true
         cache-dependency-path: go.sum
 
+    - name: Set build environment
+      run: |
+        export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
+
     - name: Install ffmpeg
       if: steps.cache-packages.outputs.cache-hit != 'true'
       run: |
