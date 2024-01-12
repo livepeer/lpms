@@ -6,6 +6,9 @@ on:
     branches:
       - master
 
+env:
+  PKG_CONFIG_PATH: ~/compiled/lib/pkgconfig
+
 jobs:
   build:
     runs-on: linux-amd64
@@ -42,10 +45,6 @@ jobs:
         go-version: 1.20.4
         cache: true
         cache-dependency-path: go.sum
-
-    - name: Set build environment
-      run: |
-        export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
 
     - name: Install ffmpeg
       if: steps.cache-packages.outputs.cache-hit != 'true'
