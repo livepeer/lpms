@@ -35,6 +35,14 @@ jobs:
           /home/devops/compiled
         key: ffmpeg-cache-v1-${{ hashFiles('**/install_ffmpeg.sh') }}
 
+    - name: Set up go
+        id: go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.20.4
+          cache: true
+          cache-dependency-path: go.sum
+
     - name: Install ffmpeg
       if: steps.cache-packages.outputs.cache-hit != 'true'
       run: |
