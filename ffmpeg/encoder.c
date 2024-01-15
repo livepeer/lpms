@@ -222,11 +222,6 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   // add video encoder if a decoder exists and this output requires one
   if (ictx->vc && needs_decoder(octx->video->name)) {
-    if (octx->dnn_filtergraph && !ictx->vc->hw_frames_ctx) {
-      // swap filtergraph with the pre-initialized DNN filtergraph for SW
-      // for HW we handle it later during filter re-init
-      octx->vf.graph = *octx->dnn_filtergraph;
-    }
     ret = init_video_filters(ictx, octx);
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
 
@@ -435,32 +430,6 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
   return av_interleaved_write_frame(octx->oc, pkt);
 }
 
-static int getmetadatainf(AVFrame *inf, struct output_ctx *octx)
-{
-  if(inf == NULL) return -1;
-  char classinfo[128] = {0,};
-  AVDictionaryEntry *element = NULL;
-  AVDictionary *metadata = inf->metadata;
-
-  if(metadata != NULL) {
-    element = av_dict_get(metadata, LVPDNN_FILTER_META, element, 0);
-    if(element != NULL) {
-      strcpy(classinfo, element->value);
-      if(strlen(classinfo) > 0) {
-        char * token = strtok(classinfo, ",");
-        int cid = 0;
-        while( token != NULL ) {
-            octx->res->probs[cid] += atof(token);
-            token = strtok(NULL, ",");
-            cid++;
-        }
-        octx->res->frames++;
-      }
-    }
-  }
-  return 0;
-}
-
 static int calc_signature(AVFrame *inf, struct output_ctx *octx)
 {
   int ret = 0;
@@ -552,19 +521,11 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         octx->next_kf_pts = frame->pts + octx->gop_pts_len;
     }
 
-    if(octx->is_dnn_profile) {
-      ret = getmetadatainf(frame, octx);
-      if(ret == -1 && frame == NULL) {
-        // Return EOF in case of flushing procedure
-        ret = AVERROR_EOF;
-      }
-    } else {
       if(is_video && frame != NULL && octx->sfilters != NULL) {
          ret = calc_signature(frame, octx);
          if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
       }
       ret = encode(encoder, frame, octx, ost);
-    }
 skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
