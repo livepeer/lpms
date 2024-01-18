@@ -6,6 +6,10 @@ on:
     branches:
       - master
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Test and build lpms project
@@ -95,4 +99,10 @@ jobs:
           curl -L https://github.com/livepeer/livepeer-ml/releases/latest/download/tasmodel.pb --output ./ffmpeg/tasmodel.pb
 
       - name: Test
-        run: bash ./test.sh
+        shell: bash
+        run: |
+          which ffmpeg || true
+          echo "$PATH"
+          ls -lh /github/home/compiled/bin/
+          /github/home/compiled/bin/ffmpeg -version || true
+          PATH="/github/home/compiled/bin:$PATH" bash ./test.sh
