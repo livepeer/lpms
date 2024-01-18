@@ -11,7 +11,7 @@ jobs:
     name: Test and build lpms project
     runs-on: ubuntu-20.04
     container:
-      image: nvidia/cuda:11.2.0-cudnn8-runtime-ubuntu20.04
+      image: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
       env:
         DEBIAN_FRONTEND: "noninteractive"
         BUILD_TAGS: "debug-video experimental"
@@ -21,10 +21,10 @@ jobs:
     steps:
       - name: Setup ubuntu container
         run: |
-          apt update
+          apt update -yqq
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/candidate
-          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
+          apt update -yqq && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm curl sudo
 
       - name: Check out code
         uses: actions/checkout@v4.1.1
@@ -58,6 +58,7 @@ jobs:
         run: |
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=/github/home/compiled/lib:/usr/local/lib:/usr/local/cuda-11.2/lib64:/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+          echo "PATH=$PATH:/github/home/compiled/bin:/github/home/ffmpeg:/usr/local/go/bin" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
@@ -81,7 +82,7 @@ jobs:
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: ./install_ffmpeg.sh
+        run: bash ./install_ffmpeg.sh
 
       - name: Build LPMS
         shell: bash
