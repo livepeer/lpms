@@ -49,4 +49,4 @@ jobs:
         curl -L https://github.com/livepeer/livepeer-ml/releases/latest/download/tasmodel.pb --output ./ffmpeg/tasmodel.pb
 
     - name: Test
-      run: bash ./test.sh
+      run: LPMS_USE_NEW_TRANSCODE=1 bash ./test.sh

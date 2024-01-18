@@ -4,6 +4,8 @@
 
 #include <libavutil/pixfmt.h>
 
+#define FLUSH_FRAME_PTS_VALUE -1
+
 static int lpms_send_packet(struct input_ctx *ictx, AVCodecContext *dec, AVPacket *pkt)
 {
     int ret = avcodec_send_packet(dec, pkt);
@@ -70,7 +72,7 @@ int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream
 
   if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
     ictx->first_pkt = av_packet_clone(pkt);
-    ictx->first_pkt->pts = -1;
+    ictx->first_pkt->pts = FLUSH_FRAME_PTS_VALUE;
   }
 
   ret = lpms_send_packet(ictx, decoder, pkt);
@@ -375,3 +377,23 @@ void free_input(struct input_ctx *inctx)
   if (inctx->last_frame_a) av_frame_free(&inctx->last_frame_a);
 }
 
+void capture_pts(struct first_pts * p, int64_t pts)
+{
+  if(pts == AV_NOPTS_VALUE) return;
+  if(p->status == FIRST_PTS_CAPTURING && pts < p->pts_value) {
+    p->pts_value = pts;
+  }
+  if(p->status == FIRST_PTS_NOVALUE) {
+    p->pts_value = pts;
+    p->status = FIRST_PTS_CAPTURING;
+  }
+}
+
+int64_t get_first_pts_offset(struct first_pts * p, int64_t pts) {
+  if(p->status != FIRST_PTS_OFFSET_CALCULATED) {
+    // Got first decoded timestamp, change internal state to captured
+    p->offset = p->pts_value - pts;
+    p->status = FIRST_PTS_OFFSET_CALCULATED;
+  }
+  return p->offset;
+}
