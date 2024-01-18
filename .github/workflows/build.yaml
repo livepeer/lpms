@@ -100,9 +100,4 @@ jobs:
 
       - name: Test
         shell: bash
-        run: |
-          which ffmpeg || true
-          echo "$PATH"
-          ls -lh /github/home/compiled/bin/
-          /github/home/compiled/bin/ffmpeg -version || true
-          PATH="/github/home/compiled/bin:$PATH" bash ./test.sh
+        run: PATH="/github/home/compiled/bin:$PATH" bash ./test.sh

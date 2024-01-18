@@ -1,3 +1,5 @@
+#!/bin/bash
+
 #Test script to run all the tests for continuous integration
 
 set -eux
@@ -5,9 +7,9 @@ set -eux
 EXTRA_BUILD_TAGS=""
 DEVICE_FLAGS="sw"
 
-if which clang > /dev/null; then
-    EXTRA_BUILD_TAGS="--tags=nvidia"
-    DEVICE_FLAGS="nv 0"
+if which clang >/dev/null; then
+  EXTRA_BUILD_TAGS="--tags=nvidia"
+  DEVICE_FLAGS="nv 0"
 fi
 
 go test $EXTRA_BUILD_TAGS -timeout 30m ./...
