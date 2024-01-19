@@ -76,6 +76,8 @@ struct transcode_thread {
   struct input_ctx ictx;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
 
+  AVFilterGraph *dnn_filtergraph;
+
   int nb_outputs;
 };
 
@@ -213,6 +215,10 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     octx->vfilters = params[i].vfilters;
     octx->sfilters = params[i].sfilters;
     octx->xcoderParams = params[i].xcoderParams;
+    if (params[i].is_dnn && h->dnn_filtergraph != NULL) {
+      octx->is_dnn_profile = params[i].is_dnn;
+      octx->dnn_filtergraph = &h->dnn_filtergraph;
+    }
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
     if (params[i].gop_time) octx->gop_time = params[i].gop_time;
@@ -569,10 +575,16 @@ int flush_all_outputs(struct transcode_thread *h)
       // just flush muxer, but do not write trailer and close
       av_interleaved_write_frame(h->outputs[i].oc, NULL);
     } else {
+      if(h->outputs[i].is_dnn_profile == 0) {
         // this will flush video and audio streams, flush muxer, write trailer
         // and close
         ret = flush_outputs(ictx, h->outputs + i);
         if (ret < 0) LPMS_ERR_RETURN("Unable to fully flush outputs")
+      } else if(h->outputs[i].is_dnn_profile && h->outputs[i].res->frames > 0) {
+        for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
+          h->outputs[i].res->probs[j] = h->outputs[i].res->probs[j] / h->outputs[i].res->frames;
+        }
+      }
     }
   }
 
@@ -863,8 +875,15 @@ whileloop_end:
 
   // flush outputs
   for (int i = 0; i < nb_outputs; i++) {
+    if(outputs[i].is_dnn_profile == 0/* && outputs[i].has_output > 0*/) {
       ret = flush_outputs(ictx, &outputs[i]);
       if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to fully flush outputs")
+    }
+    else if(outputs[i].is_dnn_profile && outputs[i].res->frames > 0) {
+       for (int j = 0; j < MAX_CLASSIFY_SIZE; j++) {
+         outputs[i].res->probs[j] =  outputs[i].res->probs[j] / outputs[i].res->frames;
+       }
+    }
   }
 
 transcode_cleanup:
@@ -910,6 +929,7 @@ int lpms_transcode(input_params *inp, output_params *params,
   if (h->nb_outputs != nb_outputs) {
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+    bool only_detector_diff = true;
     // MA: we have a problem here. Consider first configuration with 1 output,
     // and second one with 2 outputs. When transcode_thread was created
     // (in lpms_transcode_new) all the outputs were cleared with zeros. Then,
@@ -924,7 +944,15 @@ int lpms_transcode(input_params *inp, output_params *params,
     // approach doesn't work if the "new" configuration has more outputs than
     // old one, even if "added" outputs are actually dnn outputs.
     // make sure only detection related outputs are changed
+    for (int i = MIN(nb_outputs, h->nb_outputs); i < MAX(nb_outputs, h->nb_outputs); i++) {
+      if (!h->outputs[i].is_dnn_profile)
+        only_detector_diff = false;
+    }
+    if (only_detector_diff) {
+      h->nb_outputs = nb_outputs;
+    } else {
       return lpms_ERR_OUTPUTS;
+    }
 #undef MAX
 #undef MIN
   }
@@ -975,7 +1003,64 @@ void lpms_transcode_stop(struct transcode_thread *handle) {
     free_output(&handle->outputs[i]);
   }
 
+  if (handle->dnn_filtergraph) avfilter_graph_free(&handle->dnn_filtergraph);
+
   free(handle);
+}
+
+static AVFilterGraph * create_dnn_filtergraph(lvpdnn_opts *dnn_opts)
+{
+  const AVFilter *filter = NULL;
+  AVFilterContext *filter_ctx = NULL;
+  AVFilterGraph *graph_ctx = NULL;
+  int ret = 0;
+  char errstr[1024];
+  char *filter_name = "livepeer_dnn";
+  char filter_args[512];
+  snprintf(filter_args, sizeof filter_args, "model=%s:input=%s:output=%s:backend_configs=%s",
+           dnn_opts->modelpath, dnn_opts->inputname, dnn_opts->outputname, dnn_opts->backend_configs);
+
+  /* allocate graph */
+  graph_ctx = avfilter_graph_alloc();
+  if (!graph_ctx)
+    LPMS_ERR(create_dnn_error, "Unable to open DNN filtergraph");
+
+  /* get a corresponding filter and open it */
+  if (!(filter = avfilter_get_by_name(filter_name))) {
+    snprintf(errstr, sizeof errstr, "Unrecognized filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  /* open filter and add it to the graph */
+  if (!(filter_ctx = avfilter_graph_alloc_filter(graph_ctx, filter, filter_name))) {
+    snprintf(errstr, sizeof errstr, "Impossible to open filter with name '%s'\n", filter_name);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+  if (avfilter_init_str(filter_ctx, filter_args) < 0) {
+    snprintf(errstr, sizeof errstr, "Impossible to init filter '%s' with arguments '%s'\n", filter_name, filter_args);
+    LPMS_ERR(create_dnn_error, errstr);
+  }
+
+  return graph_ctx;
+
+create_dnn_error:
+  avfilter_graph_free(&graph_ctx);
+  return NULL;
+}
+
+struct transcode_thread* lpms_transcode_new_with_dnn(lvpdnn_opts *dnn_opts)
+{
+  struct transcode_thread *h = malloc(sizeof (struct transcode_thread));
+  if (!h) return NULL;
+  memset(h, 0, sizeof *h);
+  AVFilterGraph *filtergraph = create_dnn_filtergraph(dnn_opts);
+  if (!filtergraph) {
+      free(h);
+      h = NULL;
+  } else {
+      h->dnn_filtergraph = filtergraph;
+  }
+  return h;
 }
 
 void lpms_transcode_discontinuity(struct transcode_thread *handle) {
