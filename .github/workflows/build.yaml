@@ -50,13 +50,14 @@ jobs:
         run: |
           rm install_ffmpeg.sh || true
           curl -LO https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
+          chmod +x ./install_ffmpeg.sh
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
         uses: actions/cache@v3
         with:
           path: /home/runner/compiled
-          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('./install_ffmpeg.sh') }}
 
       - name: Set build environment
         run: |
@@ -100,4 +101,35 @@ jobs:
 
       - name: Test
         shell: bash
-        run: PATH="/github/home/compiled/bin:$PATH" bash ./test.sh
+        run: PATH="/github/home/compiled/bin:$PATH" go test -coverprofile cover.out ./...
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./cover.out
+          name: ${{ github.event.repository.name }}
+          verbose: true
+
+  codeql:
+    name: Perform CodeQL analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
