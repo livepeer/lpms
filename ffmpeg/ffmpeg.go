@@ -97,6 +97,7 @@ type TranscodeOptionsIn struct {
 	Accel       Acceleration
 	Device      string
 	Transmuxing bool
+	Profile     VideoProfile
 }
 
 type TranscodeOptions struct {
@@ -649,6 +650,11 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ",hwdownload,format=nv12"
 		}
+		if p.Accel == Nvidia && filepath.Ext(input.Fname) == ".png" {
+			// If the input is PNG image(s) and we are scaling on a Nvidia device
+			// we need to first convert to a pixel format that the scale_npp filter supports
+			filters = "format=nv12," + filters
+		}
 		// set FPS denominator to 1 if unset by user
 		if param.FramerateDen == 0 {
 			param.FramerateDen = 1
@@ -955,8 +961,34 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	defer C.free(unsafe.Pointer(fname))
 	xcoderParams := C.CString("")
 	defer C.free(unsafe.Pointer(xcoderParams))
+
+	var demuxerOpts C.component_opts
+
+	ext := filepath.Ext(input.Fname)
+	// If the input has an image file extension setup the image2 demuxer
+	if ext == ".png" {
+		image2 := C.CString("image2")
+		defer C.free(unsafe.Pointer(image2))
+
+		demuxerOpts = C.component_opts{
+			name: image2,
+		}
+
+		if input.Profile.Framerate > 0 {
+			if input.Profile.FramerateDen == 0 {
+				input.Profile.FramerateDen = 1
+			}
+
+			// Do not try tofree in this function because in the C code avformat_open_input()
+			// will destroy this
+			demuxerOpts.opts = newAVOpts(map[string]string{
+				"framerate": fmt.Sprintf("%d/%d", input.Profile.Framerate, input.Profile.FramerateDen),
+			})
+		}
+	}
+
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
-		handle: t.handle}
+		handle: t.handle, demuxer: demuxerOpts}
 	if input.Transmuxing {
 		inp.transmuxing = 1
 	}
