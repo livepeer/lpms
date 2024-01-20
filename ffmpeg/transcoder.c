@@ -160,17 +160,23 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
 
+  AVDictionary **demuxer_opts;
+  if (inp->demuxer.opts) demuxer_opts = &inp->demuxer.opts;
+
   // by default we re-use decoder between segments of same stream
   // unless we are using SW deocder and had to re-open IO or demuxer
   if (!ictx->ic) {
     // reopen demuxer for the input segment if needed
     // XXX could open_input() be re-used here?
-    ret = avformat_open_input(&ictx->ic, inp->fname, NULL, NULL);
+    ret = avformat_open_input(&ictx->ic, inp->fname, NULL, demuxer_opts);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen demuxer");
+    // If avformat_open_input replaced the options AVDictionary with options that were not found free it
+    if (demuxer_opts) av_dict_free(demuxer_opts);
     ret = avformat_find_stream_info(ictx->ic, NULL);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to find info for reopened stream")
-  } else if (!ictx->ic->pb) {
+  } else if (is_mpegts(ictx->ic) && !ictx->ic->pb) {
     // reopen input segment file IO context if needed
+    // only necessary for mpegts
     ret = avio_open(&ictx->ic->pb, inp->fname, AVIO_FLAG_READ);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen file");
   } else reopen_decoders = 0;
