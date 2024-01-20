@@ -51,6 +51,8 @@ typedef struct {
   char *device;
   char *xcoderParams;
 
+  // Optional demuxer opts
+  component_opts demuxer;
   // Optional video decoder + opts
   component_opts video;
 
