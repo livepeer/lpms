@@ -338,8 +338,12 @@ int open_input(input_params *params, struct input_ctx *ctx)
   ctx->transmuxing = params->transmuxing;
 
   // open demuxer
-  ret = avformat_open_input(&ic, inp, NULL, NULL);
+  AVDictionary **demuxer_opts = NULL;
+  if (params->demuxer.opts) demuxer_opts = &params->demuxer.opts;
+  ret = avformat_open_input(&ic, inp, NULL, demuxer_opts);
   if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
+  // If avformat_open_input replaced the options AVDictionary with options that were not found free it
+  if (demuxer_opts) av_dict_free(demuxer_opts);
   ctx->ic = ic;
   ret = avformat_find_stream_info(ic, NULL);
   if (ret < 0) LPMS_ERR(open_input_err, "Unable to find input info");
