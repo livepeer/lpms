@@ -850,6 +850,19 @@ func destroyCOutputParams(params []C.output_params) {
 	}
 }
 
+func hasVideoMetadata(fname string) bool {
+	if strings.HasPrefix(strings.ToLower(fname), "pipe:") {
+		return false
+	}
+
+	fileInfo, err := os.Stat(fname)
+	if err != nil {
+		return false
+	}
+
+	return !fileInfo.IsDir()
+}
+
 func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -861,8 +874,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	var reopendemux bool
 	reopendemux = false
-	// don't read metadata for pipe input, because it can't seek back and av_find_input_format in the decoder will fail
-	if !strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
+	// don't read metadata for inputs without video metadata, because it can't seek back and av_find_input_format in the decoder will fail
+	if hasVideoMetadata(input.Fname) {
 		status, format, err := GetCodecInfo(input.Fname)
 		if err != nil {
 			return nil, err
