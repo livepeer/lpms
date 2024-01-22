@@ -1,0 +1,135 @@
+name: Build LPMS in Linux
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build lpms project
+    runs-on: ubuntu-20.04
+    container:
+      image: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
+      env:
+        DEBIAN_FRONTEND: "noninteractive"
+        BUILD_TAGS: "debug-video experimental"
+        NVIDIA_VISIBLE_DEVICES: "all"
+        NVIDIA_DRIVER_CAPABILITIES: "compute,video,utility"
+
+    steps:
+      - name: Setup ubuntu container
+        run: |
+          apt update -yqq
+          apt install -yqq build-essential make software-properties-common
+          add-apt-repository -y ppa:git-core/candidate
+          apt update -yqq && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm curl sudo
+
+      - name: Check out code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up go
+        id: go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.20.4
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Get the latest install_ffmpeg.sh from go-livepeer
+        run: |
+          rm install_ffmpeg.sh || true
+          curl -LO https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
+          chmod +x ./install_ffmpeg.sh
+
+      - name: Cache ffmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v3
+        with:
+          path: /home/runner/compiled
+          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('./install_ffmpeg.sh') }}
+
+      - name: Set build environment
+        run: |
+          echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/github/home/compiled/lib:/usr/local/lib:/usr/local/cuda-11.2/lib64:/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+          echo "PATH=$PATH:/github/home/compiled/bin:/github/home/ffmpeg:/usr/local/go/bin" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          apt update \
+            && apt install -yqq software-properties-common curl apt-transport-https lsb-release \
+            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
+            && add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
+            && apt update \
+            && apt -yqq install \
+              nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
+              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 \
+              build-essential pkg-config autoconf git xxd netcat-openbsd libnuma-dev cmake
+
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
+            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
+            && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
+
+      - name: Add mime type for ts
+        run: |
+          echo '<?xml version="1.0" encoding="UTF-8"?><mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info"><mime-type type="video/mp2t"><comment>ts</comment><glob pattern="*.ts"/></mime-type></mime-info>' >> /usr/share/mime/packages/custom_mime_type.xml && update-mime-database /usr/share/mime
+
+      - name: Install ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: bash ./install_ffmpeg.sh
+
+      - name: Build LPMS
+        shell: bash
+        run: |
+          go get ./cmd/example
+          go build cmd/example/*.go
+
+      - name: Download ML model
+        run: |
+          curl -L https://github.com/livepeer/livepeer-ml/releases/latest/download/tasmodel.pb --output ./ffmpeg/tasmodel.pb
+
+      - name: Test
+        shell: bash
+        run: PATH="/github/home/compiled/bin:$PATH" go test -coverprofile cover.out ./...
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./cover.out
+          name: ${{ github.event.repository.name }}
+          verbose: true
+
+  codeql:
+    name: Perform CodeQL analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
