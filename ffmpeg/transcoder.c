@@ -114,6 +114,8 @@ static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
 
 int transcode_shutdown(struct transcode_thread *h, int ret)
 {
+  //av_log(NULL, AV_LOG_WARNING, "shutting down transcoder\n");
+
   struct input_ctx *ictx = &h->ictx;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
@@ -135,13 +137,18 @@ int transcode_shutdown(struct transcode_thread *h, int ret)
   ictx->sentinel_count = 0;
   if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
-  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
+  if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) {
+      avcodec_free_context(&ictx->vc);
+      //av_log(NULL, AV_LOG_WARNING, "released input codec context\n");
+  }
+  
   for (int i = 0; i < nb_outputs; i++) {
     //send EOF signal to signature filter
     if(outputs[i].sfilters != NULL && outputs[i].sf.src_ctx != NULL) {
       av_buffersrc_close(outputs[i].sf.src_ctx, AV_NOPTS_VALUE, AV_BUFFERSRC_FLAG_PUSH);
       free_filter(&outputs[i].sf);
     }
+
     close_output(&outputs[i]);
   }
   return ret == AVERROR_EOF ? 0 : ret;
@@ -286,15 +293,15 @@ int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results
 
   // frame duration update
   int64_t dur = 0;
-  if (dframe->pkt_duration) {
-    dur = dframe->pkt_duration;
+  if (dframe->duration) {
+    dur = dframe->duration;
   } else if (ist->r_frame_rate.den) {
     dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
   } else {
     // TODO use better heuristics for this; look at how ffmpeg does it
     LPMS_WARN("Could not determine next pts; filter might drop");
   }
-  dframe->pkt_duration = dur;
+  dframe->duration = dur;
 
   // keep as last frame
   av_frame_unref(ictx->last_frame_a);
@@ -326,15 +333,15 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
 
   // frame duration update
   int64_t dur = 0;
-  if (dframe->pkt_duration) {
-    dur = dframe->pkt_duration;
+  if (dframe->duration) {
+    dur = dframe->duration;
   } else if (ist->r_frame_rate.den) {
     dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
   } else {
     // TODO use better heuristics for this; look at how ffmpeg does it
     LPMS_WARN("Could not determine next pts; filter might drop");
   }
-  dframe->pkt_duration = dur;
+  dframe->duration = dur;
 
   // keep as last frame
   av_frame_unref(ictx->last_frame_v);
@@ -474,6 +481,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
     // we could do for example one transmuxing output (more make no sense)
     // and other could be transcoding ones
     if (ictx->transmuxing) {
+      //av_log(NULL, AV_LOG_WARNING, "transmuxing");
       // When transmuxing every input stream has its direct counterpart
       ost = octx->oc->streams[pkt->stream_index];
     } else if (pkt->stream_index == ictx->vi) {
@@ -742,14 +750,14 @@ int transcode(struct transcode_thread *h,
     // if there is frame, update duration and put this frame in place as last_frame
     if (has_frame) {
       int64_t dur = 0;
-      if (dframe->pkt_duration) dur = dframe->pkt_duration;
+      if (dframe->duration) dur = dframe->duration;
       else if (ist->r_frame_rate.den) {
         dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
       } else {
         // TODO use better heuristics for this; look at how ffmpeg does it
         LPMS_WARN("Could not determine next pts; filter might drop");
       }
-      dframe->pkt_duration = dur;
+      dframe->duration = dur;
       av_frame_unref(last_frame);
       av_frame_ref(last_frame, dframe);
     }
@@ -882,6 +890,7 @@ int lpms_transcode(input_params *inp, output_params *params,
   struct transcode_thread *h = inp->handle;
 
   if (!h->initialized) {
+    //av_log(NULL, AV_LOG_WARNING, "starting new transcode thread\n");
     int i = 0;
     int decode_a = 0, decode_v = 0;
     if (nb_outputs > MAX_OUTPUT_SIZE) {
@@ -962,7 +971,6 @@ struct transcode_thread* lpms_transcode_new() {
 
 void lpms_transcode_stop(struct transcode_thread *handle) {
   // not threadsafe as-is; calling function must ensure exclusivity!
-
   int i;
 
   if (!handle) return;
