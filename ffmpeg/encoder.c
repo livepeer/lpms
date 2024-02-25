@@ -159,7 +159,7 @@ void close_output(struct output_ctx *octx)
   }
   if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) {
       avcodec_free_context(&octx->vc);
-      av_log(NULL, AV_LOG_WARNING, "released output codec context\n");
+      //av_log(NULL, AV_LOG_WARNING, "released output codec context\n");
       
   }
   if (octx->ac) avcodec_free_context(&octx->ac);
@@ -216,7 +216,7 @@ open_output_err:
 int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
   int ret = 0, inp_has_stream;
-  av_log(NULL, AV_LOG_WARNING, "opening output, hw_type=%d\n", octx->hw_type);
+  //av_log(NULL, AV_LOG_WARNING, "opening output, hw_type=%d\n", octx->hw_type);
   const AVOutputFormat *fmt = NULL;
   AVFormatContext *oc = NULL;
   AVCodecContext *vc  = NULL;

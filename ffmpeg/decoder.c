@@ -297,7 +297,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     } else if (params->video.name && strlen(params->video.name) != 0) {
       // Try to find user specified decoder by name
       const AVCodec *c = avcodec_find_decoder_by_name(params->video.name);
-      av_log(NULL, AV_LOG_WARNING, "selecting decoder for, %s\n", params->video.name);
+      //av_log(NULL, AV_LOG_WARNING, "selecting decoder for, %s\n", params->video.name);
       if (c) codec = c;
       if (params->video.opts) opts = &params->video.opts;
     }
@@ -337,7 +337,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
   int ret = 0;
 
   ctx->transmuxing = params->transmuxe;
-  av_log(NULL, AV_LOG_WARNING, "opening input, hw_type=%d\n", params->hw_type);
+  //av_log(NULL, AV_LOG_WARNING, "opening input, hw_type=%d\n", params->hw_type);
   // open demuxer
   ret = avformat_open_input(&ic, inp, NULL, NULL);
   if (ret < 0) LPMS_ERR(open_input_err, "demuxer: Unable to open input");
