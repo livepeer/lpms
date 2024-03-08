@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1072,21 +1071,11 @@ func ffmpegStrEscape(origStr string) string {
 }
 
 func hwScale() string {
-	if runtime.GOOS == "windows" {
-		// we don't build windows binaries with CUDA SDK, so need to use scale_cuda instead of scale_npp
-		return "scale_cuda"
-	} else {
-		return "scale_npp"
-	}
+	return "scale_cuda"
 }
 
 func hwScaleAlgo() string {
-	if runtime.GOOS == "windows" {
-		// we don't build windows binaries with CUDA SDK, so need to use the default scale algorithm
-		return ""
-	} else {
-		return "super"
-	}
+	return ""
 }
 
 func FfmpegSetLogLevel(level int) {
