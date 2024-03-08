@@ -104,7 +104,7 @@ jobs:
         run: PATH="/github/home/compiled/bin:$PATH" go test -coverprofile cover.out ./...
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: ./cover.out
           name: ${{ github.event.repository.name }}
