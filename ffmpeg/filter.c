@@ -5,6 +5,7 @@
 #include <libavfilter/buffersink.h>
 
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 
 #include <assert.h>
 
@@ -77,10 +78,13 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
     snprintf(args, sizeof args,
-            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:colorspace=%s:range=%s",
             ictx->vc->width, ictx->vc->height, in_pix_fmt,
             time_base.num, time_base.den,
-            ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den);
+            ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den,
+            av_color_space_name(ictx->vc->colorspace),
+            av_color_range_name(ictx->vc->color_range)
+            );
 
     ret = avfilter_graph_create_filter(&vf->src_ctx, buffersrc,
                                        "in", args, NULL, vf->graph);
@@ -154,8 +158,7 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
   /* buffer audio source: the decoded frames from the decoder will be inserted here. */
   av_channel_layout_describe(&ictx->ac->ch_layout, ch_layout_buf, sizeof(ch_layout_buf));
   snprintf(args, sizeof args,
-      "sample_rate=%d:sample_fmt=%d:channel_layout=%s:channels=%d:"
-      "time_base=%d/%d",
+      "sample_rate=%d:sample_fmt=%d:channel_layout=%s:channels=%d:time_base=%d/%d",
       ictx->ac->sample_rate, ictx->ac->sample_fmt, ch_layout_buf,
       ictx->ac->ch_layout.nb_channels, time_base.num, time_base.den);
 
