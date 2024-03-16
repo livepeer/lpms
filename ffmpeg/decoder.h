@@ -16,6 +16,7 @@ struct input_ctx {
   // Hardware decoding support
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;
+  enum AVPixelFormat hw_pix_fmt;
   char *device;
   char *xcoderParams;
 

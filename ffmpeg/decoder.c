@@ -159,7 +159,7 @@ enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
   for (int i = 0;; i++) {
     const AVCodecHWConfig *config = avcodec_get_hw_config(decoder, i);
     if (!config) {
-      LPMS_WARN("Decoder does not support hw decoding");
+      //LPMS_WARN("Decoder does not support hw decoding");
       return AV_PIX_FMT_NONE;
     }
     if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
@@ -167,6 +167,7 @@ enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
       return  config->pix_fmt;
     }
   }
+
   return AV_PIX_FMT_NONE;
 }
 
@@ -175,32 +176,43 @@ enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
  */
 static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *vc, const enum AVPixelFormat *pix_fmts)
 {
-  AVHWFramesContext *frames;
+  AVHWFramesContext *frames_ctx;
+  av_log(NULL, AV_LOG_DEBUG, "get_format called\n");
+  const enum AVPixelFormat *p;
+  struct input_ctx *ictx = (struct input_ctx*)vc->opaque;
   int ret = 0;
 
-  // XXX Ideally this would be auto initialized by the HW device ctx
-  //     However the initialization doesn't occur in time to set up filters
-  //     So we do it here. Also see avcodec_get_hw_frames_parameters
-  av_buffer_unref(&vc->hw_frames_ctx);
-  vc->hw_frames_ctx = av_hwframe_ctx_alloc(vc->hw_device_ctx);
-  if (!vc->hw_frames_ctx) LPMS_ERR(pixfmt_cleanup, "Unable to allocate hwframe context for decoding");
+  for (p = pix_fmts; *p != -1; p++) {
+    av_log(NULL, AV_LOG_DEBUG, "codec pix_fmt: %s\n", av_get_pix_fmt_name(*p));
+    if (*p == ictx->hw_pix_fmt) {
 
-  frames = (AVHWFramesContext*)vc->hw_frames_ctx->data;
-  frames->format = hw2pixfmt(vc);
-  frames->sw_format = vc->sw_pix_fmt;
-  frames->width = vc->width;
-  frames->height = vc->height;
+      ret = avcodec_get_hw_frames_parameters(vc, vc->hw_device_ctx, ictx->hw_pix_fmt, &vc->hw_frames_ctx);
+      frames_ctx = (AVHWFramesContext*)vc->hw_frames_ctx->data;
 
-  // May want to allocate extra HW frames if we encounter samples where
-  // the defaults are insufficient. Raising this increases GPU memory usage
-  // For now, the defaults seems OK.
-  //vc->extra_hw_frames = 16 + 1; // H.264 max refs
+      if (frames_ctx->initial_pool_size) {
+          // We guarantee 4 base work surfaces. The function above guarantees 1
+          // (the absolute minimum), so add the missing count.
+          frames_ctx->initial_pool_size += 3;
+      }
 
-  ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
-  if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
-  if (ret < 0) LPMS_ERR(pixfmt_cleanup, "Unable to initialize a hardware frame pool");
-  return frames->format;
+      av_log(NULL, AV_LOG_DEBUG, "hw_frames_ctx setup, initializing  (w: %d, h: %d, sw_format: %s, format: %s)\n", 
+                    frames_ctx->width, frames_ctx->height, av_get_pix_fmt_name(frames_ctx->sw_format), av_get_pix_fmt_name(frames_ctx->format));
 
+      ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
+      if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
+      if (ret < 0) LPMS_ERR(pixfmt_cleanup, "Unable to initialize a hardware frame pool");
+
+      return frames_ctx->format;
+    }
+  }
+
+  //fallback to YUV420P
+  for (p = pix_fmts; *p != -1; p++) {
+    if (*p == AV_PIX_FMT_YUV420P) {
+      return *p;
+    }
+  }
+  
 pixfmt_cleanup:
   return AV_PIX_FMT_NONE;
 }
@@ -241,7 +253,7 @@ char* get_hw_decoder(int ff_codec_id, int hw_type)
         case AV_HWDEVICE_TYPE_CUDA:
             switch (ff_codec_id) {
                 case AV_CODEC_ID_H264:
-                    return "h264_cuvid";
+                    return "h264";
                 case AV_CODEC_ID_HEVC:
                     return "hevc_cuvid";
                 case AV_CODEC_ID_VP8:
@@ -280,6 +292,7 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     LPMS_WARN("No video stream found in input");
   } else {
     if (params->hw_type > AV_HWDEVICE_TYPE_NONE) {
+      
       char* decoder_name = get_hw_decoder(codec->id, params->hw_type);
       if (!*decoder_name) {
         ret = lpms_ERR_INPUT_CODEC;
@@ -315,11 +328,14 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
       vc->get_format = get_hw_pixfmt;
     }
+    
     ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
     av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
     ret = avcodec_open2(vc, codec, opts);
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open video decoder");
+
+    ctx->hw_pix_fmt = hw2pixfmt(vc);
   }
 
   return 0;

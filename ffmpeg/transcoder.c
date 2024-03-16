@@ -10,6 +10,9 @@
 #include <libavfilter/buffersrc.h>
 #include <stdbool.h>
 
+#include <libavutil/fifo.h>
+
+
 // Not great to appropriate internal API like this...
 const int lpms_ERR_INPUT_PIXFMT = FFERRTAG('I','N','P','X');
 const int lpms_ERR_INPUT_CODEC = FFERRTAG('I','N','P','C');
@@ -72,12 +75,20 @@ const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 
 struct transcode_thread {
   int initialized;
+  int outputs_opened;
 
   struct input_ctx ictx;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
 
   int nb_outputs;
+  
+  AVFifo *frame_queue;
 };
+
+typedef struct QueuedFrame {
+  AVFrame *q_frame;
+  int stream_index;
+} QueuedFrame;
 
 void lpms_init(enum LPMSLogLevel max_level)
 {
@@ -96,6 +107,7 @@ static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
 {
   // only issue w this flushing method is it's not necessarily sequential
   // wrt all the outputs; might want to iterate on each output per frame?
+  av_log(NULL, AV_LOG_DEBUG, "flushing outputs\n");
   int ret = 0;
   if (octx->vc) { // flush video
     while (!ret || ret == AVERROR(EAGAIN)) {
@@ -114,7 +126,7 @@ static int flush_outputs(struct input_ctx *ictx, struct output_ctx *octx)
 
 int transcode_shutdown(struct transcode_thread *h, int ret)
 {
-  //av_log(NULL, AV_LOG_WARNING, "shutting down transcoder\n");
+  av_log(NULL, AV_LOG_DEBUG, "shutting down transcoder\n");
 
   struct input_ctx *ictx = &h->ictx;
   struct output_ctx *outputs = h->outputs;
@@ -131,6 +143,7 @@ int transcode_shutdown(struct transcode_thread *h, int ret)
       avio_closep(&ictx->ic->pb);
     }
   }
+  av_log(NULL, AV_LOG_DEBUG, "transcode shutdown: inputs closed\n");
   ictx->flushed = 0;
   ictx->flushing = 0;
   ictx->pkt_diff = 0;
@@ -139,7 +152,7 @@ int transcode_shutdown(struct transcode_thread *h, int ret)
   if (ictx->ac) avcodec_free_context(&ictx->ac);
   if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) {
       avcodec_free_context(&ictx->vc);
-      //av_log(NULL, AV_LOG_WARNING, "released input codec context\n");
+      av_log(NULL, AV_LOG_DEBUG, "released input codec context\n");
   }
   
   for (int i = 0; i < nb_outputs; i++) {
@@ -150,6 +163,7 @@ int transcode_shutdown(struct transcode_thread *h, int ret)
     }
 
     close_output(&outputs[i]);
+    av_log(NULL, AV_LOG_DEBUG, "transcode shutdown: output %d closed\n", i);
   }
   return ret == AVERROR_EOF ? 0 : ret;
 
@@ -164,6 +178,8 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
   int reopen_decoders = !ictx->transmuxing;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
+  //buffer for frames read before hitting video frame to initialize outputs
+  h->frame_queue = av_fifo_alloc2(8, sizeof(QueuedFrame), AV_FIFO_FLAG_AUTO_GROW);
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
 
@@ -234,13 +250,16 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     // when transmuxing we're opening output with first segment, but closing it
     // only when lpms_transcode_stop called, so we don't want to re-open it
     // on subsequent segments
-    if (!h->initialized || (AV_HWDEVICE_TYPE_NONE == octx->hw_type && !ictx->transmuxing)) {
-      ret = open_output(octx, ictx);
-      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
-      if (ictx->transmuxing) {
+    if (!h->initialized || (AV_HWDEVICE_TYPE_NONE == inp->hw_type && !ictx->transmuxing)) {
+      //for transmuxing, we are just stream copying so output can be opened
+      //for transcoding, need to open output (open encoder, initialize filters) after first video frame is decoded
+      if (ictx->transmuxing || (AV_HWDEVICE_TYPE_NONE == inp->hw_type && !ictx->transmuxing)) {
+        ret = open_output(octx, ictx);
+        if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
         octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
         octx->oc->flush_packets = 1;
       }
+
       continue;
     }
 
@@ -251,6 +270,7 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     }
   }
 
+  av_log(NULL, AV_LOG_DEBUG, "transcode init complete\n");
   return 0;   // all ok
 
 transcode_cleanup:
@@ -481,7 +501,7 @@ int handle_video_packet(struct transcode_thread *h, output_results *decoded_resu
     // we could do for example one transmuxing output (more make no sense)
     // and other could be transcoding ones
     if (ictx->transmuxing) {
-      //av_log(NULL, AV_LOG_WARNING, "transmuxing");
+      av_log(NULL, AV_LOG_DEBUG, "transmuxing");
       // When transmuxing every input stream has its direct counterpart
       ost = octx->oc->streams[pkt->stream_index];
     } else if (pkt->stream_index == ictx->vi) {
@@ -680,6 +700,7 @@ transcode_cleanup:
   } else return transcode_shutdown(h, ret);
 }
 
+
 int transcode(struct transcode_thread *h,
   input_params *inp, output_params *params,
   output_results *decoded_results)
@@ -690,11 +711,18 @@ int transcode(struct transcode_thread *h,
   struct input_ctx *ictx = &h->ictx;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
-
-  ipkt = av_packet_alloc();
+  QueuedFrame queued_frame = {
+    .q_frame = NULL,
+    .stream_index = -1
+  };
+  
+  queued_frame.q_frame = NULL;
+  ipkt = av_packet_alloc(); 
   if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
   dframe = av_frame_alloc();
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+  
+  int queued_frames = 0;
 
   while (1) {
     // DEMUXING & DECODING
@@ -705,7 +733,9 @@ int transcode(struct transcode_thread *h,
 
     av_frame_unref(dframe);
     ret = process_in(ictx, dframe, ipkt, &stream_index);
+    av_log(NULL, AV_LOG_DEBUG, "decoded packet\n");
     if (ret == AVERROR_EOF) {
+      av_log(NULL, AV_LOG_DEBUG, "EOF received, flushing\n");
       // no more processing, go for flushes
       break;
     }
@@ -730,7 +760,7 @@ int transcode(struct transcode_thread *h,
     // so, at least not automatically, because then process_in returns 0 and not
     // lpms_ERR_PACKET_ONLY
     has_frame = lpms_ERR_PACKET_ONLY != ret;
-
+    
     // Now apart from if (is_flush_frame(dframe)) goto whileloop_end; statement
     // this code just updates has_frame properly for video and audio, updates
     // statistics for video and ausio and sets last_frame
@@ -749,6 +779,7 @@ int transcode(struct transcode_thread *h,
     }
     // if there is frame, update duration and put this frame in place as last_frame
     if (has_frame) {
+      av_log(NULL, AV_LOG_DEBUG, "decoded frame\n");
       int64_t dur = 0;
       if (dframe->duration) dur = dframe->duration;
       else if (ist->r_frame_rate.den) {
@@ -760,6 +791,31 @@ int transcode(struct transcode_thread *h,
       dframe->duration = dur;
       av_frame_unref(last_frame);
       av_frame_ref(last_frame, dframe);
+
+      if (!h->outputs_opened && AVMEDIA_TYPE_VIDEO != ist->codecpar->codec_type) {
+        av_log(NULL, AV_LOG_DEBUG, "adding frame to frame queue (frame is not video)\n");
+        //setup holder for frame in queue
+        if (queued_frames == 0) {
+          queued_frame.q_frame = av_frame_alloc();
+        }
+         
+        if (!queued_frame.q_frame) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+        av_frame_move_ref(queued_frame.q_frame, dframe);
+        queued_frame.stream_index = stream_index;
+        av_log(NULL, AV_LOG_DEBUG, "moved frame ref and saved stream index with frame\n");
+        ret = av_fifo_write(h->frame_queue, &queued_frame, 1);
+        av_log(NULL, AV_LOG_DEBUG, "frame written to queue\n");
+        queued_frames++;
+        av_log(NULL,AV_LOG_DEBUG, "frame queued (type: %s)\n", av_get_media_type_string(ist->codecpar->codec_type));
+        if (ret < 0) {
+            LPMS_ERR(transcode_cleanup, "Unable to queue frame")
+        }
+
+        //we need to read until we get a video frame decoded
+        //so the decoder can be setup. Specifically important for hwaccel inititialization
+        //which only happens when a video frame is decoded.
+        continue;
+      }
     }
     // similar but for transmuxing case - update number of frames
     if (ictx->transmuxing) {
@@ -790,6 +846,21 @@ int transcode(struct transcode_thread *h,
       }
     }
 
+    //we have decoded a video frame, open the outputs and process the queued frames
+    // loop continues decoding until video packet found
+    if (!h->outputs_opened && AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+      av_log(NULL, AV_LOG_DEBUG, "encoding step 3, stream is video\n");
+      for (int i = 0; i < nb_outputs; i++) {
+        struct output_ctx *octx = &outputs[i];
+        ret = open_output(octx, ictx);
+        if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
+        av_log(NULL, AV_LOG_DEBUG, "opened output %d\n", i);
+        octx->opened = 1;
+      }
+      //sleep(5);
+      h->outputs_opened = 1;
+    }
+
     // ENCODING & MUXING OF ALL OUTPUT RENDITIONS
     for (int i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];
@@ -797,26 +868,91 @@ int transcode(struct transcode_thread *h,
       AVStream *ost = NULL;
       AVCodecContext *encoder = NULL;
       ret = 0; // reset to avoid any carry-through
+      
+      av_log(NULL, AV_LOG_DEBUG, "processing output %d\n", i);
 
-      if (ictx->transmuxing)
+      //process the queued frames for each output
+      //  frame_queue reset to NULL after first encoding loop
+      if (queued_frames > 0) {
+        av_log(NULL, AV_LOG_DEBUG, "processing queued frames for output %d\n", i);
+        int frame_stream_index;
+        AVStream *frame_ist;
+        while (av_fifo_read(h->frame_queue, &queued_frame, 1) >= 0) {
+          queued_frames--;
+          frame_stream_index = queued_frame.stream_index;
+          av_log(NULL, AV_LOG_DEBUG, "set queued frame stream index: %d\n", frame_stream_index);
+          frame_ist = ictx->ic->streams[frame_stream_index];
+          av_log(NULL, AV_LOG_DEBUG, "set queued frame stream: %s\n", av_get_media_type_string(frame_ist->codecpar->codec_type));
+          av_log(NULL, AV_LOG_DEBUG, "encoding\n");
+          //setup_encode(octx, ictx, frame_stream_index, frame_ist, ost, encoder, filter);
+          if (ictx->transmuxing)
+            ost = octx->oc->streams[frame_stream_index];  // because all streams are copied 1:1
+          else if (frame_ist->index == ictx->vi) {
+            if (octx->dv) return 0; // drop video stream for this output
+            ost = octx->oc->streams[0]; // because video stream is always stream 0
+            av_log(NULL, AV_LOG_DEBUG, "video stream selected as output, type: %s\n", av_get_media_type_string(octx->oc->streams[0]->codecpar->codec_type));
+            if (ictx->vc) {
+              encoder = octx->vc;
+              filter = &octx->vf;
+              av_log(NULL, AV_LOG_DEBUG, "setup video encode (on queued frame)\n");
+            }
+          } else if (frame_ist->index == ictx->ai) {
+            if (octx->da) return 0; // drop audio stream for this output
+            ost = octx->oc->streams[octx->dv ? 0 : 1]; // audio index depends on whether video exists
+            if (ictx->ac) {
+              encoder = octx->ac;
+              filter = &octx->af;
+              av_log(NULL, AV_LOG_DEBUG, "setup audio encode (on queued frame)\n");
+            }
+          } else return 0; // dropped or unrecognized stream
+
+          ret = process_out(ictx, octx, encoder, ost, filter, queued_frame.q_frame);
+          av_log(NULL, AV_LOG_DEBUG, "output %d processed (on queued frame)\n", i);
+          if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
+          else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
+        }
+        //all queued frames processed.
+        if (queued_frame.q_frame) {
+          av_frame_free(&queued_frame.q_frame);
+          queued_frame.q_frame = NULL;
+        }
+        av_log(NULL, AV_LOG_DEBUG, "all queued frmaes processed, queued_frames: %d", queued_frames);
+      }
+      
+      //encode the current packet
+      //setup_encode(octx, ictx, stream_index, ist, ost, encoder, filter);
+      if (ictx->transmuxing) {
         ost = octx->oc->streams[stream_index];  // because all streams are copied 1:1
-      else if (ist->index == ictx->vi) {
-        if (octx->dv) continue; // drop video stream for this output
+        av_log(NULL, AV_LOG_DEBUG, "setup transmuxing (on current frame)\n");
+      } else if (ist->index == ictx->vi) {
+        if (octx->dv) {
+          av_log(NULL, AV_LOG_DEBUG, "dropping video frame (on current frame)\n");
+          return 0; // drop video stream for this output 
+        }
         ost = octx->oc->streams[0]; // because video stream is always stream 0
         if (ictx->vc) {
           encoder = octx->vc;
           filter = &octx->vf;
+          av_log(NULL, AV_LOG_DEBUG, "setup video encode (on current frame)\n");
         }
       } else if (ist->index == ictx->ai) {
-        if (octx->da) continue; // drop audio stream for this output
+        if (octx->da) {
+          av_log(NULL, AV_LOG_DEBUG, "dropping audio frame (on current frame)\n");
+          return 0; // drop audio stream for this output
+        }
         ost = octx->oc->streams[octx->dv ? 0 : 1]; // audio index depends on whether video exists
         if (ictx->ac) {
           encoder = octx->ac;
           filter = &octx->af;
+          av_log(NULL, AV_LOG_DEBUG, "setup audio encode  (on current frame)\n");
         }
-      } else continue; // dropped or unrecognized stream
+      } else {
+        av_log(NULL, AV_LOG_DEBUG,"unrecognized stream\n");
+        return 0; // dropped or unrecognized stream
+      }
 
       if (!encoder && ost) {
+        av_log(NULL, AV_LOG_DEBUG, "encoding step 2, stream copy\n");
         // stream copy
         AVPacket *pkt;
 
@@ -846,28 +982,51 @@ int transcode(struct transcode_thread *h,
         if (octx->clip_from && ist->index == ictx->ai) {
           pkt->pts -= octx->clip_audio_from_pts + octx->clip_audio_start_pts;
         }
+        av_log(NULL, AV_LOG_DEBUG, "sending packet to muxer (stream copy)\n");
         ret = mux(pkt, ist->time_base, octx, ost);
         av_packet_free(&pkt);
       } else if (has_frame) {
         ret = process_out(ictx, octx, encoder, ost, filter, dframe);
+        av_log(NULL, AV_LOG_DEBUG, "output processed (current frame)\n");
       }
-      if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
-      else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
+    } 
+    //we are done with the frame_queue with outputs now opened
+    if (h->frame_queue) {
+      av_log(NULL,AV_LOG_DEBUG,"frame queue destroyed, not needed with outputs opened\n");
+      av_fifo_freep2(&h->frame_queue);
     }
+    
+    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) {
+      if (ret == AVERROR_EOF) {
+        av_log(NULL, AV_LOG_DEBUG, "received EOF\n");
+      }
+      if (ret == AVERROR(EAGAIN)) {
+        av_log(NULL, AV_LOG_DEBUG, "received EAGAIN, continuing loop\n");
+
+      }
+
+      continue;
+    } else if (ret < 0) {
+      LPMS_ERR(transcode_cleanup, "Error encoding");
+    }
+    
 whileloop_end:
     av_packet_unref(ipkt);
   }
 
   if (ictx->transmuxing) {
     for (int i = 0; i < nb_outputs; i++) {
+      av_log(NULL, AV_LOG_DEBUG, "writing NULL to flush muxer\n");
       av_interleaved_write_frame(outputs[i].oc, NULL); // flush muxer
     }
     if (ictx->ic) {
         avformat_close_input(&ictx->ic);
         ictx->ic = NULL;
     }
+    
     return 0;
   }
+  
 
   // flush outputs
   for (int i = 0; i < nb_outputs; i++) {
@@ -877,6 +1036,7 @@ whileloop_end:
 
 transcode_cleanup:
   if (dframe) av_frame_free(&dframe);
+  if (queued_frame.q_frame) av_frame_free(&queued_frame.q_frame);
   if (ipkt) av_packet_free(&ipkt);  // needed for early exits
   return transcode_shutdown(h, ret);
 }
@@ -890,7 +1050,7 @@ int lpms_transcode(input_params *inp, output_params *params,
   struct transcode_thread *h = inp->handle;
 
   if (!h->initialized) {
-    //av_log(NULL, AV_LOG_WARNING, "starting new transcode thread\n");
+    av_log(NULL, AV_LOG_DEBUG, "starting new transcode thread\n");
     int i = 0;
     int decode_a = 0, decode_v = 0;
     if (nb_outputs > MAX_OUTPUT_SIZE) {

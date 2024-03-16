@@ -296,6 +296,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
   }
 
+  octx->opened = 1;
+
   return 0;
 
 open_output_err:
@@ -377,6 +379,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
     if (ret < 0) LPMS_ERR(encode_cleanup, "Error receiving packet from encoder");
     ret = mux(pkt, encoder->time_base, octx, ost);
+    av_log(NULL,AV_LOG_DEBUG, "frame written\n");
     if (ret < 0) goto encode_cleanup;
   }
 
@@ -437,6 +440,7 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
       octx->last_video_dts = pkt->dts;
   }
 
+  
   return av_interleaved_write_frame(octx->oc, pkt);
 }
 
@@ -465,11 +469,13 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
 
   if (!filter || !filter->active) {
     // No filter in between decoder and encoder, so use input frame directly
+    av_log(NULL,AV_LOG_DEBUG,"no filters, encoding %s frame\n", av_get_media_type_string(ost->codecpar->codec_type));
     return encode(encoder, inf, octx, ost);
   }
 
   int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
   int is_audio = (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type);
+  av_log(NULL,AV_LOG_DEBUG,"writing %s frame to filter\n", av_get_media_type_string(ost->codecpar->codec_type));
   ret = filtergraph_write(inf, ictx, octx, filter, is_video);
   if (ret < 0) goto proc_cleanup;
 
@@ -484,7 +490,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       if (inf) return ret;
       frame = NULL;
     } else if (ret < 0) goto proc_cleanup;
-
+    av_log(NULL,AV_LOG_DEBUG,"%s frame read from filter\n", av_get_media_type_string(ost->codecpar->codec_type));
     if (is_video && !octx->clip_start_pts_found && frame) {
       octx->clip_start_pts = frame->pts;
       octx->clip_start_pts_found = 1;
@@ -531,11 +537,12 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         octx->next_kf_pts = frame->pts + octx->gop_pts_len;
     }
 
-      if(is_video && frame != NULL && octx->sfilters != NULL) {
-         ret = calc_signature(frame, octx);
-         if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
-      }
-      ret = encode(encoder, frame, octx, ost);
+    if(is_video && frame != NULL && octx->sfilters != NULL) {
+        ret = calc_signature(frame, octx);
+        if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
+    }
+    av_log(NULL,AV_LOG_DEBUG,"encoding %s frame\n", av_get_media_type_string(ost->codecpar->codec_type));
+    ret = encode(encoder, frame, octx, ost);
 skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
