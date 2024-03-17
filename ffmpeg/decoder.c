@@ -255,11 +255,11 @@ char* get_hw_decoder(int ff_codec_id, int hw_type)
                 case AV_CODEC_ID_H264:
                     return "h264";
                 case AV_CODEC_ID_HEVC:
-                    return "hevc_cuvid";
+                    return "hevc";
                 case AV_CODEC_ID_VP8:
-                    return "vp8_cuvid";
+                    return "vp8";
                 case AV_CODEC_ID_VP9:
-                    return "vp9_cuvid";
+                    return "vp9";
                 default:
                     return "";
             }
