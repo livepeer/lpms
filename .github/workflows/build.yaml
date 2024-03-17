@@ -50,7 +50,7 @@ jobs:
       - name: Get the latest install_ffmpeg.sh from go-livepeer
         run: |
           rm install_ffmpeg.sh || true
-          curl -LO https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
+          curl -LO https://raw.githubusercontent.com/ad-astra-video/go-livepeer/av-add-av1/install_ffmpeg.sh
           chmod +x ./install_ffmpeg.sh
 
       - name: Cache ffmpeg
