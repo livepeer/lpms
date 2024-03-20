@@ -3,6 +3,7 @@
 
 #include <libavutil/hwcontext.h>
 #include <libavutil/rational.h>
+#include <libavutil/pixdesc.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavfilter/avfilter.h>

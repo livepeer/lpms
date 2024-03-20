@@ -42,11 +42,11 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
   int ret               = 0;
   AVFormatContext *ic   = NULL;
   AVFormatContext *oc   = NULL;
-  AVOutputFormat *ofmt  = NULL;
+  const AVOutputFormat *ofmt  = NULL;
   AVStream *ist         = NULL;
   AVStream *ost         = NULL;
   AVDictionary *md      = NULL;
-  AVCodec *codec        = NULL;
+  const AVCodec *codec        = NULL;
   AVPacket *pkt         = NULL;
   int64_t prev_ts[2]    = {AV_NOPTS_VALUE, AV_NOPTS_VALUE};
   int stream_map[2]     = {-1, -1};
@@ -148,7 +148,7 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
 {
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
-  AVCodec *ac, *vc;
+  const AVCodec *ac, *vc;
   int ret = GET_CODEC_OK, vstream = 0, astream = 0;
 
   ret = avformat_open_input(&ic, fname, NULL, NULL);
