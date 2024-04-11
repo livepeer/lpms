@@ -162,6 +162,8 @@ void close_output(struct output_ctx *octx)
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
   octx->vf.pts_diff = INT64_MIN;
+  octx->vf.prev_frame_pts = 0;
+  octx->vf.segments_complete++;
 }
 
 void free_output(struct output_ctx *octx)
