@@ -1047,7 +1047,7 @@ func InitFFmpegWithLogLevel(level LogLevel) {
 }
 
 func InitFFmpeg() {
-	InitFFmpegWithLogLevel(FFLogWarning)
+	InitFFmpegWithLogLevel(FFLogDebug)
 }
 
 func createBackendConfig(deviceid string) string {

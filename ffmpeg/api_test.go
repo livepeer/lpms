@@ -250,148 +250,151 @@ func countEncodedFrames(t *testing.T, accel Acceleration) {
 
 	// Write expected PTS to a file for diff'ing
 	//  (Calculated by running the same routine below)
+
+	// 6.1.1 update: pkt_pts is now pts in AVFrame, pkt_pts was deprecated, see line 1321 in APIchanges doc
 	cmd = `
   cat << EOF > expected_pts.out
 ==> out_120fps_0.ts.pts <==
-pkt_pts=129000
-pkt_pts=129750
-pkt_pts=130500
-pkt_pts=306750
-pkt_pts=307500
-pkt_pts=308250
+pts=129000
+pts=129750
+pts=130500
+pts=306750
+pts=307500
+pts=308250
 
 ==> out_120fps_1.ts.pts <==
-pkt_pts=309000
-pkt_pts=309750
-pkt_pts=310500
-pkt_pts=486750
-pkt_pts=487500
-pkt_pts=488250
+pts=309000
+pts=309750
+pts=310500
+pts=486750
+pts=487500
+pts=488250
 
 ==> out_120fps_2.ts.pts <==
-pkt_pts=489000
-pkt_pts=489750
-pkt_pts=490500
-pkt_pts=666750
-pkt_pts=667500
-pkt_pts=668250
+pts=489000
+pts=489750
+pts=490500
+pts=666750
+pts=667500
+pts=668250
 
 ==> out_120fps_3.ts.pts <==
-pkt_pts=669000
-pkt_pts=669750
-pkt_pts=670500
-pkt_pts=846750
-pkt_pts=847500
-pkt_pts=848250
+pts=669000
+pts=669750
+pts=670500
+pts=846750
+pts=847500
+pts=848250
 
 ==> out_30fps_0.ts.pts <==
-pkt_pts=132000
-pkt_pts=135000
-pkt_pts=138000
-pkt_pts=303000
-pkt_pts=306000
-pkt_pts=309000
+pts=132000
+pts=135000
+pts=138000
+pts=303000
+pts=306000
+pts=309000
 
 ==> out_30fps_1.ts.pts <==
-pkt_pts=309000
-pkt_pts=312000
-pkt_pts=315000
-pkt_pts=480000
-pkt_pts=483000
-pkt_pts=486000
+pts=309000
+pts=312000
+pts=315000
+pts=480000
+pts=483000
+pts=486000
 
 ==> out_30fps_2.ts.pts <==
-pkt_pts=489000
-pkt_pts=492000
-pkt_pts=495000
-pkt_pts=660000
-pkt_pts=663000
-pkt_pts=666000
+pts=489000
+pts=492000
+pts=495000
+pts=660000
+pts=663000
+pts=666000
 
 ==> out_30fps_3.ts.pts <==
-pkt_pts=669000
-pkt_pts=672000
-pkt_pts=675000
-pkt_pts=840000
-pkt_pts=843000
-pkt_pts=846000
+pts=669000
+pts=672000
+pts=675000
+pts=840000
+pts=843000
+pts=846000
 
 ==> out_60fps_0.ts.pts <==
-pkt_pts=129000
-pkt_pts=130500
-pkt_pts=132000
-pkt_pts=304500
-pkt_pts=306000
-pkt_pts=307500
+pts=129000
+pts=130500
+pts=132000
+pts=304500
+pts=306000
+pts=307500
 
 ==> out_60fps_1.ts.pts <==
-pkt_pts=309000
-pkt_pts=310500
-pkt_pts=312000
-pkt_pts=484500
-pkt_pts=486000
-pkt_pts=487500
+pts=309000
+pts=310500
+pts=312000
+pts=484500
+pts=486000
+pts=487500
 
 ==> out_60fps_2.ts.pts <==
-pkt_pts=489000
-pkt_pts=490500
-pkt_pts=492000
-pkt_pts=664500
-pkt_pts=666000
-pkt_pts=667500
+pts=489000
+pts=490500
+pts=492000
+pts=664500
+pts=666000
+pts=667500
 
 ==> out_60fps_3.ts.pts <==
-pkt_pts=669000
-pkt_pts=670500
-pkt_pts=672000
-pkt_pts=844500
-pkt_pts=846000
-pkt_pts=847500
+pts=669000
+pts=670500
+pts=672000
+pts=844500
+pts=846000
+pts=847500
 
 ==> out_passthru_0.ts.pts <==
-pkt_pts=128970
-pkt_pts=130500
-pkt_pts=131940
-pkt_pts=304470
-pkt_pts=305910
-pkt_pts=307440
+pts=128970
+pts=130500
+pts=131940
+pts=304470
+pts=305910
+pts=307440
 
 ==> out_passthru_1.ts.pts <==
-pkt_pts=308970
-pkt_pts=310500
-pkt_pts=311940
-pkt_pts=484470
-pkt_pts=485910
-pkt_pts=487440
+pts=308970
+pts=310500
+pts=311940
+pts=484470
+pts=485910
+pts=487440
 
 ==> out_passthru_2.ts.pts <==
-pkt_pts=488970
-pkt_pts=490410
-pkt_pts=491940
-pkt_pts=664470
-pkt_pts=665910
-pkt_pts=667440
+pts=488970
+pts=490410
+pts=491940
+pts=664470
+pts=665910
+pts=667440
 
 ==> out_passthru_3.ts.pts <==
-pkt_pts=668970
-pkt_pts=670500
-pkt_pts=671940
-pkt_pts=844470
-pkt_pts=845910
-pkt_pts=847440
+pts=668970
+pts=670500
+pts=671940
+pts=844470
+pts=845910
+pts=847440
 EOF
   `
 	run(cmd)
 
 	// Calculate first and last 3 frame PTS for each output, and compare
+	// 6.1.1 update: pkt_pts is now pts in AVFrame, pkt_pts was deprecated, see line 1321 in APIchanges doc
 	cmd = `
     # First and last 3 frame PTS for each output
     FILES=out_*.ts
 
     for f in  $FILES
     do
-      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pkt_pts= | head -3 > $f.pts
-      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pkt_pts= | tail -3 >> $f.pts
+      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pts= | head -3 > $f.pts
+      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pts= | tail -3 >> $f.pts
     done
     tail -n +1 out_*.ts.pts > transcoded_pts.out
 
@@ -399,7 +402,6 @@ EOF
     diff -u expected_pts.out transcoded_pts.out
   `
 	run(cmd)
-
 }
 
 func TestTranscoderAPI_CountEncodedFrames(t *testing.T) {
@@ -488,7 +490,6 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
-
 	cmd := `
     # generate segments with #fc frames
     cp "$1/../transcoder/test.ts" .
@@ -507,17 +508,18 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	run(fmt.Sprintf(cmd, fc))
 
 	// Test if decoding/encoding expected number of frames
+	t.Log("testing decoding/encoding frame count")
 	tc := NewTranscoder()
 	defer tc.StopTranscoder()
 	for i := 0; i < 4; i++ {
 		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
 		oname := fmt.Sprintf("%s/out%d.ts", dir, i)
-		t.Log("fname ", fname)
+		//t.Log("fname ", fname)
 		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
 		out := []TranscodeOptions{{Oname: oname, Profile: P144p30fps16x9, Accel: accel}}
 		res, err := tc.Transcode(in, out)
 		if err != nil {
-			t.Error(err)
+			t.Error("Could not transcode, check frame counts: ", err)
 		}
 		if fc != res.Decoded.Frames {
 			t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
@@ -529,6 +531,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	}
 
 	// test standalone stream copy
+	t.Log("testing video stream copy")
 	tc.StopTranscoder()
 	tc = NewTranscoder()
 	for i := 0; i < 4; i++ {
@@ -545,6 +548,9 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error("Could not transcode stream copy: ", err)
+		}
 		require.NoError(t, err)
 		if res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected frame counts from stream copy")
@@ -561,6 +567,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	}
 
 	// test standalone stream drop
+	t.Log("testing video stream drop")
 	tc.StopTranscoder()
 	tc = NewTranscoder()
 	for i := 0; i < 4; i++ {
@@ -576,10 +583,14 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 			},
 		}
 		res, err := tc.Transcode(in, out)
-		require.NoError(t, err)
+		if err != nil {
+			t.Error("Could not transcode stream drop: ", err)
+		}
+
 		if res.Decoded.Frames != 0 || res.Encoded[0].Frames != 0 {
 			t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
 		}
+		require.NoError(t, err)
 
 	}
 
@@ -596,7 +607,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
 		res, err := tc.Transcode(in, out)
 		if err != nil {
-			t.Error("Could not transcode: ", err)
+			t.Error("Could not transcode passthrough fps: ", err)
 		}
 		// verify that output frame count is same as input frame count
 		if res.Decoded.Frames != fc || res.Encoded[0].Frames != fc {
@@ -604,38 +615,53 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		}
 	}
 
-	// test low fps (3) to low fps (1)
 	tc.StopTranscoder()
-	tc = NewTranscoder()
 
-	cmd = `
-	frame_count=%d
-	# convert segment to 3fps and trim it to #fc frames
-	ffmpeg -loglevel warning -i test.ts -vf fps=3/1 -c:v libx264 -c:a copy -frames:v $frame_count short3fps.ts
+	// test low fps (3) to low fps (1)
+	if fc >= 3 {
+		//skip this test if frames < 3, with 6.1.1 update frames would double to 6/1 fps if less than 3
+		// the decoded frames would match fc and the encoded frames would be 1 but the sanity check above for grep r_frame_rate=3/1 would fail
 
-	# sanity check
-	ffprobe -loglevel warning -show_streams short3fps.ts | grep r_frame_rate=3/1
-	ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3fps.ts | grep nb_read_frames=$frame_count
-  `
-	run(fmt.Sprintf(cmd, fc))
+		tc = NewTranscoder()
 
-	fname := fmt.Sprintf("%s/short3fps.ts", dir)
-	in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
-	out := []TranscodeOptions{{Oname: dir + "/out1fps.ts", Profile: P144p30fps16x9, Accel: accel}}
-	out[0].Profile.Framerate = 1 // Force 1fps
-	res, err := tc.Transcode(in, out)
-	if err != nil {
-		t.Error(err)
-	}
-	if fc != res.Decoded.Frames {
-		t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
-	}
-	if res.Encoded[0].Frames == 0 {
-		t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
+		cmd = `
+		frame_count=%d
+		# convert segment to 3fps and trim it to #fc frames
+		ffmpeg -loglevel warning -i test.ts -vf fps=3/1 -c:v libx264 -c:a copy -frames:v $frame_count short3fps.ts
+
+		# sanity check
+		ffprobe -loglevel warning -show_streams short3fps.ts | grep r_frame_rate=3/1
+		ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3fps.ts | grep nb_read_frames=$frame_count
+		`
+
+		frames := fc
+		if frames < 3 {
+			frames = 3
+		}
+
+		run(fmt.Sprintf(cmd, frames))
+
+		fname := fmt.Sprintf("%s/short3fps.ts", dir)
+		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
+		out := []TranscodeOptions{{Oname: dir + "/out1fps.ts", Profile: P144p30fps16x9, Accel: accel}}
+		out[0].Profile.Framerate = 1 // Force 1fps
+		res, err := tc.Transcode(in, out)
+
+		if err != nil {
+			t.Error("could not transcode 1fps: ", err)
+		}
+		if fc != res.Decoded.Frames {
+			t.Error("Did not decode expected number of frames: ", res.Decoded.Frames)
+		}
+		if res.Encoded[0].Frames == 0 {
+			t.Error("Did not encode any frames: ", res.Encoded[0].Frames)
+		}
+		tc.StopTranscoder()
 	}
 
 	// test a bunch of weird cases together
-	tc.StopTranscoder()
+	t.Log("Testing a bunch of weird cases together")
+
 	tc = NewTranscoder()
 	profile_low_fps := P144p30fps16x9
 	profile_low_fps.Framerate = uint(fc) // use the input frame count as the output fps, why not
@@ -665,6 +691,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		}
 		res, err := tc.Transcode(in, out)
 		if err != nil {
+			t.Error(fmt.Sprintf("failed on %s", fname))
 			t.Error(err)
 		}
 		if res.Encoded[0].Frames == 0 || res.Encoded[1].Frames != 0 || res.Encoded[2].Frames != fc {
@@ -767,10 +794,11 @@ func TestTranscoder_FractionalFPS(t *testing.T) {
 func consecutiveMP4s(t *testing.T, accel Acceleration) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
+	//mp4 segment cmd was only creating 3 mp4 files with update to 6.1.1, updated to split at exact frames with 60fps test.ts
 	cmd := `
   cp "$1"/../transcoder/test.ts .
-  ffmpeg -i test.ts -c copy -f segment test%d.mp4
-  ffmpeg -i test.ts -c copy -f segment test%d.ts
+  ffmpeg -i test.ts -c copy -f segment -segment_frames 120,240,360,480 test%d.mp4
+  ffmpeg -i test.ts -c copy -f segment -segment_frames 120,240,360,480 test%d.ts
 
   # manually convert ts to mp4 just to sanity check
   ffmpeg -i test0.ts -c copy -copyts -f mp4 test0.tsmp4
@@ -822,7 +850,7 @@ func consecutiveMuxerOpts(t *testing.T, accel Acceleration) {
 
 	cmd := `
     cp "$1"/../transcoder/test.ts .
-    ffmpeg -i test.ts -c copy -f segment seg%d.ts
+    ffmpeg -i test.ts -c copy -f segment -segment_frames 120,240,360,480 seg%d.ts
     ls seg*.ts | wc -l | grep 4 # sanity check number of segments
   `
 	run(cmd)

@@ -37,6 +37,7 @@ struct filter_ctx {
 };
 
 struct output_ctx {
+  int opened;
   char *fname;         // required output file name
   char *vfilters;      // required output video filters
   char *sfilters;      // required output signature filters

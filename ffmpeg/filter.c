@@ -5,6 +5,7 @@
 #include <libavfilter/buffersink.h>
 
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 
 #include <assert.h>
 
@@ -77,10 +78,13 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
 
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
     snprintf(args, sizeof args,
-            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:colorspace=%s:range=%s",
             ictx->vc->width, ictx->vc->height, in_pix_fmt,
             time_base.num, time_base.den,
-            ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den);
+            ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den,
+            av_color_space_name(ictx->vc->colorspace),
+            av_color_range_name(ictx->vc->color_range)
+            );
 
     ret = avfilter_graph_create_filter(&vf->src_ctx, buffersrc,
                                        "in", args, NULL, vf->graph);
@@ -89,7 +93,7 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
       // XXX a bit problematic in that it's set before decoder is fully ready
       AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
       srcpar->hw_frames_ctx = ictx->vc->hw_frames_ctx;
-      vf->hwframes = ictx->vc->hw_frames_ctx->data;
+      //vf->hwframes = ictx->vc->hw_frames_ctx->data; //this is not done in ffmpeg_filter
       av_buffersrc_parameters_set(vf->src_ctx, srcpar);
       av_freep(&srcpar);
     }
@@ -109,8 +113,8 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     ret = avfilter_graph_config(vf->graph, NULL);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable configure video filtergraph");
 
-    LPMS_DEBUG("Initialized filtergraph: ");
-    LPMS_DEBUG(avfilter_graph_dump(vf->graph, NULL));
+    av_log(NULL,AV_LOG_DEBUG,"Initialized filtergraph: \n");
+    av_log(NULL,AV_LOG_DEBUG, "%s\n",avfilter_graph_dump(vf->graph, NULL));
 
     vf->frame = av_frame_alloc();
     if (!vf->frame) LPMS_ERR(vf_init_cleanup, "Unable to allocate video frame");
@@ -128,6 +132,7 @@ vf_init_cleanup:
 int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
 {
   int ret = 0;
+  char ch_layout_buf[64];
   char args[512];
   char filters_descr[256];
   const AVFilter *buffersrc  = avfilter_get_by_name("abuffer");
@@ -151,11 +156,11 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
   }
 
   /* buffer audio source: the decoded frames from the decoder will be inserted here. */
+  av_channel_layout_describe(&ictx->ac->ch_layout, ch_layout_buf, sizeof(ch_layout_buf));
   snprintf(args, sizeof args,
-      "sample_rate=%d:sample_fmt=%d:channel_layout=0x%"PRIx64":channels=%d:"
-      "time_base=%d/%d",
-      ictx->ac->sample_rate, ictx->ac->sample_fmt, ictx->ac->channel_layout,
-      ictx->ac->channels, time_base.num, time_base.den);
+      "sample_rate=%d:sample_fmt=%d:channel_layout=%s:channels=%d:time_base=%d/%d",
+      ictx->ac->sample_rate, ictx->ac->sample_fmt, ch_layout_buf,
+      ictx->ac->ch_layout.nb_channels, time_base.num, time_base.den);
 
   // TODO set sample format and rate based on encoder support,
   //      rather than hardcoding
@@ -307,7 +312,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
     }
     if (!is_video || !octx->fps.den) {
       // FPS Passthrough or Audio case - use packet duration instead of custom duration
-      ts_step = inf->pkt_duration;
+      ts_step = inf->duration;
     }
     filter->custom_pts += ts_step;
   }

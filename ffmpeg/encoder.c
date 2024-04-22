@@ -15,6 +15,7 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
   if (octx->fps.den) st->avg_frame_rate = octx->fps;
   else st->avg_frame_rate = ictx->ic->streams[ictx->vi]->r_frame_rate;
   if (is_copy(octx->video->name)) {
+    av_log(NULL, AV_LOG_DEBUG, "setting up to copy video stream\n");
     AVStream *ist = ictx->ic->streams[ictx->vi];
     if (ictx->vi < 0 || !ist) LPMS_ERR(add_video_err, "Input video stream does not exist");
     st->time_base = ist->time_base;
@@ -59,6 +60,7 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
   if (ictx->ai < 0 || octx->da) {
     // Don't need to add an audio stream if no input audio exists,
     // or we're dropping the output audio stream
+    av_log(NULL,AV_LOG_DEBUG,"audio stream not needed, not in input or dropping for output\n");
     return 0;
   }
 
@@ -101,6 +103,7 @@ static int add_audio_stream(struct input_ctx *ictx, struct output_ctx *octx)
 
   octx->last_audio_dts = AV_NOPTS_VALUE;
 
+  av_log(NULL, AV_LOG_DEBUG, "audio stream added to output\n");
   return 0;
 
 add_audio_err:
@@ -109,15 +112,15 @@ add_audio_err:
 }
 
 static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
-  AVOutputFormat *fmt)
+  const AVOutputFormat *fmt)
 {
   int ret = 0;
-  AVCodec *codec = NULL;
+  const AVCodec *codec = NULL;
   AVCodecContext *ac = NULL;
 
   // add audio encoder if a decoder exists and this output requires one
   if (ictx->ac && needs_decoder(octx->audio->name)) {
-
+    av_log(NULL,AV_LOG_DEBUG, "audio encoder needed\n");
     // initialize audio filters
     ret = init_audio_filters(ictx, octx);
     if (ret < 0) LPMS_ERR(audio_output_err, "Unable to open audio filter")
@@ -129,9 +132,9 @@ static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
     ac = avcodec_alloc_context3(codec);
     if (!ac) LPMS_ERR(audio_output_err, "Unable to alloc audio encoder");
     octx->ac = ac;
+    av_log(NULL,AV_LOG_DEBUG,"audio codec context added to output\n");
     ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
-    ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);
-    ac->channels = av_buffersink_get_channels(octx->af.sink_ctx);
+    ret = av_buffersink_get_ch_layout(octx->af.sink_ctx, &ac->ch_layout);
     ac->sample_rate = av_buffersink_get_sample_rate(octx->af.sink_ctx);
     ac->time_base = av_buffersink_get_time_base(octx->af.sink_ctx);
     if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -157,7 +160,11 @@ void close_output(struct output_ctx *octx)
     avformat_free_context(octx->oc);
     octx->oc = NULL;
   }
-  if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
+  if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) {
+      avcodec_free_context(&octx->vc);
+      av_log(NULL, AV_LOG_DEBUG, "released output codec context\n");
+      
+  }
   if (octx->ac) avcodec_free_context(&octx->ac);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
@@ -167,10 +174,15 @@ void close_output(struct output_ctx *octx)
 void free_output(struct output_ctx *octx)
 {
   close_output(octx);
-  if (octx->vc) avcodec_free_context(&octx->vc);
+  
   free_filter(&octx->vf);
   free_filter(&octx->af);
   free_filter(&octx->sf);
+
+  if (octx->vc) {
+      avcodec_free_context(&octx->vc);
+  }
+  
 }
 
 int open_remux_output(struct input_ctx *ictx, struct output_ctx *octx)
@@ -207,11 +219,11 @@ open_output_err:
 int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
   int ret = 0, inp_has_stream;
-
-  AVOutputFormat *fmt = NULL;
+  //av_log(NULL, AV_LOG_WARNING, "opening output, hw_type=%d\n", octx->hw_type);
+  const AVOutputFormat *fmt = NULL;
   AVFormatContext *oc = NULL;
   AVCodecContext *vc  = NULL;
-  AVCodec *codec      = NULL;
+  const AVCodec *codec      = NULL;
 
   // open muxer
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
@@ -255,6 +267,9 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = avcodec_open2(vc, codec, &octx->video->opts);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
     octx->hw_type = ictx->hw_type;
+  } else {
+    //octx->vc = NULL;
+    av_log(NULL, AV_LOG_DEBUG, "no video encoder needed,  is_copy: %d  is_drop: %d\n", is_copy(octx->video->name), is_drop(octx->video->name));
   }
 
   if (!ictx->transmuxing) {
@@ -287,6 +302,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
   }
 
+  octx->opened = 1;
+
   return 0;
 
 open_output_err:
@@ -298,21 +315,23 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
   int ret = 0;
   // re-open muxer for HW encoding
-  AVOutputFormat *fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
+  const AVOutputFormat *fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
   if (!fmt) LPMS_ERR(reopen_out_err, "Unable to guess format for reopen");
   ret = avformat_alloc_output_context2(&octx->oc, fmt, NULL, octx->fname);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to alloc reopened out context");
 
   // re-attach video encoder
-  if (octx->vc) {
+  if (octx->vc || is_copy(octx->video->name)) {
     ret = add_video_stream(octx, ictx);
     if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add video stream");
-  } else LPMS_INFO("No video stream!?");
+  } else {
+    LPMS_INFO("No video stream!?");
+  }
 
   // re-attach audio encoder
   ret = open_audio_output(ictx, octx, fmt);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add audio stream");
-
+  av_log(NULL,AV_LOG_DEBUG,"audio output reopened\n");
   if (!(fmt->flags & AVFMT_NOFILE)) {
     ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
     if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-opening output file");
@@ -355,6 +374,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
       AV_HWDEVICE_TYPE_CUDA == octx->hw_type && !frame) {
     avcodec_flush_buffers(encoder);
   }
+  
 
   pkt = av_packet_alloc();
   if (!pkt) {
@@ -367,6 +387,7 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
     if (ret < 0) LPMS_ERR(encode_cleanup, "Error receiving packet from encoder");
     ret = mux(pkt, encoder->time_base, octx, ost);
+    av_log(NULL,AV_LOG_DEBUG, "frame written\n");
     if (ret < 0) goto encode_cleanup;
   }
 
@@ -427,6 +448,7 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
       octx->last_video_dts = pkt->dts;
   }
 
+  
   return av_interleaved_write_frame(octx->oc, pkt);
 }
 
@@ -450,16 +472,19 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   struct filter_ctx *filter, AVFrame *inf)
 {
   int ret = 0;
-
+  
   if (!encoder) LPMS_ERR(proc_cleanup, "Trying to transmux; not supported")
 
   if (!filter || !filter->active) {
     // No filter in between decoder and encoder, so use input frame directly
+    av_log(NULL,AV_LOG_DEBUG,"no filters, encoding %s frame\n", av_get_media_type_string(ost->codecpar->codec_type));
     return encode(encoder, inf, octx, ost);
   }
 
   int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
   int is_audio = (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type);
+  
+  av_log(NULL,AV_LOG_DEBUG,"writing %s frame to filter\n", av_get_media_type_string(ost->codecpar->codec_type));
   ret = filtergraph_write(inf, ictx, octx, filter, is_video);
   if (ret < 0) goto proc_cleanup;
 
@@ -474,7 +499,7 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       if (inf) return ret;
       frame = NULL;
     } else if (ret < 0) goto proc_cleanup;
-
+    av_log(NULL,AV_LOG_DEBUG,"%s frame read from filter\n", av_get_media_type_string(ost->codecpar->codec_type));
     if (is_video && !octx->clip_start_pts_found && frame) {
       octx->clip_start_pts = frame->pts;
       octx->clip_start_pts_found = 1;
@@ -521,11 +546,12 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         octx->next_kf_pts = frame->pts + octx->gop_pts_len;
     }
 
-      if(is_video && frame != NULL && octx->sfilters != NULL) {
-         ret = calc_signature(frame, octx);
-         if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
-      }
-      ret = encode(encoder, frame, octx, ost);
+    if(is_video && frame != NULL && octx->sfilters != NULL) {
+        ret = calc_signature(frame, octx);
+        if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
+    }
+    av_log(NULL,AV_LOG_DEBUG,"encoding %s frame\n", av_get_media_type_string(ost->codecpar->codec_type));
+    ret = encode(encoder, frame, octx, ost);
 skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
