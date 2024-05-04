@@ -215,7 +215,7 @@ func (s *FFMpegVideoSegmenter) pollPlaylist(ctx context.Context, fn string, slee
 func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, nextFn string, sleepTime time.Duration) (f []byte, err error) {
 	var content []byte
 	for {
-		//Because FFMpeg keeps appending to the current segment until it's full before moving onto the next segment, we monitor the existance of
+		//Because FFMpeg keeps appending to the current segment until it's full before moving onto the next segment, we monitor the existence of
 		//the next file as a signal for the completion of the current segment.
 		if _, err := os.Stat(nextFn); err == nil {
 			content, err = ioutil.ReadFile(curFn)
