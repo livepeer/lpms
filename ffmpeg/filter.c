@@ -289,23 +289,26 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
     inf->opaque = (void *) inf->pts; // Store original PTS for calc later
     if (is_video && octx->fps.den) {
       // Custom PTS set when FPS filter is used
-      filter->custom_pts += av_rescale_q(1, av_inv_q(vst->r_frame_rate), vst->time_base);
+      int64_t ts_step = inf->pts - filter->prev_frame_pts;
+      if (filter->segments_complete && !filter->prev_frame_pts) {
+        // We are on the first frame of the second (or later) segment
+        // So in this case just increment the pts by 1/fps
+        ts_step = av_rescale_q_rnd(1, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+      }
+      filter->custom_pts += ts_step;
+      filter->prev_frame_pts = inf->pts;
     } else {
       filter->custom_pts = inf->pts;
     }
   } else if (!filter->flushed) { // Flush Frame
-    int ts_step;
+    int64_t ts_step;
     inf = (is_video) ? ictx->last_frame_v : ictx->last_frame_a;
     inf->opaque = (void *) (INT64_MIN); // Store INT64_MIN as pts for flush frames
     filter->flushing = 1;
-    if (is_video) {
-      ts_step = av_rescale_q(1, av_inv_q(vst->r_frame_rate), vst->time_base);
-      if (octx->fps.den && !octx->res->frames) {
-        // Haven't encoded anything yet - force flush by rescaling PTS to match output timebase
-        ts_step = av_rescale_q(ts_step, vst->r_frame_rate, octx->fps);
-      }
-    }
-    if (!is_video || !octx->fps.den) {
+    if (is_video && octx->fps.den) {
+      // set ts_step to one frame (1/fps) in units of the output timebase
+      ts_step = av_rescale_q_rnd(1, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+    } else {
       // FPS Passthrough or Audio case - use packet duration instead of custom duration
       ts_step = inf->pkt_duration;
     }

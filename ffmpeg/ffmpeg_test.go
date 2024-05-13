@@ -337,10 +337,11 @@ func TestTranscoder_Timestamp(t *testing.T) {
 	cmd = `
 		# hardcode some checks for now. TODO make relative to source.
 		ffprobe -loglevel warning -select_streams v -show_streams -count_frames out0test.ts > test.out
+
 		grep avg_frame_rate=30 test.out
 		grep r_frame_rate=30 test.out
-		grep nb_read_frames=30 test.out
-		grep duration_ts=90000 test.out
+		grep nb_read_frames=29 test.out
+		grep duration_ts=87000 test.out
 		grep start_pts=138000 test.out
 	`
 	run(cmd)
@@ -473,7 +474,7 @@ func TestTranscoder_Statistics_Encoded(t *testing.T) {
 			t.Error("Mismatched pixel counts")
 		}
 		// Since this is a 1-second input we should ideally have count of frames
-		if r.Frames != int(out[i].Profile.Framerate) {
+		if r.Frames != int(out[i].Profile.Framerate+1) {
 
 			// Some "special" cases (already have test cases covering these)
 			if p144p60fps == out[i].Profile {
@@ -481,8 +482,8 @@ func TestTranscoder_Statistics_Encoded(t *testing.T) {
 					t.Error("Mismatched frame counts for 60fps; expected 61 frames but got ", r.Frames)
 				}
 			} else if podd123fps == out[i].Profile {
-				if r.Frames != 125 {
-					t.Error("Mismatched frame counts for 123fps; expected 125 frames but got ", r.Frames)
+				if r.Frames != 124 {
+					t.Error("Mismatched frame counts for 123fps; expected 124 frames but got ", r.Frames)
 				}
 			} else {
 				t.Error("Mismatched frame counts ", r.Frames, out[i].Profile.Framerate)
@@ -539,7 +540,7 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
 		t.Error(err)
 	}
 	r := res.Encoded[0]
-	if r.Frames != int(pAdj.Framerate) || r.Pixels != int64(r.Frames*124*70) {
+	if r.Frames != int(pAdj.Framerate+1) || r.Pixels != int64(r.Frames*124*70) {
 		t.Error(fmt.Errorf("Results did not match: %v ", r))
 	}
 }
@@ -831,7 +832,7 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 ||
+	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 31 ||
 		res.Encoded[1].Frames != 0 {
 		t.Error("Unexpected frame counts from stream copy")
 		t.Error(res)
@@ -975,7 +976,7 @@ func TestTranscoder_Drop(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 {
+	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 31 {
 		t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
 	}
 
@@ -1007,7 +1008,7 @@ func TestTranscoder_Drop(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 30 || res.Encoded[0].Frames != 30 {
+	if res.Decoded.Frames != 31 || res.Encoded[0].Frames != 31 {
 		t.Error("Unexpected encoded/decoded frame counts ", res.Decoded.Frames, res.Encoded[0].Frames)
 	}
 	in.Fname = dir + "/novideo.ts"
@@ -1203,7 +1204,7 @@ func TestTranscoder_RepeatedTranscodes(t *testing.T) {
 	in = &TranscodeOptionsIn{Fname: dir + "/test-short-with-audio.ts"}
 	out = []TranscodeOptions{{Oname: dir + "/audio-0.ts", Profile: P144p30fps16x9}}
 	res, err = Transcode3(in, out)
-	if err != nil || res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 {
+	if err != nil || res.Decoded.Frames != 60 || res.Encoded[0].Frames != 31 {
 		t.Error("Unexpected preconditions ", err, res)
 	}
 	frames = res.Encoded[0].Frames
@@ -1236,6 +1237,7 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
         # prepare 1-second input
         cp "$1/../transcoder/test.ts" inp.ts
         ffmpeg -loglevel warning -i inp.ts -c:a copy -c:v copy -t 1 test.ts
+        ffprobe -count_frames -show_streams -select_streams v test.ts | grep nb_read_frames=60
     `
 	run(cmd)
 
@@ -1253,17 +1255,20 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	// TODO Ideally these two should match. As far as I can tell it is due
 	//      to timestamp rounding around EOF. Note this does not happen with
 	//      mpegts formatted output!
-	if res2.Decoded.Frames != 60 || res.Encoded[0].Frames != 60 {
+	if res2.Decoded.Frames != 61 || res.Encoded[0].Frames != 61 {
 		t.Error("Did not get expected frame counts: check if issue #155 is fixed!",
 			res2.Decoded.Frames, res.Encoded[0].Frames)
 	}
-	// Interestingly enough, ffmpeg shows that we have 61 packets but 60 frames.
-	// That indicates we are receving, encoding and muxing 61 *things* but one
-	// of them isn't a complete frame.
 	cmd = `
         ffprobe -count_frames -show_packets -show_streams -select_streams v out.mp4 2>&1 > mp4.out
-        grep nb_read_frames=60 mp4.out
-        grep nb_read_packets=60 mp4.out
+        grep nb_read_frames=61 mp4.out
+        grep nb_read_packets=61 mp4.out
+
+        # also ensure that we match ffmpeg's own frame count for the same type of encode
+        ffmpeg -i test.ts -vf 'fps=60/1,scale=144x60' -c:v libx264 -c:a copy ffmpeg.mp4
+        ffprobe -count_frames -show_packets -show_streams -select_streams v out.mp4 2>&1 > ffmpeg-mp4.out
+        grep nb_read_frames=61 ffmpeg-mp4.out
+        grep nb_read_packets=61 ffmpeg-mp4.out
     `
 	run(cmd)
 
@@ -1279,7 +1284,7 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res2.Decoded.Frames != 60 || res.Encoded[0].Frames != 60 {
+	if res2.Decoded.Frames != 61 || res.Encoded[0].Frames != 61 {
 		t.Error("Did not get expected frame counts for mpegts ",
 			res2.Decoded.Frames, res.Encoded[0].Frames)
 	}
@@ -1305,10 +1310,10 @@ func TestTranscoder_MismatchedEncodeDecode(t *testing.T) {
 		t.Error(err)
 	}
 	// first output is mpegts
-	if res2.Decoded.Frames != 60 || res.Encoded[0].Frames != 60 {
+	if res2.Decoded.Frames != 61 || res.Encoded[0].Frames != 61 {
 		t.Error("Sanity check of mpegts failed ", res2.Decoded.Frames, res.Encoded[0].Frames)
 	}
-	if res3.Decoded.Frames != 60 || res.Encoded[1].Frames != 60 {
+	if res3.Decoded.Frames != 61 || res.Encoded[1].Frames != 61 {
 		t.Error("Sanity check of mp4 failed ", res3.Decoded.Frames, res.Encoded[1].Frames)
 	}
 }
@@ -1374,7 +1379,7 @@ nb_read_frames=%d
 		b.Flush()
 
 		// Run a ffmpeg command that attempts to match the given encode settings
-		run(fmt.Sprintf(`ffmpeg -loglevel warning -hide_banner -i %s -vsync passthrough -c:a aac -ar 44100 -ac 2 -c:v libx264 -vf fps=%d/1,scale=%dx%d -y ffmpeg.ts`, in.Fname, out.Profile.Framerate, w, h))
+		run(fmt.Sprintf(`ffmpeg -loglevel warning -hide_banner -i %s -vsync passthrough -c:a aac -ar 44100 -ac 2 -c:v libx264 -vf fps=%d/1:eof_action=pass,scale=%dx%d -copyts -muxdelay 0 -y ffmpeg.ts`, in.Fname, out.Profile.Framerate, w, h))
 
 		// Gather some ffprobe stats on the output of the above ffmpeg command
 		run(`ffprobe -loglevel warning -hide_banner -count_frames -select_streams v -show_streams 2>&1 ffmpeg.ts | grep '^width=\|^height=\|nb_read_frames=' > ffmpeg.stats`)
@@ -1414,7 +1419,7 @@ nb_read_frames=%d
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Encoded[0].Frames != 30 {
+	if res.Encoded[0].Frames != 31 {
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
 	checkStatsFile(in, &out[0], res)
@@ -1427,10 +1432,10 @@ nb_read_frames=%d
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Encoded[0].Frames != 60 { //
+	if res.Encoded[0].Frames != 61 { //
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
-	// checkStatsFile(in, &out[0], res) // TODO framecounts don't match ffmpeg
+	checkStatsFile(in, &out[0], res)
 
 	// audio + 60fps input, 123 fps output. 123 frames actual
 	in.Fname = dir + "/test-60fps.ts"
@@ -1440,7 +1445,7 @@ nb_read_frames=%d
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Encoded[0].Frames != 123 { // (FIXED) TODO Find out why this isn't 123
+	if res.Encoded[0].Frames != 124 { // TODO Find out why this isn't 126 (ffmpeg)
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
 	// checkStatsFile(in, &out[0], res) // TODO framecounts don't match ffmpeg
@@ -1868,4 +1873,103 @@ func TestResolution_Clamp(t *testing.T) {
 	// expect error
 	checkError = require.Error
 	test(l, Size{300, 600}, portrait, Size{300, 600})
+}
+
+func TestTranscoder_VFR(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+
+	// prepare the input by generating a vfr video and verify its properties
+	cmd := `
+    ffmpeg -hide_banner -i "$1/../transcoder/test.ts" -an -vf "setpts='\
+    if(eq(N, 0), 33373260,\
+    if(eq(N, 1), 33375870,\
+    if(eq(N, 2), 33379560,\
+    if(eq(N, 3), 33381360,\
+    if(eq(N, 4), 33384960,\
+    if(eq(N, 5), 33387660,\
+    if(eq(N, 6), 33391350,\
+    if(eq(N, 7), 33394950,\
+    if(eq(N, 8), 33397650,\
+    if(eq(N, 9), 33400350,\
+    if(eq(N, 10), 33403050,\
+    if(eq(N, 11), 33405750,\
+    if(eq(N, 12), 33408450,\
+    if(eq(N, 13), 33412050,\
+    if(eq(N, 14), 33414750,\
+    if(eq(N, 15), 33418350,\
+    if(eq(N, 16), 33421950,\
+    if(eq(N, 17), 33423750,\
+    if(eq(N, 18), 33426450,\
+    if(eq(N, 19), 33430950,\
+    if(eq(N, 20), 33435450,\
+    if(eq(N, 21), 33437340,\
+    if(eq(N, 22), 33440040,\
+    if(eq(N, 23), 33441840,\
+    if(eq(N, 24), 33445440,\
+    if(eq(N, 25), 33449040,\
+    if(eq(N, 26), 33451740,\
+    if(eq(N, 27), 33455340,\
+    if(eq(N, 28), 33458040,\
+    if(eq(N, 29), 33459750, 0\
+  ))))))))))))))))))))))))))))))',scale=320:240" -c:v libx264 -bf 0 -frames:v 30 -copyts -enc_time_base 1:90000 -vsync passthrough -muxdelay 0 in.ts
+
+    ffprobe -hide_banner -i in.ts -select_streams v:0 -show_entries packet=pts,duration -of csv=p=0 | sed '/^$/d' > input-pts.out
+
+    # Double check that we've correctly generated the expected pts for input
+    cat << PTS_EOF > expected-input-pts.out
+33373260,N/A
+33375870,N/A
+33379560,N/A
+33381360,N/A
+33384960,N/A
+33387660,N/A
+33391350,N/A
+33394950,N/A
+33397650,N/A
+33400350,N/A
+33403050,N/A
+33405750,N/A
+33408450,N/A
+33412050,N/A
+33414750,N/A
+33418350,N/A
+33421950,N/A
+33423750,N/A
+33426450,N/A
+33430950,N/A
+33435450,N/A
+33437340,N/A
+33440040,N/A
+33441840,N/A
+33445440,N/A
+33449040,N/A
+33451740,N/A
+33455340,N/A
+33458040,N/A
+33459750,N/A
+PTS_EOF
+
+ diff -u expected-input-pts.out input-pts.out
+    `
+
+	run(cmd)
+
+	err := Transcode(
+		dir+"/in.ts",
+		dir, []VideoProfile{P240p30fps4x3})
+	require.Nil(t, err)
+
+	// check output
+	cmd = `
+    # reproduce expected lpms output using ffmpeg
+    ffmpeg -debug_ts -loglevel trace -i in.ts -vf 'scale=136x240,fps=30/1:eof_action=pass' -c:v libx264 -copyts -muxdelay 0 out-ffmpeg.ts
+
+    ffprobe -show_packets out-ffmpeg.ts | grep dts= > ffmpeg-dts.out
+    ffprobe -show_packets out0in.ts | grep dts= > lpms-dts.out
+
+    diff -u lpms-dts.out ffmpeg-dts.out
+  `
+	run(cmd)
 }
