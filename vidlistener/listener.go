@@ -36,7 +36,7 @@ func (self *VidListener) HandleRTMPPublish(
 			glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
 
 			strmID, err := makeStreamID(conn.URL)
-			if err != nil || strmID.StreamID() == "" {
+			if err != nil || strmID == nil || strmID.StreamID() == "" {
 				conn.Close()
 				return
 			}
