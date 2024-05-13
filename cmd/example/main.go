@@ -77,9 +77,9 @@ func main() {
 
 	lpms.HandleRTMPPublish(
 		//makeStreamID (give the stream an ID)
-		func(url *url.URL) stream.AppData {
+		func(url *url.URL) (stream.AppData, error) {
 			s := exampleStream(randString(10))
-			return &s
+			return &s, nil
 		},
 
 		//gotStream

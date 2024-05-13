@@ -31,8 +31,8 @@ func TestListener(t *testing.T) {
 
 	listener.HandleRTMPPublish(
 		//makeStreamID
-		func(url *url.URL) stream.AppData {
-			return newTestStream()
+		func(url *url.URL) (stream.AppData, error) {
+			return newTestStream(), nil
 		},
 		//gotStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
@@ -82,8 +82,8 @@ func TestListenerError(t *testing.T) {
 	failures := 0
 	badListener.HandleRTMPPublish(
 		//makeStreamID
-		func(url *url.URL) stream.AppData {
-			return newTestStream()
+		func(url *url.URL) (stream.AppData, error) {
+			return newTestStream(), nil
 		},
 		//gotStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
@@ -123,9 +123,9 @@ func TestListenerEmptyStreamID(t *testing.T) {
 
 	badListener.HandleRTMPPublish(
 		//makeStreamID
-		func(url *url.URL) stream.AppData {
+		func(url *url.URL) (stream.AppData, error) {
 			// On returning empty stream id connection should be closed
-			return newTestStream()
+			return newTestStream(), nil
 		},
 		//gotStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
