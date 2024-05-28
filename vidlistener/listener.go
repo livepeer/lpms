@@ -22,12 +22,12 @@ type VidListener struct {
 	RtmpServer *joy4rtmp.Server
 }
 
-//HandleRTMPPublish takes 3 parameters - makeStreamID, gotStream, and endStream.
-//makeStreamID is called when the stream starts. It should return a streamID from the requestURL.
-//gotStream is called when the stream starts.  It gives you access to the stream.
-//endStream is called when the stream ends.  It gives you access to the stream.
+// HandleRTMPPublish takes 3 parameters - makeStreamID, gotStream, and endStream.
+// makeStreamID is called when the stream starts. It should return a streamID from the requestURL.
+// gotStream is called when the stream starts.  It gives you access to the stream.
+// endStream is called when the stream ends.  It gives you access to the stream.
 func (self *VidListener) HandleRTMPPublish(
-	makeStreamID func(url *url.URL) (strmID stream.AppData),
+	makeStreamID func(url *url.URL) (strmID stream.AppData, err error),
 	gotStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error,
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
@@ -35,8 +35,8 @@ func (self *VidListener) HandleRTMPPublish(
 		self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
 			glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
 
-			strmID := makeStreamID(conn.URL)
-			if strmID == nil || strmID.StreamID() == "" {
+			strmID, err := makeStreamID(conn.URL)
+			if err != nil || strmID == nil || strmID.StreamID() == "" {
 				conn.Close()
 				return
 			}

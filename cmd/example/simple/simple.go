@@ -40,9 +40,9 @@ func main() {
 	lpms := core.New(&core.LPMSOpts{WorkDir: fmt.Sprintf("%v/.tmp", dir)})
 
 	lpms.HandleRTMPPublish(
-		func(url *url.URL) stream.AppData {
+		func(url *url.URL) (stream.AppData, error) {
 			glog.Infof("Stream has been started!: %v", url)
-			return exampleStream(randString(10))
+			return exampleStream(randString(10)), nil
 		},
 
 		func(url *url.URL, rs stream.RTMPVideoStream) (err error) {
