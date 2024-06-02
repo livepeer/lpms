@@ -76,7 +76,7 @@ func parsingAndStore(t *testing.T, infiles []string, outdir string, inTparam *[]
 				if strings.Index(linestr, "{\"duration\"") != 0 {
 					streamdata = streamdata + linestr
 				} else {
-					//fill up source video infomation
+					//fill up source video information
 					srcvinfo = string(linebyte)
 					break
 				}
