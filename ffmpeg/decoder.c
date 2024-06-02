@@ -1,6 +1,7 @@
 #include "transcoder.h"
 #include "decoder.h"
 #include "logging.h"
+#include "flushing.h"
 
 #include <libavutil/pixfmt.h>
 
@@ -70,7 +71,7 @@ int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream
 
   if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
     ictx->first_pkt = av_packet_clone(pkt);
-    ictx->first_pkt->pts = -1;
+    ictx->first_pkt->pts = FLUSH_FRAME_PTS;
   }
 
   ret = lpms_send_packet(ictx, decoder, pkt);
