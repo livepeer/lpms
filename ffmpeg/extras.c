@@ -176,6 +176,9 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
       }
       out->width  = ic->streams[vstream]->codecpar->width;
       out->height = ic->streams[vstream]->codecpar->height;
+      
+      out->fps = av_q2d(ic->streams[vstream]->avg_frame_rate);
+      out->dur = ic->duration / AV_TIME_BASE;
   } else {
       // Indicate failure to extract video codec from given container
       out->video_codec[0] = 0;
