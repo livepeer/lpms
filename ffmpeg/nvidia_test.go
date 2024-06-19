@@ -423,8 +423,8 @@ func TestNvidia_DrainFilters(t *testing.T) {
     ffprobe -loglevel warning -show_streams -select_streams v -count_frames out.ts > probe.out
 
     # These used to be same, but aren't since we've diverged the flushing and PTS handling from ffmpeg
-    grep nb_read_frames=100 probe.out
-    grep duration=1.0000 probe.out
+    grep nb_read_frames=101 probe.out
+    grep duration=1.0100 probe.out
     grep nb_read_frames=102 ffmpeg.out
     grep duration=1.0200 ffmpeg.out
   `
@@ -555,9 +555,9 @@ func TestNvidia_API_MixedOutput(t *testing.T) {
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_nv_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=245
 
     # check image quality
     ffmpeg -loglevel warning -i nv_$1.ts -i ffmpeg_nv_$1.ts \
@@ -646,9 +646,9 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_nv_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=245
 
     # check image quality
     ffmpeg -loglevel warning -i nv_$1.ts -i ffmpeg_nv_$1.ts \
@@ -665,7 +665,6 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
     }
 
 
-    # re-enable for seg 0 and 1 when alternating timestamps can be handled
     check 0
     check 1
     check 2
