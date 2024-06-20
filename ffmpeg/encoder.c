@@ -109,10 +109,10 @@ add_audio_err:
 }
 
 static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
-  AVOutputFormat *fmt)
+  const AVOutputFormat *fmt)
 {
   int ret = 0;
-  AVCodec *codec = NULL;
+  const AVCodec *codec = NULL;
   AVCodecContext *ac = NULL;
 
   // add audio encoder if a decoder exists and this output requires one
@@ -130,8 +130,8 @@ static int open_audio_output(struct input_ctx *ictx, struct output_ctx *octx,
     if (!ac) LPMS_ERR(audio_output_err, "Unable to alloc audio encoder");
     octx->ac = ac;
     ac->sample_fmt = av_buffersink_get_format(octx->af.sink_ctx);
-    ac->channel_layout = av_buffersink_get_channel_layout(octx->af.sink_ctx);
-    ac->channels = av_buffersink_get_channels(octx->af.sink_ctx);
+    ret = av_buffersink_get_ch_layout(octx->af.sink_ctx, &ac->ch_layout);
+    if (ret < 0) LPMS_ERR(audio_output_err, "Unable to initialize channel layout");
     ac->sample_rate = av_buffersink_get_sample_rate(octx->af.sink_ctx);
     ac->time_base = av_buffersink_get_time_base(octx->af.sink_ctx);
     if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -210,10 +210,10 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
   int ret = 0, inp_has_stream;
 
-  AVOutputFormat *fmt = NULL;
+  const AVOutputFormat *fmt = NULL;
+  const AVCodec *codec      = NULL;
   AVFormatContext *oc = NULL;
   AVCodecContext *vc  = NULL;
-  AVCodec *codec      = NULL;
 
   // open muxer
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
@@ -300,7 +300,7 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
 {
   int ret = 0;
   // re-open muxer for HW encoding
-  AVOutputFormat *fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
+  const AVOutputFormat *fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
   if (!fmt) LPMS_ERR(reopen_out_err, "Unable to guess format for reopen");
   ret = avformat_alloc_output_context2(&octx->oc, fmt, NULL, octx->fname);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to alloc reopened out context");
