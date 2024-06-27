@@ -266,7 +266,7 @@ func TestTranscoder_SampleRate(t *testing.T) {
 			# 1024 = samples per frame, 48000 = samples per second
 
 			# select last frame pts, subtract from first frame pts, check diff
-			ffprobe -loglevel warning -show_frames  -select_streams a "$2"  | grep pkt_pts= | head -"$1" | awk 'BEGIN{FS="="} ; NR==1 { fst = $2 } ; END{ diff=(($2-fst)/90000); exit diff <= 0.979 || diff >= 1.021 }'
+			ffprobe -loglevel warning -show_frames  -select_streams a "$2"  | grep pts= | head -"$1" | awk 'BEGIN{FS="="} ; NR==1 { fst = $2 } ; END{ diff=(($2-fst)/90000); exit diff <= 0.979 || diff >= 1.021 }'
 		EOF
 		chmod +x check_ts
 
@@ -317,7 +317,7 @@ func TestTranscoder_Timestamp(t *testing.T) {
 		grep r_frame_rate=60 inp.out
 
 		# reduce 60fps original to 30fps indicated but 15fps real
-		ffmpeg -loglevel warning -i inp.ts -t 1 -c:v libx264 -an -vf select='not(mod(n\,4))' -r 30 test.ts
+		ffmpeg -loglevel warning -i inp.ts -an -vf 'fps=30,select=not(mod(n\,2))' -c:v libx264 -t 1 -fps_mode vfr test.ts
 		ffprobe -loglevel warning -select_streams v -show_streams -count_frames test.ts > test.out
 
 		# sanity check some properties. hard code numbers for now.
@@ -1570,7 +1570,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 	}
 	cmd = `
         # Check playlist
-        ffprobe -loglevel warning -show_format actually_hls.flv | grep format_name=hls
+        head -1 actually_hls.flv | grep "#EXTM3U"
         # Check that (copied) mpegts stream matches source
         ls -lha test_segment_*.ts | wc -l | grep 4 # sanity check four segments
         cat test_segment_*.ts > segment.ts
@@ -1605,7 +1605,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		cat <<- EOF > expected_mp4.out
 			[FORMAT]
 			format_name=mov,mp4,m4a,3gp,3g2,mj2
-			duration=8.033000
+			duration=8.032667
 			[/FORMAT]
 		EOF
 
@@ -1913,9 +1913,9 @@ func TestTranscoder_VFR(t *testing.T) {
     if(eq(N, 27), 33455340,\
     if(eq(N, 28), 33458040,\
     if(eq(N, 29), 33459750, 0\
-  ))))))))))))))))))))))))))))))',scale=320:240" -c:v libx264 -bf 0 -frames:v 30 -copyts -enc_time_base 1:90000 -vsync passthrough -muxdelay 0 in.ts
+  ))))))))))))))))))))))))))))))',scale=320:240" -c:v libx264 -bf 0 -frames:v 30 -copyts -enc_time_base 1:90000 -fps_mode vfr -muxdelay 0 in.ts
 
-    ffprobe -hide_banner -i in.ts -select_streams v:0 -show_entries packet=pts,duration -of csv=p=0 | sed '/^$/d' > input-pts.out
+    ffprobe -hide_banner -i in.ts -select_streams v:0 -show_entries packet=pts,duration -of csv=p=0 | sed '/^$/d' | sed 's/,*$//g' > input-pts.out
 
     # Double check that we've correctly generated the expected pts for input
     cat << PTS_EOF > expected-input-pts.out
