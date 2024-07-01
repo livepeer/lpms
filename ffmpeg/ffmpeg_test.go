@@ -1469,10 +1469,8 @@ func TestTranscoder_PassthroughFPS(t *testing.T) {
         ffprobe -v warning -show_streams test-short.ts | grep r_frame_rate=60/1
         ffprobe -v warning -show_streams test-123fps.mp4 | grep r_frame_rate=123/1
         # Extract frame properties for later comparison
-        ffprobe -v warning -select_streams v -show_frames test-123fps.mp4 | grep duration= > test-123fps.duration
-        ffprobe -v warning -select_streams v -show_frames test-short.ts | grep duration= > test-short.duration
-        ffprobe -v warning -select_streams v -show_frames test-123fps.mp4 | grep pkt_pts= > test-123fps.pts
-        ffprobe -v warning -select_streams v -show_frames test-short.ts | grep pkt_pts= > test-short.pts
+        ffprobe -v warning -select_streams v -show_frames -show_entries frame=pts,pkt_dts,duration -of csv test-123fps.mp4 > test-123fps.data
+        ffprobe -v warning -select_streams v -show_frames -show_entries frame=pts,pkt_dts,duration -of csv test-short.ts > test-short.data
     `
 	run(cmd)
 	out := []TranscodeOptions{{Profile: P144p30fps16x9}}
@@ -1510,14 +1508,10 @@ func TestTranscoder_PassthroughFPS(t *testing.T) {
         ffprobe -v warning -show_streams out-123fps.mp4 | grep r_frame_rate=123/1
 
         # Check some per-frame properties
-        ffprobe -v warning -select_streams v -show_frames out-123fps.mp4 | grep duration= > out-123fps.duration
-        ffprobe -v warning -select_streams v -show_frames out-short.ts | grep duration= > out-short.duration
-        diff -u test-123fps.duration out-123fps.duration
-        # diff -u test-short.duration out-short.duration # Why does this fail???
-        ffprobe -v warning -select_streams v -show_frames out-123fps.mp4 | grep pkt_pts= > out-123fps.pts
-        ffprobe -v warning -select_streams v -show_frames out-short.ts | grep pkt_pts= > out-short.pts
-        diff -u test-123fps.pts out-123fps.pts
-        diff -u test-short.pts out-short.pts
+        ffprobe -v warning -select_streams v -show_frames -show_entries frame=pts,pkt_dts,duration -of csv out-123fps.mp4 > out-123fps.data
+        ffprobe -v warning -select_streams v -show_frames -show_entries frame=pts,pkt_dts,duration -of csv out-short.ts > out-short.data
+        diff -u test-123fps.data out-123fps.data
+        diff -u test-short.data test-short.data
     `
 	run(cmd)
 }
