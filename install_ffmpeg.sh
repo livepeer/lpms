@@ -116,7 +116,7 @@ if [[ "$GOOS" != "darwin" ]]; then
   if [[ ! -e "$ROOT/nv-codec-headers" ]]; then
     git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
     cd $ROOT/nv-codec-headers
-    git checkout n9.1.23.1
+    git checkout n12.2.72.0
     make -e PREFIX="$ROOT/compiled"
     make install -e PREFIX="$ROOT/compiled"
   fi
@@ -205,7 +205,7 @@ fi
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout 2e18d069668c143f3c251067abd25389e411d022
+  git checkout d9f0c8d248c027c7eb22bf7d81cffb761a042502
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
