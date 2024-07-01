@@ -13,6 +13,9 @@ struct filter_ctx {
 
   uint8_t *hwframes; // GPU frame pool data
 
+  // Input timebase for this filter
+  AVRational time_base;
+
   // The fps filter expects monotonically increasing PTS, which might not hold
   // for our input segments (they may be out of order, or have dropped frames).
   // So we set a custom PTS before sending the frame to the filtergraph that is

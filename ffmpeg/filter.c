@@ -74,6 +74,7 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
       ret = AVERROR(ENOMEM);
       LPMS_ERR(vf_init_cleanup, "Unable to allocate filters");
     }
+    vf->time_base = time_base;
     if (ictx->vc->hw_device_ctx) in_pix_fmt = hw2pixfmt(ictx->vc);
 
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
@@ -303,6 +304,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
       filter->custom_pts += ts_step;
       filter->prev_frame_pts = inf->pts;
     } else {
+      // FPS Passthrough or Audio case
       filter->custom_pts = inf->pts;
     }
   } else if (!filter->flushed) { // Flush Frame
@@ -349,6 +351,7 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
       if (filter->flushing) filter->flushed = 1;
       ret = lpms_ERR_FILTER_FLUSHED;
     } else if (frame && is_video && octx->fps.den) {
+      // TODO why limit to fps filter? what about non-fps filtergraphs, eg scale?
       // We set custom PTS as an input of the filtergraph so we need to
       // re-calculate our output PTS before passing it on to the encoder
       if (filter->pts_diff == INT64_MIN) {
