@@ -241,8 +241,9 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->framerate = ictx->vc->framerate;
     else vc->framerate = ictx->ic->streams[ictx->vi]->r_frame_rate;
     if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
-    else if (ictx->vc->time_base.num && ictx->vc->time_base.den) vc->time_base = ictx->vc->time_base;
+    else if (ictx->vc->framerate.num && ictx->vc->framerate.den) vc->time_base = av_inv_q(ictx->vc->framerate);
     else vc->time_base = ictx->ic->streams[ictx->vi]->time_base;
+    vc->flags |= AV_CODEC_FLAG_COPY_OPAQUE;
     if (octx->bitrate) vc->rc_min_rate = vc->bit_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
     if (av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
       vc->hw_frames_ctx =
@@ -368,7 +369,14 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     ret = avcodec_receive_packet(encoder, pkt);
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
     if (ret < 0) LPMS_ERR(encode_cleanup, "Error receiving packet from encoder");
-    ret = mux(pkt, encoder->time_base, octx, ost);
+    AVRational time_base = encoder->time_base;
+    if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && !octx->fps.den && octx->vf.active) {
+      // try to preserve source timestamps for fps passthrough.
+      time_base = octx->vf.time_base;
+      pkt->pts = (int64_t)pkt->opaque; // already in filter timebase
+      pkt->dts = av_rescale_q(pkt->dts, encoder->time_base, time_base);
+    }
+    ret = mux(pkt, time_base, octx, ost);
     if (ret < 0) goto encode_cleanup;
   }
 
@@ -527,6 +535,16 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
          ret = calc_signature(frame, octx);
          if(ret < 0) LPMS_WARN("Could not calculate signature value for frame");
       }
+
+      if (frame) {
+        // rescale pts to match encoder timebase if necessary (eg, fps passthrough)
+        AVRational filter_tb = av_buffersink_get_time_base(filter->sink_ctx);
+        if (av_cmp_q(filter_tb, encoder->time_base)) {
+          frame->pts = av_rescale_q(frame->pts, filter_tb, encoder->time_base);
+          // TODO does frame->duration needs to be rescaled too?
+        }
+      }
+
       ret = encode(encoder, frame, octx, ost);
 skip:
     av_frame_unref(frame);
