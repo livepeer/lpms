@@ -286,15 +286,15 @@ int handle_audio_frame(struct transcode_thread *h, AVStream *ist, output_results
 
   // frame duration update
   int64_t dur = 0;
-  if (dframe->pkt_duration) {
-    dur = dframe->pkt_duration;
+  if (dframe->duration) {
+    dur = dframe->duration;
   } else if (ist->r_frame_rate.den) {
     dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
   } else {
     // TODO use better heuristics for this; look at how ffmpeg does it
     LPMS_WARN("Could not determine next pts; filter might drop");
   }
-  dframe->pkt_duration = dur;
+  dframe->duration = dur;
 
   // keep as last frame
   av_frame_unref(ictx->last_frame_a);
@@ -326,15 +326,15 @@ int handle_video_frame(struct transcode_thread *h, AVStream *ist, output_results
 
   // frame duration update
   int64_t dur = 0;
-  if (dframe->pkt_duration) {
-    dur = dframe->pkt_duration;
+  if (dframe->duration) {
+    dur = dframe->duration;
   } else if (ist->r_frame_rate.den) {
     dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
   } else {
     // TODO use better heuristics for this; look at how ffmpeg does it
     LPMS_WARN("Could not determine next pts; filter might drop");
   }
-  dframe->pkt_duration = dur;
+  dframe->duration = dur;
 
   // keep as last frame
   av_frame_unref(ictx->last_frame_v);
@@ -742,14 +742,14 @@ int transcode(struct transcode_thread *h,
     // if there is frame, update duration and put this frame in place as last_frame
     if (has_frame) {
       int64_t dur = 0;
-      if (dframe->pkt_duration) dur = dframe->pkt_duration;
+      if (dframe->duration) dur = dframe->duration;
       else if (ist->r_frame_rate.den) {
         dur = av_rescale_q(1, av_inv_q(ist->r_frame_rate), ist->time_base);
       } else {
         // TODO use better heuristics for this; look at how ffmpeg does it
         LPMS_WARN("Could not determine next pts; filter might drop");
       }
-      dframe->pkt_duration = dur;
+      dframe->duration = dur;
       av_frame_unref(last_frame);
       av_frame_ref(last_frame, dframe);
     }

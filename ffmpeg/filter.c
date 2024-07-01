@@ -5,6 +5,7 @@
 #include <libavfilter/buffersink.h>
 
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 
 #include <assert.h>
 
@@ -73,14 +74,16 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
       ret = AVERROR(ENOMEM);
       LPMS_ERR(vf_init_cleanup, "Unable to allocate filters");
     }
+    vf->time_base = time_base;
     if (ictx->vc->hw_device_ctx) in_pix_fmt = hw2pixfmt(ictx->vc);
 
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
     snprintf(args, sizeof args,
-            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:colorspace=%s:range=%s",
             ictx->vc->width, ictx->vc->height, in_pix_fmt,
             time_base.num, time_base.den,
-            ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den);
+            ictx->vc->sample_aspect_ratio.num, ictx->vc->sample_aspect_ratio.den,
+            av_color_space_name(ictx->vc->colorspace), av_color_range_name(ictx->vc->color_range));
 
     ret = avfilter_graph_create_filter(&vf->src_ctx, buffersrc,
                                        "in", args, NULL, vf->graph);
@@ -130,6 +133,7 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
   int ret = 0;
   char args[512];
   char filters_descr[256];
+  char channel_layout[256];
   const AVFilter *buffersrc  = avfilter_get_by_name("abuffer");
   const AVFilter *buffersink = avfilter_get_by_name("abuffersink");
   AVFilterInOut *outputs = NULL;
@@ -151,11 +155,13 @@ int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx)
   }
 
   /* buffer audio source: the decoded frames from the decoder will be inserted here. */
+  ret = av_channel_layout_describe(&ictx->ac->ch_layout, channel_layout, sizeof(channel_layout));
+  if (ret < 0) LPMS_ERR(af_init_cleanup, "Unable to describe audio channel layout");
   snprintf(args, sizeof args,
-      "sample_rate=%d:sample_fmt=%d:channel_layout=0x%"PRIx64":channels=%d:"
+      "sample_rate=%d:sample_fmt=%d:channel_layout=%s:channels=%d:"
       "time_base=%d/%d",
-      ictx->ac->sample_rate, ictx->ac->sample_fmt, ictx->ac->channel_layout,
-      ictx->ac->channels, time_base.num, time_base.den);
+      ictx->ac->sample_rate, ictx->ac->sample_fmt, channel_layout,
+      ictx->ac->ch_layout.nb_channels, time_base.num, time_base.den);
 
   // TODO set sample format and rate based on encoder support,
   //      rather than hardcoding
@@ -298,6 +304,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
       filter->custom_pts += ts_step;
       filter->prev_frame_pts = inf->pts;
     } else {
+      // FPS Passthrough or Audio case
       filter->custom_pts = inf->pts;
     }
   } else if (!filter->flushed) { // Flush Frame
@@ -310,7 +317,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
       ts_step = av_rescale_q_rnd(1, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
     } else {
       // FPS Passthrough or Audio case - use packet duration instead of custom duration
-      ts_step = inf->pkt_duration;
+      ts_step = inf->duration;
     }
     filter->custom_pts += ts_step;
   }
@@ -344,6 +351,7 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
       if (filter->flushing) filter->flushed = 1;
       ret = lpms_ERR_FILTER_FLUSHED;
     } else if (frame && is_video && octx->fps.den) {
+      // TODO why limit to fps filter? what about non-fps filtergraphs, eg scale?
       // We set custom PTS as an input of the filtergraph so we need to
       // re-calculate our output PTS before passing it on to the encoder
       if (filter->pts_diff == INT64_MIN) {

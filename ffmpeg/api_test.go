@@ -258,132 +258,132 @@ func countEncodedFrames(t *testing.T, accel Acceleration) {
 	cmd = `
   cat << EOF > expected_pts.out
 ==> out_120fps_0.ts.pts <==
-pkt_pts=129000
-pkt_pts=129750
-pkt_pts=130500
-pkt_pts=306000
-pkt_pts=306750
-pkt_pts=307500
+pts=129000
+pts=129750
+pts=130500
+pts=306000
+pts=306750
+pts=307500
 
 ==> out_120fps_1.ts.pts <==
-pkt_pts=309000
-pkt_pts=309750
-pkt_pts=310500
-pkt_pts=486000
-pkt_pts=486750
-pkt_pts=487500
+pts=309000
+pts=309750
+pts=310500
+pts=486000
+pts=486750
+pts=487500
 
 ==> out_120fps_2.ts.pts <==
-pkt_pts=489000
-pkt_pts=489750
-pkt_pts=490500
-pkt_pts=666000
-pkt_pts=666750
-pkt_pts=667500
+pts=489000
+pts=489750
+pts=490500
+pts=666000
+pts=666750
+pts=667500
 
 ==> out_120fps_3.ts.pts <==
-pkt_pts=669000
-pkt_pts=669750
-pkt_pts=670500
-pkt_pts=846000
-pkt_pts=846750
-pkt_pts=847500
+pts=669000
+pts=669750
+pts=670500
+pts=846000
+pts=846750
+pts=847500
 
 ==> out_30fps_0.ts.pts <==
-pkt_pts=129000
-pkt_pts=132000
-pkt_pts=135000
-pkt_pts=300000
-pkt_pts=303000
-pkt_pts=306000
+pts=129000
+pts=132000
+pts=135000
+pts=300000
+pts=303000
+pts=306000
 
 ==> out_30fps_1.ts.pts <==
-pkt_pts=309000
-pkt_pts=312000
-pkt_pts=315000
-pkt_pts=483000
-pkt_pts=486000
-pkt_pts=489000
+pts=309000
+pts=312000
+pts=315000
+pts=483000
+pts=486000
+pts=489000
 
 ==> out_30fps_2.ts.pts <==
-pkt_pts=489000
-pkt_pts=492000
-pkt_pts=495000
-pkt_pts=660000
-pkt_pts=663000
-pkt_pts=666000
+pts=489000
+pts=492000
+pts=495000
+pts=660000
+pts=663000
+pts=666000
 
 ==> out_30fps_3.ts.pts <==
-pkt_pts=669000
-pkt_pts=672000
-pkt_pts=675000
-pkt_pts=843000
-pkt_pts=846000
-pkt_pts=849000
+pts=669000
+pts=672000
+pts=675000
+pts=843000
+pts=846000
+pts=849000
 
 ==> out_60fps_0.ts.pts <==
-pkt_pts=129000
-pkt_pts=130500
-pkt_pts=132000
-pkt_pts=304500
-pkt_pts=306000
-pkt_pts=307500
+pts=129000
+pts=130500
+pts=132000
+pts=304500
+pts=306000
+pts=307500
 
 ==> out_60fps_1.ts.pts <==
-pkt_pts=309000
-pkt_pts=310500
-pkt_pts=312000
-pkt_pts=484500
-pkt_pts=486000
-pkt_pts=487500
+pts=309000
+pts=310500
+pts=312000
+pts=484500
+pts=486000
+pts=487500
 
 ==> out_60fps_2.ts.pts <==
-pkt_pts=489000
-pkt_pts=490500
-pkt_pts=492000
-pkt_pts=664500
-pkt_pts=666000
-pkt_pts=667500
+pts=489000
+pts=490500
+pts=492000
+pts=664500
+pts=666000
+pts=667500
 
 ==> out_60fps_3.ts.pts <==
-pkt_pts=669000
-pkt_pts=670500
-pkt_pts=672000
-pkt_pts=844500
-pkt_pts=846000
-pkt_pts=847500
+pts=669000
+pts=670500
+pts=672000
+pts=844500
+pts=846000
+pts=847500
 
 ==> out_passthru_0.ts.pts <==
-pkt_pts=128970
-pkt_pts=130500
-pkt_pts=131940
-pkt_pts=304470
-pkt_pts=305910
-pkt_pts=307440
+pts=128970
+pts=130500
+pts=131940
+pts=304470
+pts=305910
+pts=307440
 
 ==> out_passthru_1.ts.pts <==
-pkt_pts=308970
-pkt_pts=310500
-pkt_pts=311940
-pkt_pts=484470
-pkt_pts=485910
-pkt_pts=487440
+pts=308970
+pts=310500
+pts=311940
+pts=484470
+pts=485910
+pts=487440
 
 ==> out_passthru_2.ts.pts <==
-pkt_pts=488970
-pkt_pts=490410
-pkt_pts=491940
-pkt_pts=664470
-pkt_pts=665910
-pkt_pts=667440
+pts=488970
+pts=490410
+pts=491940
+pts=664470
+pts=665910
+pts=667440
 
 ==> out_passthru_3.ts.pts <==
-pkt_pts=668970
-pkt_pts=670500
-pkt_pts=671940
-pkt_pts=844470
-pkt_pts=845910
-pkt_pts=847440
+pts=668970
+pts=670500
+pts=671940
+pts=844470
+pts=845910
+pts=847440
 EOF
   `
 	run(cmd)
@@ -395,8 +395,8 @@ EOF
 
     for f in  $FILES
     do
-      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pkt_pts= | head -3 > $f.pts
-      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pkt_pts= | tail -3 >> $f.pts
+      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pts= | head -3 > $f.pts
+      ffprobe -loglevel warning -select_streams v -show_frames $f | grep pts= | tail -3 >> $f.pts
     done
     tail -n +1 out_*.ts.pts > transcoded_pts.out
 
@@ -518,7 +518,6 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	for i := 0; i < 4; i++ {
 		fname := fmt.Sprintf("%s/short%d.ts", dir, i)
 		oname := fmt.Sprintf("%s/out%d.ts", dir, i)
-		t.Log("fname ", fname)
 		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
 		out := []TranscodeOptions{{Oname: oname, Profile: P144p30fps16x9, Accel: accel}}
 		res, err := tc.Transcode(in, out)
@@ -617,15 +616,15 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 	cmd = `
 	frame_count=%d
 	# convert segment to 3fps and trim it to #fc frames
-	ffmpeg -loglevel warning -i test.ts -vf fps=3/1 -c:v libx264 -c:a copy -frames:v $frame_count short3fps.ts
+	ffmpeg -loglevel warning -i test.ts -vf fps=3/1 -c:v libx264 -c:a copy -frames:v $frame_count short3fps.mp4
 
 	# sanity check
-	ffprobe -loglevel warning -show_streams short3fps.ts | grep r_frame_rate=3/1
-	ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3fps.ts | grep nb_read_frames=$frame_count
+	ffprobe -loglevel warning -show_streams short3fps.mp4 | grep r_frame_rate=3/1
+	ffprobe -loglevel warning -count_frames -show_streams -select_streams v short3fps.mp4 | grep nb_read_frames=$frame_count
   `
 	run(fmt.Sprintf(cmd, fc))
 
-	fname := fmt.Sprintf("%s/short3fps.ts", dir)
+	fname := fmt.Sprintf("%s/short3fps.mp4", dir)
 	in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
 	out := []TranscodeOptions{{Oname: dir + "/out1fps.ts", Profile: P144p30fps16x9, Accel: accel}}
 	out[0].Profile.Framerate = 1 // Force 1fps
@@ -775,7 +774,8 @@ func consecutiveMP4s(t *testing.T, accel Acceleration) {
 	defer os.RemoveAll(dir)
 	cmd := `
   cp "$1"/../transcoder/test.ts .
-  ffmpeg -i test.ts -c copy -f segment test%d.mp4
+  # use segment_time_delta on mp4 to correctly capture keyframes
+  ffmpeg -i test.ts -c copy -f segment -segment_time_delta 0.1 test%d.mp4
   ffmpeg -i test.ts -c copy -f segment test%d.ts
 
   # manually convert ts to mp4 just to sanity check
@@ -1044,9 +1044,9 @@ func setGops(t *testing.T, accel Acceleration) {
         prepare out3.ts
 
         # extremely low frame rate
-        ffmpeg -loglevel warning -i test.ts -c:v libx264 -r 1 lowfps.ts
-        ffprobe -loglevel warning lowfps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 9
-        ffprobe -loglevel warning lowfps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 1
+        ffmpeg -loglevel warning -i test.ts -c:a copy -c:v libx264 -r 1 lowfps.ts
+        ffprobe -loglevel warning -select_streams v -show_packets lowfps.ts | grep flags= | wc -l | grep 10
+        ffprobe -loglevel warning -select_streams v -show_packets lowfps.ts | grep flags=K | wc -l | grep 1
     `
 	run(cmd)
 
@@ -1113,19 +1113,19 @@ func setGops(t *testing.T, accel Acceleration) {
         check passthrough3.ts
 
         # low framerate checks. sanity check number of packets vs keyframes
-        ffprobe -loglevel warning lpms_lowfps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 9
+        ffprobe -loglevel warning lpms_lowfps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 10
         ffprobe -loglevel warning lpms_lowfps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 5
 
         # intra checks with passthrough fps.
         # sanity check number of packets vs keyframes
-        ffprobe -loglevel warning lpms_intra.ts -select_streams v -show_packets| grep flags= | wc -l | grep 9
-        ffprobe -loglevel warning lpms_intra.ts -select_streams v -show_packets|grep flags=K | wc -l | grep 9
+        ffprobe -loglevel warning lpms_intra.ts -select_streams v -show_packets| grep flags= | wc -l | grep 10
+        ffprobe -loglevel warning lpms_intra.ts -select_streams v -show_packets|grep flags=K | wc -l | grep 10
 
         # intra checks with fixed fps.
         # sanity check number of packets vs keyframes
-        # TODO look into why lpms only generates 81 frames instead of 90
-        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 81
-        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 81
+        # TODO look into why lpms generates 91 frames instead of 100
+        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 91
+        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 91
     `
 	run(cmd)
 

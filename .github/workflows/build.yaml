@@ -46,12 +46,6 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Get the latest install_ffmpeg.sh from go-livepeer
-        run: |
-          rm install_ffmpeg.sh || true
-          curl -LO https://raw.githubusercontent.com/livepeer/go-livepeer/master/install_ffmpeg.sh
-          chmod +x ./install_ffmpeg.sh
-
       - name: Cache ffmpeg
         id: cache-ffmpeg
         uses: actions/cache@v4
