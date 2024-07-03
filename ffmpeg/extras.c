@@ -149,7 +149,6 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
   AVCodec *ac, *vc;
-  AVRational time_base = AV_TIME_BASE;
   int ret = GET_CODEC_OK, vstream = 0, astream = 0;
 
   ret = avformat_open_input(&ic, fname, NULL, NULL);
@@ -165,14 +164,10 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
   } else {
-      if (video_present) {
-          time_base = ic->streams[vstream]->time_base
-      } else {
-          //audio stream only
-          time_base = ic->streams[astream]->time_base
-      }
-      //consider adding the duration estimation method from AVFormatContext duration_estimation_method
-      out->dur = ic->duration / time_base;
+      //TODO: update to use video stream time_base or audio stream time_base
+      //      need to adjust for start time?
+      //      consider adding the duration estimation method from AVFormatContext duration_estimation_method
+      out->dur = ic->duration / AV_TIME_BASE;
   }
   // Return
   if (video_present && vc->name) {
