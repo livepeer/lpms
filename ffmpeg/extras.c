@@ -149,6 +149,7 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
   AVCodec *ac, *vc;
+  AVRational time_base = AV_TIME_BASE;
   int ret = GET_CODEC_OK, vstream = 0, astream = 0;
 
   ret = avformat_open_input(&ic, fname, NULL, NULL);
@@ -163,6 +164,15 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   if(!audio_present && !video_present) {
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
+  } else {
+      if (video_present) {
+          time_base = ic->streams[vstream]->time_base
+      } else {
+          //audio stream only
+          time_base = ic->streams[astream]->time_base
+      }
+      //consider adding the duration estimation method from AVFormatContext duration_estimation_method
+      out->dur = ic->duration / time_base;
   }
   // Return
   if (video_present && vc->name) {
@@ -176,9 +186,7 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
       }
       out->width  = ic->streams[vstream]->codecpar->width;
       out->height = ic->streams[vstream]->codecpar->height;
-      
       out->fps = av_q2d(ic->streams[vstream]->avg_frame_rate);
-      out->dur = ic->duration / AV_TIME_BASE;
   } else {
       // Indicate failure to extract video codec from given container
       out->video_codec[0] = 0;
@@ -189,6 +197,7 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
       // Indicate failure to extract audio codec from given container
       out->audio_codec[0] = 0;
   }
+  
 #undef MIN
 close_format_context:
   if (ic) avformat_close_input(&ic);
