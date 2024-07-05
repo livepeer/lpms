@@ -150,8 +150,6 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   AVFormatContext *ic = NULL;
   AVCodec *ac, *vc;
 
-  AVPacket pkt;
-  av_init_packet(&pkt);
   int64_t last_pts = AV_NOPTS_VALUE;
 
   int ret = GET_CODEC_OK, vstream = 0, astream = 0;
@@ -168,44 +166,28 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   if(!audio_present && !video_present) {
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
-  } else {
-      //TODO: update to use video stream time_base or audio stream time_base
-      //      need to adjust for start time?
-      //      consider adding the duration estimation method from AVFormatContext duration_estimation_method
-      out->dur = ic->duration / AV_TIME_BASE;
-
-      int stream_index = 0;
-      // Find the first audio stream and its duration
-      for (int i = 0; i < ic->nb_streams; i++) {
-          AVStream *stream = ic->streams[i];
-          if (stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-              // Found an audio stream
-              // Duration is in AV_TIME_BASE units, convert it to seconds (or your preferred unit)
-              out->audio_dur = (double)stream->duration * av_q2d(stream->time_base);
-              
-              stream_index = i;
-              break; // Assuming you only care about the first audio stream
-          }
-      }
-
-      int duration = 0;
-      while (av_read_frame(ic, &pkt) >= 0) {
-        if (pkt.stream_index == stream_index) 
-        { 
-          // Assuming you've found the audio stream index earlier
+  } else if (audio_present && !video_present) {
+        AVPacket pkt;
+        av_init_packet(&pkt);
+        double duration = 0;
+        while (av_read_frame(ic, &pkt) >= 0) {
+          if (pkt.stream_index == astream) 
+          { 
             if (pkt.pts != AV_NOPTS_VALUE) {
                 if (last_pts != AV_NOPTS_VALUE) {
                     // Calculate the difference between the current and last PTS
                     int64_t pts_diff = pkt.pts - last_pts;
                     // Convert the PTS difference to seconds and add to duration
-                    duration += pts_diff * av_q2d(ic->streams[stream_index]->time_base);
+                    duration += pts_diff * av_q2d(ic->streams[astream]->time_base);
                 }
                 last_pts = pkt.pts;
             }
             av_packet_unref(&pkt);
+          }
         }
-      }
-      out->audio_dur = duration;
+        out->dur = duration;
+  } else {
+      out->dur = ic->duration / AV_TIME_BASE;
   }
   // Return
   if (video_present && vc->name) {
