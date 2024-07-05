@@ -130,6 +130,28 @@ handle_r2h_err:
   return ret == AVERROR_EOF ? 0 : ret;
 }
 
+double calculate_duration(AVFormatContext *ic, int astream) {
+  AVPacket pkt;
+  av_init_packet(&pkt);
+  double duration = 0;
+  int64_t last_pts = AV_NOPTS_VALUE;
+  while (av_read_frame(ic, &pkt) >= 0) {
+    if (pkt.stream_index == astream) {
+      if (pkt.pts != AV_NOPTS_VALUE) {
+        if (last_pts != AV_NOPTS_VALUE) {
+          // Calculate the difference between the current and last PTS
+          int64_t pts_diff = pkt.pts - last_pts;
+          // Convert the PTS difference to seconds and add to duration
+          duration += pts_diff * av_q2d(ic->streams[astream]->time_base);
+        }
+        last_pts = pkt.pts;
+      }
+      av_packet_unref(&pkt);
+    }
+  }
+  return duration;
+}
+
 #define GET_CODEC_INTERNAL_ERROR -1
 #define GET_CODEC_OK 0
 #define GET_CODEC_NEEDS_BYPASS 1
@@ -166,28 +188,13 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   if(!audio_present && !video_present) {
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
+  } else if (video_present) {
+    out->dur = ic->duration / AV_TIME_BASE;
   } else if (audio_present && !video_present) {
-        AVPacket pkt;
-        av_init_packet(&pkt);
-        double duration = 0;
-        while (av_read_frame(ic, &pkt) >= 0) {
-          if (pkt.stream_index == astream) 
-          { 
-            if (pkt.pts != AV_NOPTS_VALUE) {
-                if (last_pts != AV_NOPTS_VALUE) {
-                    // Calculate the difference between the current and last PTS
-                    int64_t pts_diff = pkt.pts - last_pts;
-                    // Convert the PTS difference to seconds and add to duration
-                    duration += pts_diff * av_q2d(ic->streams[astream]->time_base);
-                }
-                last_pts = pkt.pts;
-            }
-            av_packet_unref(&pkt);
-          }
-        }
-        out->dur = duration;
-  } else {
+    out->dur = calculate_duration(ic, astream);
+    if (out->dur == 0) {
       out->dur = ic->duration / AV_TIME_BASE;
+    }
   }
   // Return
   if (video_present && vc->name) {

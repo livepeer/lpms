@@ -1,8 +1,8 @@
 package main
 
 import (
-	"os"
 	"fmt"
+	"os"
 	"text/tabwriter"
 	"time"
 
@@ -10,14 +10,13 @@ import (
 )
 
 func main() {
-	p := "/home/brad/test-videos"
+	p := "/opt/livepeer/test-videos"
 	items, _ := os.ReadDir(p)
 	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', tabwriter.Debug)
 
 	fmt.Fprintln(w, "File\tTook (ms)\tFPS\tDur\tACodec")
 	for _, item := range items {
 		vid_path := p + "/" + item.Name()
-		//fmt.Println(item.Name())
 		start := time.Now()
 		_, mfi, err := ffmpeg.GetCodecInfo(vid_path)
 		if err == nil {
