@@ -247,6 +247,7 @@ type MediaFormatInfo struct {
 	Width, Height  int
 	FPS            float32
 	Dur            float32
+	AudioDur       float32
 }
 
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
@@ -281,6 +282,11 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format.Height = int(params_c.height)
 	format.FPS = float32(params_c.fps)
 	format.Dur = float32(params_c.dur)
+
+	// Check if the file is an audio file
+	if format.Vcodec == "" && format.Acodec != "" {
+		format.AudioDur = float32(params_c.audio_dur)
+	}
 
 	return status, format, nil
 }

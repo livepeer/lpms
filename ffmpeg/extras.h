@@ -9,6 +9,7 @@ typedef struct s_codec_info {
   int    height;
   double fps;
   double dur;
+  double audio_dur;
 } codec_info, *pcodec_info;
 
 int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char *seg_start);
