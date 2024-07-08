@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"testing"
+	"text/tabwriter"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -1868,4 +1869,26 @@ func TestResolution_Clamp(t *testing.T) {
 	// expect error
 	checkError = require.Error
 	test(l, Size{300, 600}, portrait, Size{300, 600})
+}
+
+func TestGetFPSDuration(t *testing.T) {
+	p := "/opt/livepeer/test-videos"
+	items, _ := os.ReadDir(p)
+	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', tabwriter.Debug)
+
+	fmt.Fprintln(w, "File\tTook (ms)\tFPS\tDur\tACodec")
+	for _, item := range items {
+		vid_path := p + "/" + item.Name()
+		start := time.Now()
+		_, mfi, err := GetCodecInfo(vid_path)
+		if err == nil {
+			took := time.Since(start).Milliseconds()
+			line := fmt.Sprintf("%v\t%v\t%v\t%v\t%v", item.Name(), took, mfi.FPS, mfi.Dur, mfi.Acodec)
+			fmt.Fprintln(w, line)
+		} else {
+			t.Errorf("error getting codec info: %v", err)
+		}
+	}
+
+	w.Flush()
 }
