@@ -131,7 +131,7 @@ handle_r2h_err:
 }
 
 //Calculates the duration of audio stream by counting the number of audio packets
-double calculate_audio_dur(AVFormatContext *ic, int astream) {
+double calculate_stream_duration(AVFormatContext *ic, int astream) {
   AVPacket pkt;
   av_init_packet(&pkt);
   double duration = 0;
@@ -188,13 +188,12 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   if(!audio_present && !video_present) {
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
-  } else if (video_present) {
-    out->dur = ic->duration / AV_TIME_BASE;
   }
 
-  if (out->dur <= 0) {
-    //ic->duration / AV_TIME_BASE doesn't return accurate duration for audio-only streams, so we calculate the duration manually
-    out->dur = calculate_audio_dur(ic, astream);
+  if (ic->duration != AV_NOPTS_VALUE) {  
+    out->dur = ic->duration / AV_TIME_BASE;  
+  } else {  
+    out->dur = calculate_stream_duration(ic, audio_present ? astream : vstream);
   }
   // Return
   if (video_present && vc->name) {

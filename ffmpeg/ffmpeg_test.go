@@ -1889,7 +1889,7 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 	}{
 		{Filename: "test.mp4", Duration: 60.0, FPS: 23.96206},
 		{Filename: "test.ts", Duration: 1.9737, FPS: 30.0},
-		{Filename: "test.flac", Duration: 59.036736, FPS: 0.0},
+		{Filename: "test.flac", Duration: 60.0, FPS: 0.0},
 	}
 	for _, file := range files {
 		start := time.Now()
