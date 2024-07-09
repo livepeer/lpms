@@ -137,7 +137,6 @@ double calculate_stream_duration(AVFormatContext *ic, int astream) {
   double duration = 0;
   int64_t last_pts = AV_NOPTS_VALUE;
   // Seek to the beginning of the audio stream
-  av_seek_frame(ic, astream, 0, AVSEEK_FLAG_BACKWARD);
   while (av_read_frame(ic, &pkt) >= 0) {
     if (pkt.stream_index != astream) continue;
     if (pkt.pts != AV_NOPTS_VALUE) {
