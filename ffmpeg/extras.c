@@ -136,6 +136,8 @@ double calculate_audio_dur(AVFormatContext *ic, int astream) {
   av_init_packet(&pkt);
   double duration = 0;
   int64_t last_pts = AV_NOPTS_VALUE;
+  // Seek to the beginning of the audio stream
+  av_seek_frame(ic, astream, 0, AVSEEK_FLAG_BACKWARD);
   while (av_read_frame(ic, &pkt) >= 0) {
     if (pkt.stream_index == astream) {
       if (pkt.pts != AV_NOPTS_VALUE) {
@@ -172,9 +174,6 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
   AVFormatContext *ic = NULL;
   AVCodec *ac, *vc;
-
-  int64_t last_pts = AV_NOPTS_VALUE;
-
   int ret = GET_CODEC_OK, vstream = 0, astream = 0;
 
   ret = avformat_open_input(&ic, fname, NULL, NULL);
@@ -191,12 +190,11 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
     ret = GET_CODEC_STREAMS_MISSING;
   } else if (video_present) {
     out->dur = ic->duration / AV_TIME_BASE;
-  } else if (audio_present && !video_present) {
-    //ic->duration / AV_TIME_BASE sometimes returns a large negative number for audio-only streams, so we calculate the duration manually
+  }
+
+  if (out->dur <= 0) {
+    //ic->duration / AV_TIME_BASE doesn't return accurate duration for audio-only streams, so we calculate the duration manually
     out->dur = calculate_audio_dur(ic, astream);
-    if (out->dur == 0) {
-      out->dur = ic->duration / AV_TIME_BASE;
-    }
   }
   // Return
   if (video_present && vc->name) {
@@ -221,7 +219,6 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
       // Indicate failure to extract audio codec from given container
       out->audio_codec[0] = 0;
   }
-  
 #undef MIN
 close_format_context:
   if (ic) avformat_close_input(&ic);

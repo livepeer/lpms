@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path"
 	"testing"
-	"text/tabwriter"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -1871,24 +1870,64 @@ func TestResolution_Clamp(t *testing.T) {
 	test(l, Size{300, 600}, portrait, Size{300, 600})
 }
 
-func TestGetFPSDuration(t *testing.T) {
-	p := "/opt/livepeer/test-videos"
-	items, _ := os.ReadDir(p)
-	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', tabwriter.Debug)
-
-	fmt.Fprintln(w, "File\tTook (ms)\tFPS\tDur\tACodec")
-	for _, item := range items {
-		vid_path := p + "/" + item.Name()
-		start := time.Now()
-		_, mfi, err := GetCodecInfo(vid_path)
-		if err == nil {
-			took := time.Since(start).Milliseconds()
-			line := fmt.Sprintf("%v\t%v\t%v\t%v\t%v", item.Name(), took, mfi.FPS, mfi.Dur, mfi.Acodec)
-			fmt.Fprintln(w, line)
-		} else {
-			t.Errorf("error getting codec info: %v", err)
-		}
+func TestDuration_GetCodecInfo(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	w.Flush()
+	files := []string{"bunny.mp4", "duplicate-audio-dts.ts", "bunny.mp3", "bunny.webm", "bunny.flac", "bunny.m4a"}
+	for _, file := range files {
+		start := time.Now()
+		fname := path.Join(wd, "..", "data", file)
+		_, format, err := GetCodecInfo(fname)
+		data, err := ioutil.ReadFile(fname)
+		if err != nil {
+			t.Error(err)
+		}
+
+		_, format, err = GetCodecInfoBytes(data)
+		if err != nil {
+			t.Error(err)
+		}
+
+		took := time.Since(start).Milliseconds()
+		fmt.Printf("%v\ttook=%v\tdur=%v\tacodec=%v\n", fname, took, format.Dur, format.Acodec)
+		if format.Dur <= float32(0) {
+			assert.Fail(t, "Duration should be > 0", format.Dur)
+		} else {
+			assert.True(t, format.Dur > float32(0), "Duration should be > 0", format.Dur)
+		}
+	}
+}
+
+func TestFPS_GetCodecInfo(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := []string{"bunny.mp4", "duplicate-audio-dts.ts", "bunny.webm"}
+	for _, file := range files {
+		start := time.Now()
+		fname := path.Join(wd, "..", "data", file)
+		_, format, err := GetCodecInfo(fname)
+		data, err := ioutil.ReadFile(fname)
+		if err != nil {
+			t.Error(err)
+		}
+
+		_, format, err = GetCodecInfoBytes(data)
+		if err != nil {
+			t.Error(err)
+		}
+
+		took := time.Since(start).Milliseconds()
+		fmt.Printf("%v\ttook=%v\tfps=%v\tdur=%v\tacodec=%v\n", fname, took, format.FPS, format.Dur, format.Acodec)
+		if format.FPS <= float32(0) {
+			assert.Fail(t, "FPS should be > 0", format.FPS)
+		} else {
+			assert.True(t, format.FPS > float32(0), "FPS should be > 0", format.FPS)
+		}
+	}
 }
