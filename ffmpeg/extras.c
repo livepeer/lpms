@@ -139,18 +139,17 @@ double calculate_stream_duration(AVFormatContext *ic, int astream) {
   // Seek to the beginning of the audio stream
   av_seek_frame(ic, astream, 0, AVSEEK_FLAG_BACKWARD);
   while (av_read_frame(ic, &pkt) >= 0) {
-    if (pkt.stream_index == astream) {
-      if (pkt.pts != AV_NOPTS_VALUE) {
-        if (last_pts != AV_NOPTS_VALUE) {
-          // Calculate the difference between the current and last PTS
-          int64_t pts_diff = pkt.pts - last_pts;
-          // Convert the PTS difference to seconds and add to duration
-          duration += pts_diff * av_q2d(ic->streams[astream]->time_base);
-        }
-        last_pts = pkt.pts;
+    if (pkt.stream_index != astream) continue;
+    if (pkt.pts != AV_NOPTS_VALUE) {
+      if (last_pts != AV_NOPTS_VALUE) {
+        // Calculate the difference between the current and last PTS
+        int64_t pts_diff = pkt.pts - last_pts;
+        // Convert the PTS difference to seconds and add to duration
+        duration += pts_diff * av_q2d(ic->streams[astream]->time_base);
       }
-      av_packet_unref(&pkt);
+      last_pts = pkt.pts;
     }
+    av_packet_unref(&pkt);
   }
   return duration;
 }
