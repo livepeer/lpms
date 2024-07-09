@@ -1870,16 +1870,30 @@ func TestResolution_Clamp(t *testing.T) {
 	test(l, Size{300, 600}, portrait, Size{300, 600})
 }
 
-func TestDuration_GetCodecInfo(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestDurationFPS_GetCodecInfo(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
 
-	files := []string{"bunny.mp4", "duplicate-audio-dts.ts", "bunny.mp3", "bunny.webm", "bunny.flac", "bunny.m4a"}
+	//Generate test files
+	cmd := `
+	cp "$1/../data/bunny.mp4" test.mp4
+	cp "$1/../data/duplicate-audio-dts.ts" test.ts
+	ffmpeg -loglevel warning -i test.mp4 -vn -c:a flac test.flac
+	`
+	run(cmd)
+
+	files := []struct {
+		Filename string
+		Duration float32
+		FPS      float32
+	}{
+		{Filename: "test.mp4", Duration: 60.0, FPS: 23.96206},
+		{Filename: "test.ts", Duration: 1.9737, FPS: 30.0},
+		{Filename: "test.flac", Duration: 59.036736, FPS: 0.0},
+	}
 	for _, file := range files {
 		start := time.Now()
-		fname := path.Join(wd, "..", "data", file)
+		fname := path.Join(dir, file.Filename)
 		_, format, err := GetCodecInfo(fname)
 		data, err := ioutil.ReadFile(fname)
 		if err != nil {
@@ -1892,42 +1906,8 @@ func TestDuration_GetCodecInfo(t *testing.T) {
 		}
 
 		took := time.Since(start).Milliseconds()
-		fmt.Printf("%v\ttook=%v\tdur=%v\tacodec=%v\n", fname, took, format.Dur, format.Acodec)
-		if format.Dur <= float32(0) {
-			assert.Fail(t, "Duration should be > 0", format.Dur)
-		} else {
-			assert.True(t, format.Dur > float32(0), "Duration should be > 0", format.Dur)
-		}
-	}
-}
-
-func TestFPS_GetCodecInfo(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	files := []string{"bunny.mp4", "duplicate-audio-dts.ts", "bunny.webm"}
-	for _, file := range files {
-		start := time.Now()
-		fname := path.Join(wd, "..", "data", file)
-		_, format, err := GetCodecInfo(fname)
-		data, err := ioutil.ReadFile(fname)
-		if err != nil {
-			t.Error(err)
-		}
-
-		_, format, err = GetCodecInfoBytes(data)
-		if err != nil {
-			t.Error(err)
-		}
-
-		took := time.Since(start).Milliseconds()
-		fmt.Printf("%v\ttook=%v\tfps=%v\tdur=%v\tacodec=%v\n", fname, took, format.FPS, format.Dur, format.Acodec)
-		if format.FPS <= float32(0) {
-			assert.Fail(t, "FPS should be > 0", format.FPS)
-		} else {
-			assert.True(t, format.FPS > float32(0), "FPS should be > 0", format.FPS)
-		}
+		fmt.Printf("%v\ttook=%v\tdur=%v\fps=%v\tvcodec=%v\tacodec=%v\n", fname, took, format.DurSecs, format.FPS, format.Vcodec, format.Acodec)
+		assert.True(t, format.DurSecs == file.Duration, "Duration should match expected value=%f, actual=%f", file.Duration, format.DurSecs)
+		assert.True(t, format.FPS == file.FPS, "FPS should match expected value=%f, actual=%f", file.FPS, format.FPS)
 	}
 }
