@@ -1879,6 +1879,7 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 	cp "$1/../data/bunny.mp4" test.mp4
 	cp "$1/../data/duplicate-audio-dts.ts" test.ts
 	ffmpeg -loglevel warning -i test.mp4 -c:v libvpx -c:a vorbis -strict -2 test.webm
+	ffmpeg -loglevel warning -i test.mp4 -vn -c:a aac -b:a 128k test.m4a
 	ffmpeg -loglevel warning -i test.mp4 -vn -c:a flac test.flac
 	`
 	run(cmd)
@@ -1892,6 +1893,7 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 		{Filename: "test.ts", Duration: 2, FPS: 30.0},
 		{Filename: "test.flac", Duration: 60.0, FPS: 0.0},
 		{Filename: "test.webm", Duration: 60.0, FPS: 24},
+		{Filename: "test.m4a", Duration: 60.0, FPS: 0.0},
 	}
 	for _, file := range files {
 		t.Run(file.Filename, func(t *testing.T) {
