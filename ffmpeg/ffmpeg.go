@@ -281,7 +281,6 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format.Height = int(params_c.height)
 	format.FPS = float32(params_c.fps)
 	format.DurSecs = float32(params_c.dur)
-
 	return status, format, nil
 }
 

@@ -54,6 +54,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
 
   ret = avformat_open_input(&ic, listen, NULL, NULL);
   if (ret < 0) r2h_err("segmenter: Unable to open input\n");
+  ic->max_analyze_duration = 60 * AV_TIME_BASE; // 60 seconds
   ret = avformat_find_stream_info(ic, NULL);
   if (ret < 0) r2h_err("segmenter: Unable to find any input streams\n");
 
@@ -152,7 +153,6 @@ double calculate_stream_duration(AVFormatContext *ic, int astream) {
   }
   return duration;
 }
-
 #define GET_CODEC_INTERNAL_ERROR -1
 #define GET_CODEC_OK 0
 #define GET_CODEC_NEEDS_BYPASS 1
@@ -187,7 +187,6 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
   }
-
   if (ic->duration != AV_NOPTS_VALUE) {  
     out->dur = ic->duration / AV_TIME_BASE;  
   } else {  
