@@ -140,8 +140,8 @@ double calculate_stream_duration(AVFormatContext *ic, int astream) {
   while (av_read_frame(ic, &pkt) >= 0) {
     if (pkt.stream_index != astream) continue;
     if (pkt.pts != AV_NOPTS_VALUE) {
-      if (first_pts == AV_NOPTS_VALUE) first_pts = pkt.pts;
-      last_pts = pkt.pts;
+      if (first_pts == AV_NOPTS_VALUE || first_pts > pkt.pts) first_pts = pkt.pts;
+      if (last_pts == AV_NOPTS_VALUE || last_pts < pkt.pts) last_pts = pkt.pts;
     }
     av_packet_unref(&pkt);
   }
