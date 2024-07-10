@@ -194,7 +194,7 @@ fi
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
   echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
   DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
-  DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
+  DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --disable-doc --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
   DEV_FFMPEG_FLAGS+="--enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx --enable-bsf=noise "
 else
   # disable all unnecessary features for production build
