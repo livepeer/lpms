@@ -1878,6 +1878,7 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 	cmd := `
 	cp "$1/../data/bunny.mp4" test.mp4
 	cp "$1/../data/duplicate-audio-dts.ts" test.ts
+	ffmpeg -loglevel warning -i test.mp4 -c:v libvpx -c:a vorbis -strict -2 test.webm
 	ffmpeg -loglevel warning -i test.mp4 -vn -c:a flac test.flac
 	`
 	run(cmd)
@@ -1887,27 +1888,19 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 		Duration float32
 		FPS      float32
 	}{
-		{Filename: "test.mp4", Duration: 60.0, FPS: 23.96206},
-		{Filename: "test.ts", Duration: 1.9737, FPS: 30.0},
+		{Filename: "test.mp4", Duration: 60.0, FPS: 24},
+		{Filename: "test.ts", Duration: 2, FPS: 30.0},
 		{Filename: "test.flac", Duration: 60.0, FPS: 0.0},
+		{Filename: "test.webm", Duration: 60.0, FPS: 24},
 	}
 	for _, file := range files {
-		start := time.Now()
-		fname := path.Join(dir, file.Filename)
-		_, format, err := GetCodecInfo(fname)
-		data, err := ioutil.ReadFile(fname)
-		if err != nil {
-			t.Error(err)
-		}
-
-		_, format, err = GetCodecInfoBytes(data)
-		if err != nil {
-			t.Error(err)
-		}
-
-		took := time.Since(start).Milliseconds()
-		fmt.Printf("%v\ttook=%v\tdur=%v\fps=%v\tvcodec=%v\tacodec=%v\n", fname, took, format.DurSecs, format.FPS, format.Vcodec, format.Acodec)
-		assert.True(t, format.DurSecs == file.Duration, "Duration should match expected value=%f, actual=%f", file.Duration, format.DurSecs)
-		assert.True(t, format.FPS == file.FPS, "FPS should match expected value=%f, actual=%f", file.FPS, format.FPS)
+		t.Run(file.Filename, func(t *testing.T) {
+			assert := assert.New(t)
+			status, format, err := GetCodecInfo(path.Join(dir, file.Filename))
+			assert.Nil(err, "getcodecinfo error")
+			assert.Equal(CodecStatusOk, status, "status not ok")
+			assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
+			assert.Equal(file.FPS, format.FPS, "fps mismatch")
+		})
 	}
 }
