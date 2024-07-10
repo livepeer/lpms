@@ -135,23 +135,17 @@ handle_r2h_err:
 double calculate_stream_duration(AVFormatContext *ic, int astream) {
   AVPacket pkt;
   av_init_packet(&pkt);
-  double duration = 0;
   int64_t last_pts = AV_NOPTS_VALUE;
-  // Seek to the beginning of the audio stream
+  int64_t first_pts = AV_NOPTS_VALUE;
   while (av_read_frame(ic, &pkt) >= 0) {
     if (pkt.stream_index != astream) continue;
     if (pkt.pts != AV_NOPTS_VALUE) {
-      if (last_pts != AV_NOPTS_VALUE) {
-        // Calculate the difference between the current and last PTS
-        int64_t pts_diff = pkt.pts - last_pts;
-        // Convert the PTS difference to seconds and add to duration
-        duration += pts_diff * av_q2d(ic->streams[astream]->time_base);
-      }
+      if (first_pts == AV_NOPTS_VALUE) first_pts = pkt.pts;
       last_pts = pkt.pts;
     }
     av_packet_unref(&pkt);
   }
-  return duration;
+  return (last_pts - first_pts) * av_q2d(ic->streams[astream]->time_base);
 }
 #define GET_CODEC_INTERNAL_ERROR -1
 #define GET_CODEC_OK 0
