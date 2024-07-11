@@ -482,7 +482,7 @@ func ffprobe_firstframeflags(fname string) (string, error) {
 func TestMissingKeyframe(t *testing.T) {
 	// sanity check that test file has a keyframe at the beginning
 	out, err := ffprobe_firstframeflags("test.flv")
-	if err != nil || out != "flags=K_" {
+	if err != nil || out != "flags=K__" {
 		t.Errorf("First video packet of test file was not a keyframe '%v' - %v", out, err)
 		return
 	}
@@ -506,7 +506,7 @@ func TestMissingKeyframe(t *testing.T) {
 
 	// sanity check tempfile doesn't have a video keyframe at the beginning
 	out, err = ffprobe_firstframeflags(fname)
-	if err != nil || out != "flags=__" {
+	if err != nil || out != "flags=___" {
 		t.Errorf("First video packet of temp file unexpected; %v - %v", out, err)
 		return
 	}
@@ -520,7 +520,7 @@ func TestMissingKeyframe(t *testing.T) {
 	}
 	// and now check that segmented result does have keyframe at beginning
 	out, err = ffprobe_firstframeflags(path.Join(dir, "out_0.ts"))
-	if err != nil || out != "flags=K_" {
+	if err != nil || out != "flags=K__" {
 		t.Errorf("Segment did not have keyframe at beginning %v - %v", out, err)
 		return
 	}

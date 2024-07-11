@@ -355,6 +355,8 @@ func TestNvidia_Devices(t *testing.T) {
 			Accel:   Software,
 		},
 	})
+	// if this fails with a generic error, it probably means
+	// ffmpeg error code from cuda init needs to be patched
 	if err == nil || err.Error() != "No such device" {
 		t.Error(fmt.Errorf(fmt.Sprintf("\nError being: '%v'\n", err)))
 	}
@@ -371,6 +373,8 @@ func TestNvidia_Devices(t *testing.T) {
 			Device:  "9999",
 		},
 	})
+	// if this fails with a generic error, it probably means
+	// ffmpeg error code from cuda init needs to be patched
 	if err == nil || err.Error() != "No such device" {
 		t.Error(fmt.Errorf(fmt.Sprintf("\nError being: '%v'\n", err)))
 	}

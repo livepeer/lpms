@@ -163,7 +163,7 @@ func TestTransmuxer_Discontinuity(t *testing.T) {
 	tc.StopTranscoder()
 	cmd = `
     ffprobe -loglevel warning -select_streams v -count_frames -show_streams out.mp4 | grep nb_read_frames=960
-    ffprobe -loglevel warning -select_streams v -count_frames -show_streams -show_frames out.mp4 | grep pkt_pts=1441410
+    ffprobe -loglevel warning -select_streams v -count_frames -show_streams -show_frames out.mp4 | grep pts=1441410
   `
 	run(cmd)
 }
