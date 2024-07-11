@@ -1885,7 +1885,7 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 	ffprobe -loglevel warning -show_format test-short.mp4 | grep duration=
 	ffprobe -loglevel warning -show_streams -select_streams v test-short.mp4 | grep r_frame_rate=
 
-	ffmpeg -loglevel warning -i test-short.mp4 -c:v libvpx -c:a vorbis -strict -2 test.webm
+	ffmpeg -loglevel warning -i test-short.mp4 -c:v libvpx -c:a vorbis -strict -2 -t 2 test.webm
 	ffprobe -loglevel warning -show_format test.webm | grep duration=
 	ffprobe -loglevel warning -show_streams -select_streams v test.webm | grep r_frame_rate=
 
