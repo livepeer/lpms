@@ -131,22 +131,6 @@ handle_r2h_err:
   return ret == AVERROR_EOF ? 0 : ret;
 }
 
-//Calculates the duration of audio stream by counting the number of audio packets
-double calculate_stream_duration(AVFormatContext *ic, int astream) {
-  AVPacket pkt;
-  av_init_packet(&pkt);
-  int64_t last_pts = AV_NOPTS_VALUE;
-  int64_t first_pts = AV_NOPTS_VALUE;
-  while (av_read_frame(ic, &pkt) >= 0) {
-    if (pkt.stream_index != astream) continue;
-    if (pkt.pts != AV_NOPTS_VALUE) {
-      if (first_pts == AV_NOPTS_VALUE || first_pts > pkt.pts) first_pts = pkt.pts;
-      if (last_pts == AV_NOPTS_VALUE || last_pts < pkt.pts) last_pts = pkt.pts;
-    }
-    av_packet_unref(&pkt);
-  }
-  return (last_pts - first_pts) * av_q2d(ic->streams[astream]->time_base);
-}
 #define GET_CODEC_INTERNAL_ERROR -1
 #define GET_CODEC_OK 0
 #define GET_CODEC_NEEDS_BYPASS 1
@@ -183,8 +167,6 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   }
   if (ic->duration != AV_NOPTS_VALUE) {  
     out->dur = ic->duration / AV_TIME_BASE;  
-  } else {  
-    out->dur = calculate_stream_duration(ic, audio_present ? astream : vstream);
   }
   // Return
   if (video_present && vc->name) {

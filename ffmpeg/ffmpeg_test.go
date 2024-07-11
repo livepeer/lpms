@@ -1876,24 +1876,37 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 
 	//Generate test files
 	cmd := `
-	cp "$1/../data/bunny.mp4" test.mp4
 	cp "$1/../data/duplicate-audio-dts.ts" test.ts
-	ffmpeg -loglevel warning -i test.mp4 -c:v libvpx -c:a vorbis -strict -2 test.webm
-	ffmpeg -loglevel warning -i test.mp4 -vn -c:a aac -b:a 128k test.m4a
-	ffmpeg -loglevel warning -i test.mp4 -vn -c:a flac test.flac
+	ffprobe -loglevel warning -show_format test.ts | grep duration=
+	ffprobe -loglevel warning -show_streams -select_streams v test.ts | grep r_frame_rate=
+
+	cp "$1/../data/bunny.mp4" test.mp4
+	ffmpeg -loglevel warning -i test.mp4 -c:v copy -t 2 -c:a copy -t 2.12564 test-short.mp4
+	ffprobe -loglevel warning -show_format test-short.mp4 | grep duration=
+	ffprobe -loglevel warning -show_streams -select_streams v test-short.mp4 | grep r_frame_rate=
+
+	ffmpeg -loglevel warning -i test-short.mp4 -c:v libvpx -c:a vorbis -strict -2 test.webm
+	ffprobe -loglevel warning -show_format test.webm | grep duration=
+	ffprobe -loglevel warning -show_streams -select_streams v test.webm | grep r_frame_rate=
+
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a aac -b:a 128k test.m4a
+	ffprobe -loglevel warning -show_format test.m4a | grep duration=
+
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a flac test.flac
+	ffprobe -loglevel warning -show_format test.flac | grep duration=
 	`
 	run(cmd)
 
 	files := []struct {
 		Filename string
-		Duration float32
+		Duration int64
 		FPS      float32
 	}{
-		{Filename: "test.mp4", Duration: 60.0, FPS: 24},
+		{Filename: "test-short.mp4", Duration: 2, FPS: 24},
 		{Filename: "test.ts", Duration: 2, FPS: 30.0},
-		{Filename: "test.flac", Duration: 60.0, FPS: 0.0},
-		{Filename: "test.webm", Duration: 60.0, FPS: 24},
-		{Filename: "test.m4a", Duration: 60.0, FPS: 0.0},
+		{Filename: "test.flac", Duration: 2, FPS: 0.0},
+		{Filename: "test.webm", Duration: 2, FPS: 24},
+		{Filename: "test.m4a", Duration: 2, FPS: 0.0},
 	}
 	for _, file := range files {
 		t.Run(file.Filename, func(t *testing.T) {
