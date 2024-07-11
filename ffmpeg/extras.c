@@ -164,6 +164,9 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
   }
+  if (ic->duration != AV_NOPTS_VALUE) {
+    out->dur = ic->duration / AV_TIME_BASE;
+  }
   // Return
   if (video_present && vc->name) {
       strncpy(out->video_codec, vc->name, MIN(strlen(out->video_codec), strlen(vc->name))+1);
@@ -176,6 +179,7 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
       }
       out->width  = ic->streams[vstream]->codecpar->width;
       out->height = ic->streams[vstream]->codecpar->height;
+      out->fps = av_q2d(ic->streams[vstream]->r_frame_rate);
   } else {
       // Indicate failure to extract video codec from given container
       out->video_codec[0] = 0;

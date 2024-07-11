@@ -1869,3 +1869,147 @@ func TestResolution_Clamp(t *testing.T) {
 	checkError = require.Error
 	test(l, Size{300, 600}, portrait, Size{300, 600})
 }
+
+func TestTranscoder_VFR(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// prepare the input by generating a vfr video and verify its properties
+	cmd := `
+    ffmpeg -hide_banner -i "$1/../transcoder/test.ts" -an -vf "setpts='\
+    if(eq(N, 0), 33373260,\
+    if(eq(N, 1), 33375870,\
+    if(eq(N, 2), 33379560,\
+    if(eq(N, 3), 33381360,\
+    if(eq(N, 4), 33384960,\
+    if(eq(N, 5), 33387660,\
+    if(eq(N, 6), 33391350,\
+    if(eq(N, 7), 33394950,\
+    if(eq(N, 8), 33397650,\
+    if(eq(N, 9), 33400350,\
+    if(eq(N, 10), 33403050,\
+    if(eq(N, 11), 33405750,\
+    if(eq(N, 12), 33408450,\
+    if(eq(N, 13), 33412050,\
+    if(eq(N, 14), 33414750,\
+    if(eq(N, 15), 33418350,\
+    if(eq(N, 16), 33421950,\
+    if(eq(N, 17), 33423750,\
+    if(eq(N, 18), 33426450,\
+    if(eq(N, 19), 33430950,\
+    if(eq(N, 20), 33435450,\
+    if(eq(N, 21), 33437340,\
+    if(eq(N, 22), 33440040,\
+    if(eq(N, 23), 33441840,\
+    if(eq(N, 24), 33445440,\
+    if(eq(N, 25), 33449040,\
+    if(eq(N, 26), 33451740,\
+    if(eq(N, 27), 33455340,\
+    if(eq(N, 28), 33458040,\
+    if(eq(N, 29), 33459750, 0\
+  ))))))))))))))))))))))))))))))',scale=320:240" -c:v libx264 -bf 0 -frames:v 30 -copyts -enc_time_base 1:90000 -vsync passthrough -muxdelay 0 in.ts
+
+    ffprobe -hide_banner -i in.ts -select_streams v:0 -show_entries packet=pts,duration -of csv=p=0 | sed '/^$/d' > input-pts.out
+
+    # Double check that we've correctly generated the expected pts for input
+    cat << PTS_EOF > expected-input-pts.out
+33373260,N/A
+33375870,N/A
+33379560,N/A
+33381360,N/A
+33384960,N/A
+33387660,N/A
+33391350,N/A
+33394950,N/A
+33397650,N/A
+33400350,N/A
+33403050,N/A
+33405750,N/A
+33408450,N/A
+33412050,N/A
+33414750,N/A
+33418350,N/A
+33421950,N/A
+33423750,N/A
+33426450,N/A
+33430950,N/A
+33435450,N/A
+33437340,N/A
+33440040,N/A
+33441840,N/A
+33445440,N/A
+33449040,N/A
+33451740,N/A
+33455340,N/A
+33458040,N/A
+33459750,N/A
+PTS_EOF
+
+ diff -u expected-input-pts.out input-pts.out
+    `
+
+	run(cmd)
+
+	err := Transcode(
+		dir+"/in.ts",
+		dir, []VideoProfile{P240p30fps4x3})
+	require.Nil(t, err)
+
+	// check output
+	cmd = `
+    # reproduce expected lpms output using ffmpeg
+    ffmpeg -debug_ts -loglevel trace -i in.ts -vf 'scale=136x240,fps=30/1:eof_action=pass' -c:v libx264 -copyts -muxdelay 0 out-ffmpeg.ts
+
+    ffprobe -show_packets out-ffmpeg.ts | grep dts= > ffmpeg-dts.out
+    ffprobe -show_packets out0in.ts | grep dts= > lpms-dts.out
+
+    diff -u lpms-dts.out ffmpeg-dts.out
+  `
+	run(cmd)
+}
+
+func TestDurationFPS_GetCodecInfo(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	//Generate test files
+	cmd := `
+	cp "$1/../data/duplicate-audio-dts.ts" test.ts
+	ffprobe -loglevel warning -show_format test.ts | grep duration=2.008555
+	ffprobe -loglevel warning -show_streams -select_streams v test.ts | grep r_frame_rate=30/1
+	cp "$1/../data/bunny.mp4" test.mp4
+	ffmpeg -loglevel warning -i test.mp4 -c:v copy -c:a copy -t 2 test-short.mp4
+	ffprobe -loglevel warning -show_format test-short.mp4 | grep duration=2.043356
+	ffprobe -loglevel warning -show_streams -select_streams v test-short.mp4 | grep r_frame_rate=24/1
+	ffmpeg -loglevel warning -i test-short.mp4 -c:v libvpx -c:a vorbis -strict -2 -t 2 test.webm
+	ffprobe -loglevel warning -show_format test.webm | grep duration=2.049000
+	ffprobe -loglevel warning -show_streams -select_streams v test.webm | grep r_frame_rate=24/1
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a aac -b:a 128k test.m4a
+	ffprobe -loglevel warning -show_format test.m4a | grep duration=2.042993
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a flac test.flac
+	ffprobe -loglevel warning -show_format test.flac | grep duration=2.043356
+	`
+	run(cmd)
+
+	files := []struct {
+		Filename string
+		Duration int64
+		FPS      float32
+	}{
+		{Filename: "test-short.mp4", Duration: 2, FPS: 24},
+		{Filename: "test.ts", Duration: 2, FPS: 30.0},
+		{Filename: "test.flac", Duration: 2, FPS: 0.0},
+		{Filename: "test.webm", Duration: 2, FPS: 24},
+		{Filename: "test.m4a", Duration: 2, FPS: 0.0},
+	}
+	for _, file := range files {
+		t.Run(file.Filename, func(t *testing.T) {
+			assert := assert.New(t)
+			status, format, err := GetCodecInfo(path.Join(dir, file.Filename))
+			assert.Nil(err, "getcodecinfo error")
+			assert.Equal(CodecStatusOk, status, "status not ok")
+			assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
+			assert.Equal(file.FPS, format.FPS, "fps mismatch")
+		})
+	}
+}

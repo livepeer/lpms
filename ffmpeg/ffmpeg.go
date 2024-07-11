@@ -245,6 +245,8 @@ type MediaFormatInfo struct {
 	Acodec, Vcodec string
 	PixFormat      PixelFormat
 	Width, Height  int
+	FPS            float32
+	DurSecs        int64
 }
 
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
@@ -277,6 +279,8 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format.PixFormat = PixelFormat{int(params_c.pixel_format)}
 	format.Width = int(params_c.width)
 	format.Height = int(params_c.height)
+	format.FPS = float32(params_c.fps)
+	format.DurSecs = int64(params_c.dur)
 	return status, format, nil
 }
 
@@ -979,7 +983,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				input.Profile.FramerateDen = 1
 			}
 
-			// Do not try tofree in this function because in the C code avformat_open_input()
+			// Do not try to free in this function because in the C code avformat_open_input()
 			// will destroy this
 			demuxerOpts.opts = newAVOpts(map[string]string{
 				"framerate": fmt.Sprintf("%d/%d", input.Profile.Framerate, input.Profile.FramerateDen),
