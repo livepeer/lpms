@@ -194,7 +194,7 @@ fi
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
   echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
   DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
-  DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --disable-doc --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
+  DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
   DEV_FFMPEG_FLAGS+="--enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx --enable-bsf=noise "
 else
   # disable all unnecessary features for production build
@@ -205,7 +205,7 @@ fi
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout bf7d88382d38ef215796ba0133e7dcde636f66a5
+  git checkout d9751c73e714b01b363483db358b1ea8022c9bea
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
