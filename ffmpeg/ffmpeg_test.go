@@ -1873,7 +1873,6 @@ func TestTranscoder_VFR(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
-
 	// prepare the input by generating a vfr video and verify its properties
 	cmd := `
     ffmpeg -hide_banner -i "$1/../transcoder/test.ts" -an -vf "setpts='\
@@ -1966,4 +1965,50 @@ PTS_EOF
     diff -u lpms-dts.out ffmpeg-dts.out
   `
 	run(cmd)
+}
+
+func TestDurationFPS_GetCodecInfo(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	//Generate test files
+	cmd := `
+	cp "$1/../data/duplicate-audio-dts.ts" test.ts
+	ffprobe -loglevel warning -show_format test.ts | grep duration=2.008555
+	ffprobe -loglevel warning -show_streams -select_streams v test.ts | grep r_frame_rate=30/1
+	cp "$1/../data/bunny.mp4" test.mp4
+	ffmpeg -loglevel warning -i test.mp4 -c:v copy -c:a copy -t 2 test-short.mp4
+	ffprobe -loglevel warning -show_format test-short.mp4 | grep duration=2.043356
+	ffprobe -loglevel warning -show_streams -select_streams v test-short.mp4 | grep r_frame_rate=24/1
+	ffmpeg -loglevel warning -i test-short.mp4 -c:v libvpx -c:a vorbis -strict -2 -t 2 test.webm
+	ffprobe -loglevel warning -show_format test.webm | grep duration=2.049000
+	ffprobe -loglevel warning -show_streams -select_streams v test.webm | grep r_frame_rate=24/1
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a aac -b:a 128k test.m4a
+	ffprobe -loglevel warning -show_format test.m4a | grep duration=2.042993
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a flac test.flac
+	ffprobe -loglevel warning -show_format test.flac | grep duration=2.043356
+	`
+	run(cmd)
+
+	files := []struct {
+		Filename string
+		Duration int64
+		FPS      float32
+	}{
+		{Filename: "test-short.mp4", Duration: 2, FPS: 24},
+		{Filename: "test.ts", Duration: 2, FPS: 30.0},
+		{Filename: "test.flac", Duration: 2, FPS: 0.0},
+		{Filename: "test.webm", Duration: 2, FPS: 24},
+		{Filename: "test.m4a", Duration: 2, FPS: 0.0},
+	}
+	for _, file := range files {
+		t.Run(file.Filename, func(t *testing.T) {
+			assert := assert.New(t)
+			status, format, err := GetCodecInfo(path.Join(dir, file.Filename))
+			assert.Nil(err, "getcodecinfo error")
+			assert.Equal(CodecStatusOk, status, "status not ok")
+			assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
+			assert.Equal(file.FPS, format.FPS, "fps mismatch")
+		})
+	}
 }
