@@ -337,7 +337,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
 
   ctx->transmuxing = params->transmuxing;
 
-  // open demuxer
+  // open demuxer/ open demuxer
   AVDictionary **demuxer_opts = NULL;
   if (params->demuxer.opts) demuxer_opts = &params->demuxer.opts;
   ret = avformat_open_input(&ic, inp, NULL, demuxer_opts);
