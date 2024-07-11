@@ -164,8 +164,8 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
     // instead of returning -1
     ret = GET_CODEC_STREAMS_MISSING;
   }
-  if (ic->duration != AV_NOPTS_VALUE) {  
-    out->dur = ic->duration / AV_TIME_BASE;  
+  if (ic->duration != AV_NOPTS_VALUE) {
+    out->dur = ic->duration / AV_TIME_BASE;
   }
   // Return
   if (video_present && vc->name) {
