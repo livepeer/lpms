@@ -7,7 +7,7 @@ NPROC=${NPROC:-$(nproc)}
 EXTRA_CFLAGS=""
 EXTRA_LDFLAGS=""
 EXTRA_X264_FLAGS=""
-EXTRA_FFMPEG_FLAGS=""
+EXTRA_FFMPEG_FLAGS="--pkg-config-flags=--static "
 BUILD_TAGS="${BUILD_TAGS:-}"
 
 # Build platform flags
@@ -154,13 +154,15 @@ if [[ ! -e "$ROOT/x264" ]]; then
 fi
 
 if [[ "$GOOS" == "linux" && "$BUILD_TAGS" == *"debug-video"* ]]; then
-  sudo apt-get install -y libnuma-dev cmake
+  sudo apt-get install -y cmake
   if [[ ! -e "$ROOT/x265" ]]; then
     git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
     cd "$ROOT/x265"
     git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
     cd build/linux/
-    cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -G "Unix Makefiles" ../../source
+    cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -DENABLE_SHARED=off -DENABLE_CLI=off -DENABLE_LIBNUMA=off -G "Unix Makefiles" ../../source
+    # Add -lpthread to the end of the Libs: line to fix static linking
+    sed -i '/^Libs:/ s/$/ -lpthread/' x265.pc
     make -j$NPROC
     make -j$NPROC install
   fi
@@ -169,7 +171,7 @@ if [[ "$GOOS" == "linux" && "$BUILD_TAGS" == *"debug-video"* ]]; then
     git clone https://chromium.googlesource.com/webm/libvpx.git "$ROOT/libvpx"
     cd "$ROOT/libvpx"
     git checkout ab35ee100a38347433af24df05a5e1578172a2ae
-    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
+    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --disable-shared --enable-static --disable-install-bins --enable-vp9-highbitdepth --as=nasm
     make -j$NPROC
     make -j$NPROC install
   fi
@@ -194,7 +196,7 @@ fi
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
   echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
   DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
-  DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
+  DEV_FFMPEG_FLAGS+="--disable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
   DEV_FFMPEG_FLAGS+="--enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx --enable-bsf=noise "
 else
   # disable all unnecessary features for production build
