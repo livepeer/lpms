@@ -335,7 +335,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
   char *inp = params->fname;
   int ret = 0;
 
-  ctx->transmuxing = params->transmuxe;
+  ctx->transmuxing = params->transmuxing;
 
   // open demuxer
   ret = avformat_open_input(&ic, inp, NULL, NULL);
@@ -343,16 +343,15 @@ int open_input(input_params *params, struct input_ctx *ctx)
   ctx->ic = ic;
   ret = avformat_find_stream_info(ic, NULL);
   if (ret < 0) LPMS_ERR(open_input_err, "Unable to find input info");
-  if (params->transmuxe == 0) {
-    ret = open_video_decoder(params, ctx);
-    if (ret < 0) LPMS_ERR(open_input_err, "Unable to open video decoder")
-    ret = open_audio_decoder(params, ctx);
-    if (ret < 0) LPMS_ERR(open_input_err, "Unable to open audio decoder")
-    ctx->last_frame_v = av_frame_alloc();
-    if (!ctx->last_frame_v) LPMS_ERR(open_input_err, "Unable to alloc last_frame_v");
-    ctx->last_frame_a = av_frame_alloc();
-    if (!ctx->last_frame_a) LPMS_ERR(open_input_err, "Unable to alloc last_frame_a");
-  }
+  if (params->transmuxing) return 0;
+  ret = open_video_decoder(params, ctx);
+  if (ret < 0) LPMS_ERR(open_input_err, "Unable to open video decoder")
+  ret = open_audio_decoder(params, ctx);
+  if (ret < 0) LPMS_ERR(open_input_err, "Unable to open audio decoder")
+  ctx->last_frame_v = av_frame_alloc();
+  if (!ctx->last_frame_v) LPMS_ERR(open_input_err, "Unable to alloc last_frame_v");
+  ctx->last_frame_a = av_frame_alloc();
+  if (!ctx->last_frame_a) LPMS_ERR(open_input_err, "Unable to alloc last_frame_a");
 
   return 0;
 
