@@ -54,7 +54,8 @@ typedef struct {
   // Optional video decoder + opts
   component_opts video;
 
-  int transmuxe;
+  // concatenates multiple inputs into the same output
+  int transmuxing;
 } input_params;
 
 #define MAX_CLASSIFY_SIZE 10

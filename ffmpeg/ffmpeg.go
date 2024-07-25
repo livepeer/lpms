@@ -945,7 +945,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
 		handle: t.handle}
 	if input.Transmuxing {
-		inp.transmuxe = 1
+		inp.transmuxing = 1
 	}
 	results := make([]C.output_results, len(ps))
 	decoded := &C.output_results{}
