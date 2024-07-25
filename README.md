@@ -3,12 +3,13 @@
 # LPMS - Livepeer Media Server
 
 LPMS is a media server that can run independently, or on top of the [Livepeer](https://livepeer.org)
-network.  It allows you to manipulate / broadcast a live video stream.  Currently, LPMS supports RTMP
+network. It allows you to manipulate / broadcast a live video stream. Currently, LPMS supports RTMP
 as input format and RTMP/HLS as output formats.
 
-LPMS can be integrated into another service, or run as a standalone service.  To try LPMS as a
+LPMS can be integrated into another service, or run as a standalone service. To try LPMS as a
 standalone service, simply get the package:
-```
+
+```sh
 go get -d github.com/livepeer/lpms/cmd/example
 ```
 
@@ -23,36 +24,39 @@ go build cmd/example/main.go
 
 LPMS requires libavcodec (ffmpeg) and friends. See `install_ffmpeg.sh` . Running this script will install everything in `~/compiled`. In order to build LPMS, the dependent libraries need to be discoverable by pkg-config and golang. If you installed everything with `install_ffmpeg.sh` , then run `export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig:$PKG_CONFIG_PATH` so the deps are picked up.
 
-Running golang unit tests (`test.sh`) requires the `ffmpeg` and `ffprobe` executables in addition to the libraries. However, none of these are run-time requirements; the executables are not used outside of testing, and the libraries are statically linked by default. Note that dynamic linking may substantially speed up rebuilds if doing heavy development.
+Running golang unit tests (`test.sh`) requires the `ffmpeg` and `ffprobe` executables in addition to the libraries. Additionally it requires ffmpeg to be build with additional codecs and formats enabled. To build `ffmpeg` with all codecs and formats enabled, ensure `clang` is installed and then run `BUILD_TAGS=debug-video ./install_ffmpeg.sh`. However, none of these are run-time requirements; the executables are not used outside of testing, and the libraries are statically linked by default. Note that dynamic linking may substantially speed up rebuilds if doing heavy development.
 
 ### Testing out LPMS
 
 The test LPMS server exposes a few different endpoints:
+
 1. `rtmp://localhost:1935/stream/test` for uploading/viewing RTMP video stream.
 2. `http://localhost:7935/stream/test_hls.m3u8` for consuming the HLS video stream.
 
 Do the following steps to view a live stream video:
+
 1. Start LPMS by running `go run cmd/example/main.go`
+2. Upload an RTMP video stream to `rtmp://localhost:1935/stream/test`. We recommend using ffmpeg or [OBS](https://obsproject.com/download).
 
-2. Upload an RTMP video stream to `rtmp://localhost:1935/stream/test`.  We recommend using ffmpeg or [OBS](https://obsproject.com/download).
+   For ffmpeg on osx, run: `ffmpeg -f avfoundation -framerate 30 -pixel_format uyvy422 -i "0:0" -c:v libx264 -tune zerolatency -b:v 900k -x264-params keyint=60:min-keyint=60 -c:a aac -ac 2 -ar 44100 -f flv rtmp://localhost:1935/stream/test`
 
-For ffmpeg on osx, run: `ffmpeg -f avfoundation -framerate 30 -pixel_format uyvy422 -i "0:0" -c:v libx264 -tune zerolatency -b:v 900k -x264-params keyint=60:min-keyint=60 -c:a aac -ac 2 -ar 44100 -f flv rtmp://localhost:1935/stream/test`
-
-For OBS, fill in Settings->Stream->URL to be rtmp://localhost:1935
+   For OBS, fill in Settings->Stream->URL to be rtmp://localhost:1935
 
 3. If you have successfully uploaded the stream, you should see something like this in the LPMS output
-```
-I0324 09:44:14.639405   80673 listener.go:28] RTMP server got upstream
-I0324 09:44:14.639429   80673 listener.go:42] Got RTMP Stream: test
-```
-4. Now you have a RTMP video stream running, we can view it from the server.  Simply run `ffplay http://localhost:7935/stream/test.m3u8`, you should see the hls video playback.
 
+   ```bash
+   I0324 09:44:14.639405   80673 listener.go:28] RTMP server got upstream
+   I0324 09:44:14.639429   80673 listener.go:42] Got RTMP Stream: test
+   ```
+
+4. Now you have a RTMP video stream running, we can view it from the server. Simply run `ffplay http://localhost:7935/stream/test.m3u8`, you should see the hls video playback.
 
 ### Integrating LPMS
 
 LPMS exposes a few different methods for customization. As an example, take a look at `cmd/main.go`.
 
 To create a new LPMS server:
+
 ```go
 // Specify ports you want the server to run on, and the working directory for
 // temporary files. See `core/lpms.go` for a full list of LPMSOpts
@@ -65,6 +69,7 @@ lpms := lpms.New(&opts)
 ```
 
 To handle RTMP publish:
+
 ```go
 lpms.HandleRTMPPublish(
 	//getStreamID
@@ -168,19 +173,25 @@ go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30f
 ```
 
 ### Testing GPU transcoding with failed segments from Livepeer production environment
+
 To test transcoding of segments failed on production in Nvidia environment:
+
 1. Install Livepeer from sources by following the [installation guide](https://docs.livepeer.org/guides/orchestrating/install-go-livepeer#build-from-source)
 2. Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install-sdk)
 3. Make sure you have access to the bucket with the segments
 4. Download the segments:
-    ```sh
-    gsutil cp -r gs://livepeer-production-failed-transcodes /home/livepeer-production-failed-transcodes
-    ```
+
+   ```sh
+   gsutil cp -r gs://livepeer-production-failed-transcodes /home/livepeer-production-failed-transcodes
+   ```
+
 5. Run the test
-    ```sh
-    cd transcoder
-    FAILCASE_PATH="/home/livepeer-production-failed-transcodes" go test --tags=nvidia -timeout 6h -run TestNvidia_CheckFailCase
-    ```
+
+   ```sh
+   cd transcoder
+   FAILCASE_PATH="/home/livepeer-production-failed-transcodes" go test --tags=nvidia -timeout 6h -run TestNvidia_CheckFailCase
+   ```
+
 6. After the test has finished, it will display transcoding stats. Per-file results are logged to `results.csv` in the same directory
 
 ### Contribute
