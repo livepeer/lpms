@@ -176,7 +176,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 	w.Header().Set("Content-Length", strconv.Itoa(len(seg)))
 	_, err = w.Write(seg)
 	if err != nil {
-		glog.Errorf("Error writting response %v: %v", r.URL, err)
+		glog.Errorf("Error writing response %v: %v", r.URL, err)
 		if err == ErrNotFound {
 			http.Error(w, "ErrNotFound", 404)
 		} else if err == ErrTimeout {
@@ -184,7 +184,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		} else if err == ErrBadRequest {
 			http.Error(w, "ErrBadRequest", 400)
 		} else {
-			http.Error(w, "Error writting segment", 500)
+			http.Error(w, "Error writing segment", 500)
 		}
 		return
 	}
