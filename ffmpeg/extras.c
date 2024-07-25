@@ -102,7 +102,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
     if (oc->streams[pkt->stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
         AV_NOPTS_VALUE == dts_prev &&
         (pkt->flags & AV_PKT_FLAG_KEY)) got_video_kf = 1;
-    if (!got_video_kf) goto r2hloop_end; // skip everyting until first video KF
+    if (!got_video_kf) goto r2hloop_end; // skip everything until first video KF
     if (AV_NOPTS_VALUE == dts_prev) dts_prev = dts_next;
     else if (dts_next <= dts_prev) goto r2hloop_end; // drop late packets
     pkt->pts = av_rescale_q_rnd(pkt->pts, ist->time_base, ost->time_base,
