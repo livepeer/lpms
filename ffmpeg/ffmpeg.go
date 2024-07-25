@@ -967,20 +967,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			return nil, ErrorMap[ret]
 		}
 	}
-	// This version of the code has two internal transcoder implementations, original
-	// and a refactored version. By default, we want to run the former, to stay on the
-	// safe side, but then we want to progressively enable the latter, "risky".
-	// It will be done by means of environment variable LPMS_USE_NEW_TRANSCODE
-	_, ok := os.LookupEnv("LPMS_USE_NEW_TRANSCODE")
-	var use_new_transcode C.int
-	if ok {
-		glog.Info("LPMS new transcode enabled")
-		use_new_transcode = 1
-	} else {
-		use_new_transcode = 0
-	}
 
-	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded, use_new_transcode))
+	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if ret != 0 {
 		if LogTranscodeErrors {
 			glog.Error("Transcoder Return : ", ErrorMap[ret])
