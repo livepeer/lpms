@@ -24,7 +24,7 @@ go build cmd/example/main.go
 
 LPMS requires libavcodec (ffmpeg) and friends. See `install_ffmpeg.sh` . Running this script will install everything in `~/compiled`. In order to build LPMS, the dependent libraries need to be discoverable by pkg-config and golang. If you installed everything with `install_ffmpeg.sh` , then run `export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig:$PKG_CONFIG_PATH` so the deps are picked up.
 
-Running golang unit tests (`test.sh`) requires the `ffmpeg` and `ffprobe` executables in addition to the libraries. Additionally it requires ffmpeg to be build with additional codecs and formats enabled. To build `ffmpeg` with all codecs and formats enabled, ensure `clang` is installed and then run `BUILD_TAGS=debug-video ./install_ffmpeg.sh`. However, none of these are run-time requirements; the executables are not used outside of testing, and the libraries are statically linked by default. Note that dynamic linking may substantially speed up rebuilds if doing heavy development.
+Running golang unit tests (`test.sh`) requires the `ffmpeg` and `ffprobe` executables in addition to the libraries. To ensure the executables are available, run `export PATH=~/compiled/bin:$PATH`. Additionally it requires ffmpeg to be build with additional codecs and formats enabled. To build `ffmpeg` with all codecs and formats enabled, ensure `clang` is installed and then run `BUILD_TAGS=debug-video ./install_ffmpeg.sh`. However, none of these are run-time requirements; the executables are not used outside of testing, and the libraries are statically linked by default. Note that dynamic linking may substantially speed up rebuilds if doing heavy development.
 
 ### Testing out LPMS
 
