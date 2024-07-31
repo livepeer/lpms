@@ -168,6 +168,9 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
     out->dur = ic->duration / AV_TIME_BASE;
   }
   // Return
+  if (ic->iformat && ic->iformat->name) {
+    strncpy(out->format_name, ic->iformat->name, MIN(strlen(out->format_name), strlen(ic->iformat->name)) + 1);
+  }
   if (video_present && vc->name) {
       strncpy(out->video_codec, vc->name, MIN(strlen(out->video_codec), strlen(vc->name))+1);
       // If video track is present extract pixel format info
@@ -186,6 +189,7 @@ int lpms_get_codec_info(char *fname, pcodec_info out)
   }
   if (audio_present && ac->name) {
       strncpy(out->audio_codec, ac->name, MIN(strlen(out->audio_codec), strlen(ac->name))+1);
+      out->audio_bit_rate = ic->streams[astream]->codecpar->bit_rate;
   } else {
       // Indicate failure to extract audio codec from given container
       out->audio_codec[0] = 0;

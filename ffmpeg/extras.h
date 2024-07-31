@@ -2,8 +2,10 @@
 #define _LPMS_EXTRAS_H_
 
 typedef struct s_codec_info {
+  char * format_name;
   char * video_codec;
   char * audio_codec;
+  int    audio_bit_rate;
   int    pixel_format;
   int    width;
   int    height;
