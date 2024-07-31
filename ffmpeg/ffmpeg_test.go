@@ -1987,28 +1987,68 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 	ffprobe -loglevel warning -show_format test.m4a | grep duration=2.042993
 	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a flac test.flac
 	ffprobe -loglevel warning -show_format test.flac | grep duration=2.043356
+
+	ffmpeg -loglevel warning -i test.mp4 -vn -c:a copy stereo-audio.aac
+	ffprobe -show_entries stream=channels,channel_layout -of csv stereo-audio.aac | grep stream,2,stereo
+	ffprobe -show_format stereo-audio.aac | grep duration=52.440083
+
+	ffmpeg -i test.mp4 -vn stereo-audio.wav
+	ffprobe -show_format stereo-audio.wav | grep duration=60.139683
+
+	cp $1/../data/audio.mp3 test.mp3
+	ffprobe -show_format test.mp3 | grep duration=1.968000
+
+	cp $1/../data/audio.ogg test.ogg
+	ffprobe -show_format test.ogg | grep duration=1.974500
 	`
 	run(cmd)
 
 	files := []struct {
 		Filename string
+		Format   string
 		Duration int64
 		FPS      float32
+
+		// skip check if bytes version is known to fail duration
+		BytesSkipDuration bool
 	}{
-		{Filename: "test-short.mp4", Duration: 2, FPS: 24},
-		{Filename: "test.ts", Duration: 2, FPS: 30.0},
-		{Filename: "test.flac", Duration: 2, FPS: 0.0},
-		{Filename: "test.webm", Duration: 2, FPS: 24},
-		{Filename: "test.m4a", Duration: 2, FPS: 0.0},
+		{Filename: "test-short.mp4", Format: "mov,mp4,m4a,3gp,3g2,mj2", Duration: 2, FPS: 24},
+		{Filename: "test.ts", Format: "mpegts", Duration: 2, FPS: 30.0, BytesSkipDuration: true},
+		{Filename: "test.flac", Format: "flac", Duration: 2},
+		{Filename: "test.webm", Format: "matroska,webm", Duration: 2, FPS: 24},
+		{Filename: "test.m4a", Format: "mov,mp4,m4a,3gp,3g2,mj2", Duration: 2},
+		{Filename: "stereo-audio.aac", Format: "aac", Duration: 52},
+		{Filename: "stereo-audio.wav", Format: "wav", Duration: 60},
+		{Filename: "test.mp3", Format: "mp3", Duration: 1},
+		{Filename: "test.ogg", Format: "ogg", Duration: 1, BytesSkipDuration: true},
 	}
 	for _, file := range files {
 		t.Run(file.Filename, func(t *testing.T) {
-			assert := assert.New(t)
-			status, format, err := GetCodecInfo(path.Join(dir, file.Filename))
-			assert.Nil(err, "getcodecinfo error")
-			assert.Equal(CodecStatusOk, status, "status not ok")
-			assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
-			assert.Equal(file.FPS, format.FPS, "fps mismatch")
+			fname := path.Join(dir, file.Filename)
+			// use 'bytes' prefix to prevent test runner regex matching
+			for _, tt := range []string{"GetCodecInfo", "BytesGetCodecInfo"} {
+				t.Run(tt, func(t *testing.T) {
+					assert := assert.New(t)
+					f := func() (CodecStatus, MediaFormatInfo, error) {
+						if tt == "GetCodecInfo" {
+							return GetCodecInfo(fname)
+						}
+						d, err := os.ReadFile(fname)
+						assert.Nil(err, "reading file")
+						return GetCodecInfoBytes(d)
+					}
+					status, format, err := f()
+					assert.Nil(err, "getcodecinfo error")
+					assert.Equal(CodecStatusOk, status, "status not ok")
+					assert.Equal(file.Format, format.Format, "format mismatch")
+					if tt == "BytesGetCodecInfo" && file.BytesSkipDuration {
+						assert.Equal(int64(0), format.DurSecs, "special duration mismatch")
+					} else {
+						assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
+					}
+					assert.Equal(file.FPS, format.FPS, "fps mismatch")
+				})
+			}
 		})
 	}
 }
