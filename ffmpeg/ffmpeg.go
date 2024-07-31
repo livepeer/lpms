@@ -242,11 +242,13 @@ const (
 )
 
 type MediaFormatInfo struct {
+	Format         string
 	Acodec, Vcodec string
 	PixFormat      PixelFormat
 	Width, Height  int
 	FPS            float32
 	DurSecs        int64
+	AudioBitrate   int
 }
 
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
@@ -261,15 +263,21 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format := MediaFormatInfo{}
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
+	fmtname := C.CString(strings.Repeat("0", 255))
 	acodec_c := C.CString(strings.Repeat("0", 255))
 	vcodec_c := C.CString(strings.Repeat("0", 255))
+	defer C.free(unsafe.Pointer(fmtname))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
 	var params_c C.codec_info
+	params_c.format_name = fmtname
 	params_c.video_codec = vcodec_c
 	params_c.audio_codec = acodec_c
 	params_c.pixel_format = C.AV_PIX_FMT_NONE
 	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
+	if C.strlen(fmtname) < 255 {
+		format.Format = C.GoString(fmtname)
+	}
 	if C.strlen(acodec_c) < 255 {
 		format.Acodec = C.GoString(acodec_c)
 	}
@@ -281,6 +289,7 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format.Height = int(params_c.height)
 	format.FPS = float32(params_c.fps)
 	format.DurSecs = int64(params_c.dur)
+	format.AudioBitrate = int(params_c.audio_bit_rate)
 	return status, format, nil
 }
 
@@ -300,6 +309,19 @@ func GetCodecInfoBytes(data []byte) (CodecStatus, MediaFormatInfo, error) {
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	status, format, err = GetCodecInfo(fname)
+
+	// estimate duration from bitrate and filesize for audio
+	// some formats do not have built-in track duration metadata,
+	// and pipes do not have a filesize on their own which breaks ffmpeg's own
+	// duration estimates. So do the estimation calculation ourselves
+	// NB : mpegts has the same problem but may contain video so let's not handle that
+	//      some other formats, eg ogg, show zero bitrate
+	//
+	// ffmpeg estimation of duration from bitrate:
+	// https://github.com/FFmpeg/FFmpeg/blob/8280ec7a3213c9b7bad88aac3695be2dedd2c00b/libavformat/demux.c#L1798
+	if format.DurSecs == 0 && format.AudioBitrate > 0 && (format.Format == "mp3" || format.Format == "wav" || format.Format == "aac") {
+		format.DurSecs = int64(len(data) * 8 / format.AudioBitrate)
+	}
 	return status, format, err
 }
 
