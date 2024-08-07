@@ -1873,7 +1873,6 @@ func TestTranscoder_VFR(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
-
 	// prepare the input by generating a vfr video and verify its properties
 	cmd := `
     ffmpeg -hide_banner -i "$1/../transcoder/test.ts" -an -vf "setpts='\
@@ -1966,4 +1965,90 @@ PTS_EOF
     diff -u lpms-dts.out ffmpeg-dts.out
   `
 	run(cmd)
+}
+
+func TestDurationFPS_GetCodecInfo(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	//Generate test files
+	cmd := `
+	cp "$1/../data/duplicate-audio-dts.ts" test.ts
+	ffprobe -loglevel warning -show_format test.ts | grep duration=2.008555
+	ffprobe -loglevel warning -show_streams -select_streams v test.ts | grep r_frame_rate=30/1
+	cp "$1/../data/bunny.mp4" test.mp4
+	ffmpeg -loglevel warning -i test.mp4 -c:v copy -c:a copy -t 2 test-short.mp4
+	ffprobe -loglevel warning -show_format test-short.mp4 | grep duration=2.043356
+	ffprobe -loglevel warning -show_streams -select_streams v test-short.mp4 | grep r_frame_rate=24/1
+	ffmpeg -loglevel warning -i test-short.mp4 -c:v libvpx -c:a vorbis -strict -2 -t 2 test.webm
+	ffprobe -loglevel warning -show_format test.webm | grep duration=2.049000
+	ffprobe -loglevel warning -show_streams -select_streams v test.webm | grep r_frame_rate=24/1
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a aac -b:a 128k test.m4a
+	ffprobe -loglevel warning -show_format test.m4a | grep duration=2.042993
+	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a flac test.flac
+	ffprobe -loglevel warning -show_format test.flac | grep duration=2.043356
+
+	ffmpeg -loglevel warning -i test.mp4 -vn -c:a copy stereo-audio.aac
+	ffprobe -show_entries stream=channels,channel_layout -of csv stereo-audio.aac | grep stream,2,stereo
+	ffprobe -show_format stereo-audio.aac | grep duration=52.440083
+
+	ffmpeg -i test.mp4 -vn stereo-audio.wav
+	ffprobe -show_format stereo-audio.wav | grep duration=60.139683
+
+	cp $1/../data/audio.mp3 test.mp3
+	ffprobe -show_format test.mp3 | grep duration=1.968000
+
+	cp $1/../data/audio.ogg test.ogg
+	ffprobe -show_format test.ogg | grep duration=1.974500
+	`
+	run(cmd)
+
+	files := []struct {
+		Filename string
+		Format   string
+		Duration int64
+		FPS      float32
+
+		// skip check if bytes version is known to fail duration
+		BytesSkipDuration bool
+	}{
+		{Filename: "test-short.mp4", Format: "mov,mp4,m4a,3gp,3g2,mj2", Duration: 2, FPS: 24},
+		{Filename: "test.ts", Format: "mpegts", Duration: 2, FPS: 30.0, BytesSkipDuration: true},
+		{Filename: "test.flac", Format: "flac", Duration: 2},
+		{Filename: "test.webm", Format: "matroska,webm", Duration: 2, FPS: 24},
+		{Filename: "test.m4a", Format: "mov,mp4,m4a,3gp,3g2,mj2", Duration: 2},
+		{Filename: "stereo-audio.aac", Format: "aac", Duration: 52},
+		{Filename: "stereo-audio.wav", Format: "wav", Duration: 60},
+		{Filename: "test.mp3", Format: "mp3", Duration: 1},
+		{Filename: "test.ogg", Format: "ogg", Duration: 1, BytesSkipDuration: true},
+	}
+	for _, file := range files {
+		t.Run(file.Filename, func(t *testing.T) {
+			fname := path.Join(dir, file.Filename)
+			// use 'bytes' prefix to prevent test runner regex matching
+			for _, tt := range []string{"GetCodecInfo", "BytesGetCodecInfo"} {
+				t.Run(tt, func(t *testing.T) {
+					assert := assert.New(t)
+					f := func() (CodecStatus, MediaFormatInfo, error) {
+						if tt == "GetCodecInfo" {
+							return GetCodecInfo(fname)
+						}
+						d, err := os.ReadFile(fname)
+						assert.Nil(err, "reading file")
+						return GetCodecInfoBytes(d)
+					}
+					status, format, err := f()
+					assert.Nil(err, "getcodecinfo error")
+					assert.Equal(CodecStatusOk, status, "status not ok")
+					assert.Equal(file.Format, format.Format, "format mismatch")
+					if tt == "BytesGetCodecInfo" && file.BytesSkipDuration {
+						assert.Equal(int64(0), format.DurSecs, "special duration mismatch")
+					} else {
+						assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
+					}
+					assert.Equal(file.FPS, format.FPS, "fps mismatch")
+				})
+			}
+		})
+	}
 }

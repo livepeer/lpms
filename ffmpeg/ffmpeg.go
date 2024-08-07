@@ -97,6 +97,7 @@ type TranscodeOptionsIn struct {
 	Accel       Acceleration
 	Device      string
 	Transmuxing bool
+	Profile     VideoProfile
 }
 
 type TranscodeOptions struct {
@@ -241,9 +242,13 @@ const (
 )
 
 type MediaFormatInfo struct {
+	Format         string
 	Acodec, Vcodec string
 	PixFormat      PixelFormat
 	Width, Height  int
+	FPS            float32
+	DurSecs        int64
+	AudioBitrate   int
 }
 
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
@@ -258,15 +263,21 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format := MediaFormatInfo{}
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
+	fmtname := C.CString(strings.Repeat("0", 255))
 	acodec_c := C.CString(strings.Repeat("0", 255))
 	vcodec_c := C.CString(strings.Repeat("0", 255))
+	defer C.free(unsafe.Pointer(fmtname))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
 	var params_c C.codec_info
+	params_c.format_name = fmtname
 	params_c.video_codec = vcodec_c
 	params_c.audio_codec = acodec_c
 	params_c.pixel_format = C.AV_PIX_FMT_NONE
 	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
+	if C.strlen(fmtname) < 255 {
+		format.Format = C.GoString(fmtname)
+	}
 	if C.strlen(acodec_c) < 255 {
 		format.Acodec = C.GoString(acodec_c)
 	}
@@ -276,6 +287,9 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format.PixFormat = PixelFormat{int(params_c.pixel_format)}
 	format.Width = int(params_c.width)
 	format.Height = int(params_c.height)
+	format.FPS = float32(params_c.fps)
+	format.DurSecs = int64(params_c.dur)
+	format.AudioBitrate = int(params_c.audio_bit_rate)
 	return status, format, nil
 }
 
@@ -295,6 +309,19 @@ func GetCodecInfoBytes(data []byte) (CodecStatus, MediaFormatInfo, error) {
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	status, format, err = GetCodecInfo(fname)
+
+	// estimate duration from bitrate and filesize for audio
+	// some formats do not have built-in track duration metadata,
+	// and pipes do not have a filesize on their own which breaks ffmpeg's own
+	// duration estimates. So do the estimation calculation ourselves
+	// NB : mpegts has the same problem but may contain video so let's not handle that
+	//      some other formats, eg ogg, show zero bitrate
+	//
+	// ffmpeg estimation of duration from bitrate:
+	// https://github.com/FFmpeg/FFmpeg/blob/8280ec7a3213c9b7bad88aac3695be2dedd2c00b/libavformat/demux.c#L1798
+	if format.DurSecs == 0 && format.AudioBitrate > 0 && (format.Format == "mp3" || format.Format == "wav" || format.Format == "aac") {
+		format.DurSecs = int64(len(data) * 8 / format.AudioBitrate)
+	}
 	return status, format, err
 }
 
@@ -649,6 +676,11 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 			// needed for hw dec -> hw rescale -> sw enc
 			filters = filters + ",hwdownload,format=nv12"
 		}
+		if p.Accel == Nvidia && filepath.Ext(input.Fname) == ".png" {
+			// If the input is PNG image(s) and we are scaling on a Nvidia device
+			// we need to first convert to a pixel format that the scale_npp filter supports
+			filters = "format=nv12," + filters
+		}
 		// set FPS denominator to 1 if unset by user
 		if param.FramerateDen == 0 {
 			param.FramerateDen = 1
@@ -850,6 +882,19 @@ func destroyCOutputParams(params []C.output_params) {
 	}
 }
 
+func hasVideoMetadata(fname string) bool {
+	if strings.HasPrefix(strings.ToLower(fname), "pipe:") {
+		return false
+	}
+
+	fileInfo, err := os.Stat(fname)
+	if err != nil {
+		return false
+	}
+
+	return !fileInfo.IsDir()
+}
+
 func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -861,8 +906,8 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	}
 	var reopendemux bool
 	reopendemux = false
-	// don't read metadata for pipe input, because it can't seek back and av_find_input_format in the decoder will fail
-	if !strings.HasPrefix(strings.ToLower(input.Fname), "pipe:") {
+	// don't read metadata for inputs without video metadata, because it can't seek back and av_find_input_format in the decoder will fail
+	if hasVideoMetadata(input.Fname) {
 		status, format, err := GetCodecInfo(input.Fname)
 		if err != nil {
 			return nil, err
@@ -942,8 +987,34 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	defer C.free(unsafe.Pointer(fname))
 	xcoderParams := C.CString("")
 	defer C.free(unsafe.Pointer(xcoderParams))
+
+	var demuxerOpts C.component_opts
+
+	ext := filepath.Ext(input.Fname)
+	// If the input has an image file extension setup the image2 demuxer
+	if ext == ".png" {
+		image2 := C.CString("image2")
+		defer C.free(unsafe.Pointer(image2))
+
+		demuxerOpts = C.component_opts{
+			name: image2,
+		}
+
+		if input.Profile.Framerate > 0 {
+			if input.Profile.FramerateDen == 0 {
+				input.Profile.FramerateDen = 1
+			}
+
+			// Do not try to free in this function because in the C code avformat_open_input()
+			// will destroy this
+			demuxerOpts.opts = newAVOpts(map[string]string{
+				"framerate": fmt.Sprintf("%d/%d", input.Profile.Framerate, input.Profile.FramerateDen),
+			})
+		}
+	}
+
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
-		handle: t.handle}
+		handle: t.handle, demuxer: demuxerOpts}
 	if input.Transmuxing {
 		inp.transmuxing = 1
 	}
