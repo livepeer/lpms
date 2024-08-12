@@ -1516,6 +1516,75 @@ func TestTranscoder_PassthroughFPS(t *testing.T) {
 	run(cmd)
 }
 
+func TestTranscoder_PassthroughFPS_AdjustTimestamps(t *testing.T) {
+	// check timestamp adjustments for fps passthrough
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+		ffmpeg -i "$1/../transcoder/test.ts" -an -c:v copy -t 0.5 test-short.ts
+		ffprobe -loglevel warning -show_entries frame=pts,duration -of csv=p=0 test-short.ts | grep -v '^$' > expected-frame-pts.out
+		wc -l expected-frame-pts.out | grep "32 expected-frame-pts.out"
+		cat << EXPECTED_TS_EOF > expected-pkt-ts.out
+pts,dts,duration
+128970,125970,1500
+134910,127410,1500
+131940,128940,1500
+130500,130500,1500
+133380,131880,1500
+137970,133470,1500
+136440,134940,1500
+143910,136410,1500
+140940,137940,1500
+139410,139410,1500
+142470,140970,1500
+149940,142440,1500
+146970,143970,1500
+145440,145440,1500
+148500,147000,1500
+155970,148470,1500
+152910,149910,1500
+151380,151380,1500
+154440,152940,1500
+161910,154410,1500
+158940,155940,1500
+157410,157410,1500
+160470,158970,1500
+167940,160440,1500
+164970,161970,1500
+163440,163440,1500
+166500,165000,1500
+173970,166470,1500
+170910,167910,1500
+169380,169380,1500
+172440,170940,1500
+176940,172440,1500
+EXPECTED_TS_EOF
+	`
+	run(cmd)
+
+	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
+	out := []TranscodeOptions{{Profile: P144p30fps16x9}}
+	out[0].Profile.Framerate = 0 // Passthrough!
+	out[0].Profile.Profile = ProfileH264High
+	out[0].Oname = dir + "/out-0.ts"
+	_, err := Transcode3(in, out)
+	require.Nil(t, err)
+	cmd = `
+		echo "pts,dts,duration" > received-pkt-ts.out
+		ffprobe -loglevel warning -show_entries packet=pts,dts,duration,pict_type -of csv=p=0 out-0.ts | grep -v '^$' | sed 's/,*$//g' >> received-pkt-ts.out
+		ffprobe -loglevel warning -show_entries frame=pts,duration -of csv=p=0 test-short.ts | grep -v '^$' > received-frame-pts.out
+
+		# ensure packet pts+dts matches what is expected
+		diff -u expected-pkt-ts.out received-pkt-ts.out
+
+		# ensure all pts are accounted for from original
+		diff -u expected-frame-pts.out received-frame-pts.out
+	`
+	run(cmd)
+}
+
 func TestTranscoder_FormatOptions(t *testing.T) {
 	// Test combinations of VideoProfile.Format and TranscodeOptions.Muxer
 	// The former takes precedence over the latter if set

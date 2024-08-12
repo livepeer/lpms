@@ -373,8 +373,9 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && !octx->fps.den && octx->vf.active) {
       // try to preserve source timestamps for fps passthrough.
       time_base = octx->vf.time_base;
+      int64_t pts_dts_diff = pkt->pts - pkt->dts;
       pkt->pts = (int64_t)pkt->opaque; // already in filter timebase
-      pkt->dts = av_rescale_q(pkt->dts, encoder->time_base, time_base);
+      pkt->dts = pkt->pts - av_rescale_q(pts_dts_diff, encoder->time_base, time_base);
     }
     ret = mux(pkt, time_base, octx, ost);
     if (ret < 0) goto encode_cleanup;
