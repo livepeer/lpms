@@ -20,7 +20,7 @@ struct input_ctx {
   char *xcoderParams;
 
   // Decoder flush
-  AVPacket *first_pkt;
+  AVPacket *flush_pkt;
   int flushed;
   int flushing;
   // The diff of `packets sent - frames recv` serves as an estimate of

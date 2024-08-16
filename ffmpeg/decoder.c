@@ -22,12 +22,12 @@ static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFra
     return ret;
 }
 
-static int send_first_pkt(struct input_ctx *ictx)
+static int send_flush_pkt(struct input_ctx *ictx)
 {
   if (ictx->flushed) return 0;
-  if (!ictx->first_pkt) return lpms_ERR_INPUT_NOKF;
+  if (!ictx->flush_pkt) return lpms_ERR_INPUT_NOKF;
 
-  int ret = avcodec_send_packet(ictx->vc, ictx->first_pkt);
+  int ret = avcodec_send_packet(ictx->vc, ictx->flush_pkt);
   ictx->sentinel_count++;
   if (ret < 0) {
     LPMS_ERR(packet_cleanup, "Error sending flush packet");
@@ -68,9 +68,14 @@ int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream
     return 0;
   }
 
-  if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
-    ictx->first_pkt = av_packet_clone(pkt);
-    ictx->first_pkt->pts = -1;
+  // Set up flush packet. Do this every keyframe in case the underlying frame changes
+  if (pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
+    if (!ictx->flush_pkt) ictx->flush_pkt = av_packet_clone(pkt);
+    else {
+      av_packet_unref(ictx->flush_pkt);
+      av_packet_ref(ictx->flush_pkt, pkt);
+    }
+    ictx->flush_pkt->pts = -1;
   }
 
   ret = lpms_send_packet(ictx, decoder, pkt);
@@ -104,7 +109,7 @@ int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
   // TODO this is unnecessary for SW decoding! SW process should match audio
   if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
     ictx->flushing = 1;
-    ret = send_first_pkt(ictx);
+    ret = send_flush_pkt(ictx);
     if (ret < 0) {
       ictx->flushed = 1;
       return ret;
