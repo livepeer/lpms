@@ -332,7 +332,7 @@ reopen_out_err:
   return ret;
 }
 
-static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost)
+int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost)
 {
   int ret = 0;
   AVPacket *pkt = NULL;
