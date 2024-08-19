@@ -792,3 +792,7 @@ func TestTranscoder_Portrait(t *testing.T) {
 func TestNvidia_DiscontinuityAudioSegment(t *testing.T) {
 	discontinuityAudioSegment(t, Nvidia)
 }
+
+func TestNvidia_Rotation(t *testing.T) {
+	runRotationTests(t, Nvidia)
+}

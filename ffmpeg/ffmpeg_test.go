@@ -2121,3 +2121,248 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestTranscoder_Rotation(t *testing.T) {
+	runRotationTests(t, Software)
+	// TODO hevc
+}
+
+func runRotationTests(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// generate a sample that is rotated mid-stream
+	cmd := `
+		ffmpeg -i "$1/../transcoder/test.ts" -an -c:v libx264 -g 120 -s 100x56 -f segment -t 6 test-%d.ts
+		ffmpeg -i test-1.ts -vf transpose -c:v libx264 -c:a copy -copyts -muxdelay 0 test-1-transposed.ts
+		ffprobe -select_streams v -show_entries format=start_time,duration:stream=width,height -of default=nw=1 test-1.ts > test-1.data
+		ffprobe -select_streams v -count_frames -show_entries format=start_time,duration:stream=width,height,nb_read_frames -of default=nw=1 test-1-transposed.ts > test-1-transposed.data
+
+		cat <<-EOF1 > test-1.expected
+			width=100
+			height=56
+			width=100
+			height=56
+			start_time=3.433333
+			duration=2.000000
+		EOF1
+
+		# transposed
+		cat <<-EOF2 > test-1-transposed.expected
+			width=56
+			height=100
+			nb_read_frames=120
+			width=56
+			height=100
+			nb_read_frames=120
+			start_time=3.433333
+			duration=2.000000
+		EOF2
+
+		diff -u test-1.expected test-1.data
+		diff -u test-1-transposed.expected test-1-transposed.data
+
+		cat test-0.ts test-1-transposed.ts test-2.ts > double-rotated.ts
+		cat test-0.ts test-1-transposed.ts > single-rotated.ts
+	`
+	run(cmd)
+
+	profile := P144p30fps16x9
+	profilePassthrough := profile
+	profilePassthrough.Framerate = 0
+	res, err := Transcode3(
+		&TranscodeOptionsIn{Fname: dir + "/double-rotated.ts", Accel: accel},
+		[]TranscodeOptions{{
+			Profile: profile,
+			Oname:   dir + "/out-double-rotated-30fps.ts",
+			Accel:   accel,
+		}, {
+			Profile: profilePassthrough,
+			Oname:   dir + "/out-double-rotated.ts",
+			Accel:   accel,
+		}})
+	require.NoError(t, err)
+
+	assert.Equal(t, 360, res.Decoded.Frames)
+	assert.Equal(t, 181, res.Encoded[0].Frames) // should be 180 ... ts rounding ?
+	assert.Equal(t, 360, res.Encoded[1].Frames)
+
+	// TODO test rollover of gop interval during flush
+
+	cmd = `
+		ffprobe -count_frames -show_streams out-double-rotated.ts | grep nb_read_frames=360
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-double-rotated.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > out.dims
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-double-rotated-30fps.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > out-30fps.dims
+	`
+
+	// compare timestamps with input but software-only for now
+	// nvidia timestamps differ by the first 2 and last 2 packets
+	// TODO figure out why that is
+	// TODO ideally check for this diff anyway w nvidia (so we know when / if it changes)
+	if accel == Software {
+		cmd = cmd + `
+			ffprobe -show_entries packet=dts -of csv=p=0 out-double-rotated.ts | sed 's/,$//g' > out.ptsdts
+			ffprobe -show_entries packet=dts -of csv=p=0 double-rotated.ts | sed 's/,$//g' > expected.ptsdts
+			diff -u expected.ptsdts out.ptsdts
+		`
+	}
+
+	// TODO figure out why cpu/gpu are different
+	if accel == Nvidia {
+		cmd = cmd + `
+			cat <<-EOF1 > expected.dims
+				115 256,144
+				120 146,260
+				125 256,144
+			EOF1
+
+			cat <<-EOF2 > expected-30fps.dims
+				58 256,144
+				60 146,260
+				63 256,144
+			EOF2
+		`
+	} else {
+		cmd = cmd + `
+			cat <<-EOF1 > expected.dims
+				120 256,144
+				120 146,260
+				120 256,144
+			EOF1
+
+			cat <<-EOF2 > expected-30fps.dims
+				60 256,144
+				60 146,260
+				61 256,144
+			EOF2
+		`
+	}
+
+	cmd = cmd + `
+		diff -u expected.dims out.dims
+		diff -u expected-30fps.dims out-30fps.dims
+	`
+
+	run(cmd)
+
+	// double check separate transcodes of portrait vs landscape
+	_, err = Transcode3(
+		&TranscodeOptionsIn{Fname: dir + "/test-1-transposed.ts", Accel: accel},
+		[]TranscodeOptions{{
+			Profile: profile,
+			Oname:   dir + "/out-transposed-30fps.ts",
+			Accel:   accel,
+		}, {
+			Profile: profilePassthrough,
+			Oname:   dir + "/out-transposed.ts",
+			Accel:   accel,
+		}})
+	require.NoError(t, err)
+
+	// use the same transcoder instance for the landscape stuff
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	_, err = tc.Transcode(&TranscodeOptionsIn{
+		Fname: dir + "/test-0.ts", Accel: accel,
+	}, []TranscodeOptions{{
+		Profile: profile,
+		Oname:   dir + "/out-test-0-30fps.ts",
+		Accel:   accel,
+	}, {
+		Profile: profilePassthrough,
+		Oname:   dir + "/out-test-0.ts",
+		Accel:   accel,
+	}})
+	require.NoError(t, err)
+
+	_, err = tc.Transcode(&TranscodeOptionsIn{
+		Fname: dir + "/test-2.ts", Accel: accel,
+	}, []TranscodeOptions{{
+		Profile: profile,
+		Oname:   dir + "/out-test-2-30fps.ts",
+		Accel:   accel,
+	}, {
+		Profile: profilePassthrough,
+		Oname:   dir + "/out-test-2.ts",
+		Accel:   accel,
+	}})
+	require.NoError(t, err)
+
+	// TODO figure out why nvidia is different; green screen?
+	if accel == Software {
+		cmd = `
+		cat out-test-0.ts  out-transposed.ts out-test-2.ts > out-test-concat.ts
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height -of csv out-test-concat.ts > out-test-concat.framedata
+
+		cat out-test-0-30fps.ts  out-transposed-30fps.ts out-test-2-30fps.ts > out-test-concat-30fps.ts
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height out-test-concat-30fps.ts -of csv > out-test-concat-30fps.framedata
+
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height out-double-rotated.ts -of csv > out-double-rotated.framedata
+
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height out-double-rotated-30fps.ts -of csv > out-double-rotated-30fps.framedata
+
+		diff -u out-test-concat.framedata out-double-rotated.framedata
+
+		# this does not line up
+		#diff -u out-test-concat-30fps.framedata out-double-rotated-30fps.framedata
+	`
+		run(cmd)
+	}
+
+	// check single rotations
+	res, err = Transcode3(
+		&TranscodeOptionsIn{Fname: dir + "/single-rotated.ts", Accel: accel},
+		[]TranscodeOptions{{
+			Profile: profile,
+			Oname:   dir + "/out-single-rotated-30fps.ts",
+			Accel:   accel,
+		}, {
+			Profile: profilePassthrough,
+			Oname:   dir + "/out-single-rotated.ts",
+			Accel:   accel,
+		}})
+	require.NoError(t, err)
+
+	assert.Equal(t, 240, res.Decoded.Frames)
+	assert.Equal(t, 121, res.Encoded[0].Frames) // should be 120 ... ts rounding ?
+	assert.Equal(t, 240, res.Encoded[1].Frames)
+
+	cmd = `
+		ffprobe -count_frames -show_streams out-single-rotated.ts | grep nb_read_frames=24
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-single-rotated.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > single-out.dims
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-single-rotated-30fps.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > single-out-30fps.dims
+	`
+
+	// TODO figure out why cpu/gpu are different
+	if accel == Nvidia {
+		cmd = cmd + `
+			cat <<-EOF1 > single-expected.dims
+				115 256,144
+				125 146,260
+			EOF1
+
+			cat <<-EOF2 > single-expected-30fps.dims
+				58 256,144
+				63 146,260
+			EOF2
+		`
+	} else {
+		cmd = cmd + `
+			cat <<-EOF1 > single-expected.dims
+				120 256,144
+				120 146,260
+			EOF1
+
+			cat <<-EOF2 > single-expected-30fps.dims
+				60 256,144
+				61 146,260
+			EOF2
+		`
+	}
+
+	cmd = cmd + `
+		diff -u single-expected.dims single-out.dims
+		diff -u single-expected-30fps.dims single-out-30fps.dims
+	`
+	run(cmd)
+}
