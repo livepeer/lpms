@@ -113,8 +113,12 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     ret = avfilter_graph_config(vf->graph, NULL);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable configure video filtergraph");
 
+    char *dumped_graph = avfilter_graph_dump(vf->graph, NULL);
     LPMS_DEBUG("Initialized filtergraph: ");
-    LPMS_DEBUG(avfilter_graph_dump(vf->graph, NULL));
+    if (dumped_graph) {
+      LPMS_DEBUG(dumped_graph);
+      av_freep(&dumped_graph);
+    }
 
     vf->frame = av_frame_alloc();
     if (!vf->frame) LPMS_ERR(vf_init_cleanup, "Unable to allocate video frame");
