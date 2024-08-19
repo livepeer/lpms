@@ -538,18 +538,6 @@ type CodingSizeLimit struct {
 	WidthMax, HeightMax int
 }
 
-type Size struct {
-	W, H int
-}
-
-func (s *Size) Valid(l *CodingSizeLimit) bool {
-	if s.W < l.WidthMin || s.W > l.WidthMax || s.H < l.HeightMin || s.H > l.HeightMax {
-		glog.Warningf("[not valid] profile %dx%d\n", s.W, s.H)
-		return false
-	}
-	return true
-}
-
 func clamp(val, min, max int) int {
 	if val <= min {
 		return min
@@ -560,74 +548,10 @@ func clamp(val, min, max int) int {
 	return val
 }
 
-func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
-	w, h, err := VideoProfileResolution(*p)
-	if err != nil {
-		return err
-	}
-	if w <= 0 || h <= 0 {
-		return fmt.Errorf("input resolution invalid; probe found w=%d h=%d", w, h)
-	}
-	// detect correct rotation
-	outputAr := float32(w) / float32(h)
-	inputAr := float32(format.Width) / float32(format.Height)
-	if (inputAr > 1.0) != (outputAr > 1.0) {
-		// comparing landscape to portrait, apply rotate on chosen resolution
-		w, h = h, w
-	}
-	// Adjust to minimal encode dimensions keeping aspect ratio
-
-	var adjustedWidth, adjustedHeight Size
-	adjustedWidth.W = clamp(w, l.WidthMin, l.WidthMax)
-	adjustedWidth.H = format.ScaledHeight(adjustedWidth.W)
-	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
-	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
-	if adjustedWidth.Valid(l) {
-		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
-		return nil
-	}
-	if adjustedHeight.Valid(l) {
-		p.Resolution = fmt.Sprintf("%dx%d", adjustedHeight.W, adjustedHeight.H)
-		return nil
-	}
-	// Improve error message to include calculation context
-	return fmt.Errorf("profile %dx%d size out of bounds %dx%d-%dx%d input=%dx%d adjusted %dx%d or %dx%d",
-		w, h, l.WidthMin, l.WidthMin, l.WidthMax, l.HeightMax, format.Width, format.Height, adjustedWidth.W, adjustedWidth.H, adjustedHeight.W, adjustedHeight.H)
-}
-
 // 7th Gen NVENC limits:
 var nvidiaCodecSizeLimts = map[VideoCodec]CodingSizeLimit{
 	H264: {146, 50, 4096, 4096},
 	H265: {132, 40, 8192, 8192},
-}
-
-func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) error {
-	// not using range to be able to make inplace modifications to outputs elements
-	for i := 0; i < len(outputs); i++ {
-		if outputs[i].Accel == Nvidia {
-			limits, haveLimits := nvidiaCodecSizeLimts[outputs[i].Profile.Encoder]
-			resolutionSpecified := outputs[i].Profile.Resolution != ""
-			// Sometimes rendition Resolution is not specified. We skip this rendition.
-			if haveLimits && resolutionSpecified {
-				err := limits.Clamp(&outputs[i].Profile, format)
-				if err != nil {
-					// add more context to returned error
-					p := outputs[i].Profile
-					return fmt.Errorf(
-						"%w; profile index=%d Resolution=%s FPS=%d/%d bps=%s codec=%d input ac=%s vc=%s w=%d h=%d",
-						err, i,
-						p.Resolution,
-						p.Framerate, p.FramerateDen, // given FramerateDen == 0 is corrected to be 1
-						p.Bitrate,
-						p.Encoder,
-						format.Acodec, format.Vcodec,
-						format.Width, format.Height,
-					)
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func isAudioAllDrop(ps []TranscodeOptions) bool {
@@ -667,8 +591,46 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 				return params, finalizer, err
 			}
 		}
-		// preserve aspect ratio along the larger dimension when rescaling
-		filters := fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
+
+		// use these as common limits even for non-nvidia
+		limits := nvidiaCodecSizeLimts[param.Encoder]
+		w = clamp(w, limits.WidthMin, limits.WidthMax)
+		h = clamp(h, limits.HeightMin, limits.HeightMax)
+
+		/*
+			use the larger dimension requested from the transcode resolution
+			and proportionally rescale the smaller side of the input down
+			this does imply transposing the dimensions if necessary
+
+			if this causes the smaller side to rescale below the minimum
+			then set the smaller side to the minimum
+			and rescale the larger side instead
+
+			NB possibility that could also blow past the maximum
+			but the aspect ratio would have to be super skewed
+
+			TODO check for unsupportable aspect ratios in the C
+		*/
+
+		maxD := w
+		if h > w {
+			maxD = h
+		}
+
+		wExpr := fmt.Sprintf(`trunc(
+				if(gte(iw,ih),
+					if(gte(%d*ih/iw,%d),%d,-2),
+					if(gte(%d,%d*iw/ih),%d,-2)
+				)/2)*2`, maxD, limits.HeightMin, maxD, limits.WidthMin, maxD, limits.WidthMin)
+
+		hExpr := fmt.Sprintf(`trunc(
+			if(gt(ih,iw),
+				if(gte(%d*iw/ih,%d),%d,-2),
+				if(gte(%d,%d*ih/iw),%d,-2)
+			)/2)*2`, maxD, limits.WidthMin, maxD, limits.HeightMin, maxD, limits.HeightMin)
+
+		filters := fmt.Sprintf("%s='w=%s:h=%s'", scale_filter, wExpr, hExpr)
+
 		if interpAlgo != "" {
 			filters = fmt.Sprintf("%s:interp_algo=%s", filters, interpAlgo)
 		}
@@ -912,16 +874,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if err != nil {
 			return nil, err
 		}
-		videoTrackPresent := format.Vcodec != ""
-		if status == CodecStatusOk && videoTrackPresent {
-			// We don't return error in case status != CodecStatusOk because proper error would be returned later in the logic.
-			// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
-			// here we require input size and aspect ratio
-			err = ensureEncoderLimits(ps, format)
-			if err != nil {
-				return nil, err
-			}
-		}
+		// TODO hoist the rest of this into C so we don't have to invoke GetCodecInfo
 		if !t.started {
 			// NeedsBypass is state where video is present in container & without any frames
 			videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""

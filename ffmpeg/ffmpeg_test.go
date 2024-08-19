@@ -155,93 +155,112 @@ func TestSegmenter_DropLatePackets(t *testing.T) {
 	run(cmd)
 }
 
-func TestTranscoder_UnevenRes(t *testing.T) {
-	// Ensure transcoding still works on input with uneven resolutions
-	// and that aspect ratio is maintained
+func TestTranscoder_Resolution(t *testing.T) {
+	runResolutionTests_H264(t, Software)
+	// TODO test HEVC clamping
+}
 
+func runResolutionTests_H264(t *testing.T, accel Acceleration) {
+	// Test clamping behavior of rescaler
+	// and that aspect ratio is still maintained
+
+	// TODO make it possible to run setupTest within sub-tests
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
-	// Craft an input with an uneven res
-	cmd := `
-		# borrow the test.ts from the transcoder dir, output with 123x456 res
-		ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:a copy -c:v mpeg4 -s 123x456 test.mp4
+	tests := []struct {
+		name string
+		// input width and height
+		input string
+		// target resolution
+		target string
+		// expected width and height
+		expected string
+	}{{
+		name:     "h > w",
+		input:    "150x200",
+		target:   "0x250",
+		expected: "188x250",
+	}, {
+		name:     "h > w, rounded height",
+		input:    "200x300",
+		target:   "0x427",
+		expected: "284x426",
+	}, {
+		name:     "h > w, target swapped",
+		input:    "200x300",
+		target:   "426x0",
+		expected: "284x426",
+	}, {
+		name:     "h > w, w < min",
+		input:    "123x456",
+		target:   "0x426",
+		expected: "146x542",
+	}, {
+		name:     "h > w, rounded width",
+		input:    "200x300",
+		target:   "0x428",
+		expected: "286x428",
+	}, {
+		name:     "h > w, w < min and h < min",
+		input:    "400x456",
+		target:   "0x40",
+		expected: "146x166", // will always hit min width here
+	}, {
+		name:     "w > h",
+		input:    "456x123",
+		target:   "426x0",
+		expected: "426x114",
+	}, {
+		name:     "w > h, target swapped and rounded width",
+		input:    "456x123",
+		target:   "0x301",
+		expected: "300x80",
+	}, {
+		name:     "w > h, w < min",
+		input:    "456x400",
+		target:   "100x0",
+		expected: "146x128",
+	}, {
+		name:     "w > h, target swapped and h < min",
+		input:    "500x100",
+		target:   "0x200",
+		expected: "250x50",
+	}, {
+		name:     "w > h, target swapped",
+		input:    "456x120",
+		target:   "0x400",
+		expected: "400x106",
+	}, {
+		name:     "square",
+		input:    "123x123",
+		target:   "426x0",
+		expected: "426x426",
+	}}
 
-		# sanity check resulting resolutions
-		ffprobe -loglevel warning -i test.mp4 -show_streams -select_streams v | grep width=123
-		ffprobe -loglevel warning -i test.mp4 -show_streams -select_streams v | grep height=456
-
-		# and generate another sample with an odd value in the larger dimension
-		ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:a copy -c:v mpeg4 -s 123x457 test_larger.mp4
-		ffprobe -loglevel warning -i test_larger.mp4 -show_streams -select_streams v | grep width=123
-		ffprobe -loglevel warning -i test_larger.mp4 -show_streams -select_streams v | grep height=457
-
-	`
-	run(cmd)
-
-	err := Transcode(dir+"/test.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// TODO optimize  by reusing inputs if possible
+			cmd := fmt.Sprintf(`
+				echo '%s'
+				ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:a copy -c:v mpeg4 -s %s -t 1 test-%d.mp4
+				ffprobe -hide_banner -show_entries stream=width,height -of csv=p=0:s=x test-%d.mp4 | grep %s
+		`, tt.name, tt.input, i, i, tt.input)
+			run(cmd)
+			_, err := Transcode3(&TranscodeOptionsIn{
+				Fname: fmt.Sprintf("%s/test-%d.mp4", dir, i),
+			}, []TranscodeOptions{{
+				Oname:   fmt.Sprintf("%s/out-test-%d.mp4", dir, i),
+				Profile: VideoProfile{Resolution: tt.target, Bitrate: "50k"},
+				Accel:   accel,
+			}})
+			assert.Nil(t, err)
+			cmd = fmt.Sprintf(`
+					echo '%s'
+					ffprobe -hide_banner -show_entries stream=width,height -of csv=p=0:s=x out-test-%d.mp4 | grep %s`, tt.name, i, tt.expected)
+			run(cmd)
+		})
 	}
-
-	err = Transcode(dir+"/test_larger.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// Check output resolutions
-	cmd = `
-		ffprobe -loglevel warning -show_streams -select_streams v out0test.mp4 | grep width=64
-		ffprobe -loglevel warning -show_streams -select_streams v out0test.mp4 | grep height=240
-		ffprobe -loglevel warning -show_streams -select_streams v out0test_larger.mp4 | grep width=64
-		ffprobe -loglevel warning -show_streams -select_streams v out0test_larger.mp4 | grep height=240
-	`
-	run(cmd)
-
-	// Transpose input and do the same checks as above.
-	cmd = `
-		ffmpeg -loglevel warning -i test.mp4 -c:a copy -c:v mpeg4 -vf transpose transposed.mp4
-
-		# sanity check resolutions
-		ffprobe -loglevel warning -show_streams -select_streams v transposed.mp4 | grep width=456
-		ffprobe -loglevel warning -show_streams -select_streams v transposed.mp4 | grep height=123
-	`
-	run(cmd)
-
-	err = Transcode(dir+"/transposed.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// Check output resolutions for transposed input
-	cmd = `
-		ffprobe -loglevel warning -show_streams -select_streams v out0transposed.mp4 | grep width=426
-		ffprobe -loglevel warning -show_streams -select_streams v out0transposed.mp4 | grep height=114
-	`
-	run(cmd)
-
-	// check special case of square resolutions
-	cmd = `
-		ffmpeg -loglevel warning -i test.mp4 -c:a copy -c:v mpeg4 -s 123x123 square.mp4
-
-		# sanity check resolutions
-		ffprobe -loglevel warning -show_streams -select_streams v square.mp4 | grep width=123
-		ffprobe -loglevel warning -show_streams -select_streams v square.mp4 | grep height=123
-	`
-	run(cmd)
-
-	err = Transcode(dir+"/square.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// Check output resolutions are still square
-	cmd = `
-		ffprobe -loglevel warning -i out0square.mp4 -show_streams -select_streams v | grep width=426
-		ffprobe -loglevel warning -i out0square.mp4 -show_streams -select_streams v | grep height=426
-	`
-	run(cmd)
-
 	// TODO set / check sar/dar values?
 }
 
@@ -448,7 +467,7 @@ func TestTranscoder_Statistics_Encoded(t *testing.T) {
 	p144p60fps := P144p30fps16x9
 	p144p60fps.Framerate = 60
 	// odd / nonstandard input just to sanity check.
-	podd123fps := VideoProfile{Resolution: "124x70", Framerate: 123, Bitrate: "100k"}
+	podd123fps := VideoProfile{Resolution: "146x82", Framerate: 123, Bitrate: "100k"}
 
 	// Construct output parameters.
 	// Quickcheck style tests would be nice here one day?
@@ -532,15 +551,15 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
     `
 	run(cmd)
 
-	// This will be adjusted to 124x70 by the rescaler (since source is 16:9)
-	pAdj := VideoProfile{Resolution: "124x456", Framerate: 16, Bitrate: "100k"}
+	// This will be adjusted to 146x82 by the rescaler (since source is 16:9)
+	pAdj := VideoProfile{Resolution: "0x123", Framerate: 16, Bitrate: "100k"}
 	out := []TranscodeOptions{{Profile: pAdj, Oname: dir + "/adj.mp4"}}
 	res, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/test.ts"}, out)
 	if err != nil || len(res.Encoded) <= 0 {
 		t.Error(err)
 	}
 	r := res.Encoded[0]
-	if r.Frames != int(pAdj.Framerate+1) || r.Pixels != int64(r.Frames*124*70) {
+	if r.Frames != int(pAdj.Framerate+1) || r.Pixels != int64(r.Frames*146*82) {
 		t.Error(fmt.Errorf("Results did not match: %v ", r))
 	}
 }
@@ -1877,65 +1896,6 @@ func TestTranscoder_Clip2(t *testing.T) {
 	assert.Equal(t, int64(442368000), res.Decoded.Pixels)
 	assert.Equal(t, 601, res.Encoded[0].Frames)
 	assert.Equal(t, int64(22155264), res.Encoded[0].Pixels)
-}
-
-func TestResolution_Clamp(t *testing.T) {
-	// expect no error
-	checkError := require.NoError
-	test := func(limit CodingSizeLimit, profile, input, expected Size) {
-		p := &VideoProfile{Resolution: fmt.Sprintf("%dx%d", profile.W, profile.H)}
-		m := MediaFormatInfo{Width: input.W, Height: input.H}
-		// call function we are testing:
-		err := limit.Clamp(p, m)
-		checkError(t, err)
-		var resultW, resultH int
-		_, err = fmt.Sscanf(p.Resolution, "%dx%d", &resultW, &resultH)
-		require.NoError(t, err)
-		assert.Equal(t, expected, Size{resultW, resultH})
-	}
-
-	l := CodingSizeLimit{
-		WidthMin:  70,
-		HeightMin: 50,
-		WidthMax:  700,
-		HeightMax: 500,
-	}
-	// use aspect ratio == 2 to easily check calculation
-	portrait := Size{900, 1800}
-	landscape := Size{1800, 900}
-
-	// no change, fits within hw limits
-	test(l, Size{120, 60}, landscape, Size{120, 60})
-	// h=40 too small must be 50
-	test(l, Size{80, 40}, landscape, Size{100, 50})
-	// In portrait mode our profile 80x40 is interpreted as 40x80, increasing h=70
-	test(l, Size{80, 40}, portrait, Size{70, 140})
-	// portrait 60x120 used with landscape source, rotated to 120x60, within limits
-	test(l, Size{60, 120}, landscape, Size{120, 60})
-	// portrait 60x120 profile on portrait source does not rotate, increasing w=70
-	test(l, Size{60, 120}, portrait, Size{70, 140})
-
-	// test choice between adjustedWidth adjustedHeight variants:
-	test(l, Size{30, 60}, portrait, Size{70, 140})
-	test(l, Size{30, 60}, landscape, Size{100, 50})
-
-	// Test max values:
-	test(l, Size{1000, 500}, landscape, Size{700, 350})
-	test(l, Size{1000, 500}, portrait, Size{250, 500})
-	test(l, Size{500, 1000}, landscape, Size{700, 350})
-	test(l, Size{600, 300}, portrait, Size{250, 500})
-	test(l, Size{300, 600}, portrait, Size{250, 500})
-
-	// Test impossible limits for aspect ratio == 2
-	l = CodingSizeLimit{
-		WidthMin:  500,
-		HeightMin: 500,
-		WidthMax:  600,
-		HeightMax: 600,
-	}
-	// expect error
-	checkError = require.Error
-	test(l, Size{300, 600}, portrait, Size{300, 600})
 }
 
 func TestTranscoder_VFR(t *testing.T) {
