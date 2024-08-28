@@ -99,6 +99,7 @@ type TranscodeOptionsIn struct {
 	Transmuxing bool
 	Profile     VideoProfile
 	Demuxer     ComponentOptions
+	Loop        int
 }
 
 type TranscodeOptions struct {
@@ -982,6 +983,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		xcoderParams: xcoderParams,
 		handle:       t.handle,
 		demuxer:      demuxerOpts,
+		loop:         C.int(input.Loop),
 	}
 	if input.Transmuxing {
 		inp.transmuxing = 1

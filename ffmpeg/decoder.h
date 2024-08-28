@@ -52,6 +52,8 @@ struct input_ctx {
   // Transmuxing mode. Close output in lpms_transcode_stop instead of
   // at the end of lpms_transcode call.
   int transmuxing;
+  // How many times should the input be looped? -1 for forever.
+  int loop;
   // In HW transcoding, demuxer is opened once and used,
   // so it is necessary to check whether the input pixel format does not change in the middle.
   enum AVPixelFormat last_format;

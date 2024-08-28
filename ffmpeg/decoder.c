@@ -354,6 +354,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
   int ret = 0;
 
   ctx->transmuxing = params->transmuxing;
+  ctx->loop = params->loop;
 
   // open demuxer/ open demuxer
   AVDictionary **demuxer_opts = NULL;
