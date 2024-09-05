@@ -1628,6 +1628,9 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		Oname:        dir + "/test.flv",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
+		Metadata: map[string]string{
+			"encoded_by": "Livepeer Media Server",
+		},
 	}}
 	if out[0].Profile.Format != FormatNone {
 		t.Error("Expected empty profile for output option")
@@ -1637,7 +1640,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		t.Error(err)
 	}
 	cmd = `
-        ffprobe -loglevel warning -show_format test.flv | grep format_name=flv
+        ffprobe -loglevel warning -show_format test.flv | grep 'format_name=flv\|encoded_by=Livepeer Media Server'
     `
 	run(cmd)
 
@@ -1646,6 +1649,9 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 	out[0].Muxer = ComponentOptions{Name: "hls", Opts: map[string]string{
 		"hls_segment_filename": dir + "/test_segment_%d.ts",
 	}}
+	out[0].Metadata = map[string]string{
+		"service_provider": "Livepeer Media Server",
+	}
 	_, err = Transcode3(in, out)
 	if err != nil {
 		t.Error(err)
@@ -1660,6 +1666,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
         ffprobe -loglevel warning -show_entries format=format_name,duration test.ts > test.out
         diff -u segment.out test.out
         wc -l test.out | grep 4 # sanity check output file length
+        ffprobe segment.ts 2>&1 | grep 'service_provider: Livepeer Media Server'
     `
 	run(cmd)
 

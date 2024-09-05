@@ -286,6 +286,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
   }
 
+  if (octx->metadata) av_dict_copy(&oc->metadata, octx->metadata, 0);
+
   ret = avformat_write_header(oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
 

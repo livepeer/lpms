@@ -65,6 +65,7 @@ struct output_ctx {
   component_opts *muxer;
   component_opts *video;
   component_opts *audio;
+  AVDictionary   *metadata;
 
   int64_t drop_ts;     // preroll audio ts to drop
 
