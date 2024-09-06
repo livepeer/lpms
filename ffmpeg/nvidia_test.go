@@ -801,3 +801,8 @@ func TestNvidia_DiscontinuityAudioSegment(t *testing.T) {
 func TestNvidia_Rotation(t *testing.T) {
 	runRotationTests(t, Nvidia)
 }
+
+func TestNvidia_Metadata(t *testing.T) {
+	// with nvenc we reopen the outputs so exercise that
+	runTestTranscoder_Metadata(t, Nvidia)
+}

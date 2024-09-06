@@ -326,6 +326,8 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
     if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-opening output file");
   }
+
+  if (octx->metadata) av_dict_copy(&octx->oc->metadata, octx->metadata, 0);
   ret = avformat_write_header(octx->oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-writing header");
 
