@@ -95,7 +95,7 @@ jobs:
 
       - name: Test
         shell: bash
-        run: PATH="/github/home/compiled/bin:$PATH" go test -coverprofile cover.out ./...
+        run: PATH="/github/home/compiled/bin:$PATH" go test -v -coverprofile cover.out ./...
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
