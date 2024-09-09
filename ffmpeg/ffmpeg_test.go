@@ -1628,6 +1628,9 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		Oname:        dir + "/test.flv",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
+		Metadata: map[string]string{
+			"encoded_by": "Livepeer Media Server",
+		},
 	}}
 	if out[0].Profile.Format != FormatNone {
 		t.Error("Expected empty profile for output option")
@@ -1637,7 +1640,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		t.Error(err)
 	}
 	cmd = `
-        ffprobe -loglevel warning -show_format test.flv | grep format_name=flv
+        ffprobe -loglevel warning -show_format test.flv | grep 'format_name=flv\|encoded_by=Livepeer Media Server'
     `
 	run(cmd)
 
@@ -1646,6 +1649,9 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 	out[0].Muxer = ComponentOptions{Name: "hls", Opts: map[string]string{
 		"hls_segment_filename": dir + "/test_segment_%d.ts",
 	}}
+	out[0].Metadata = map[string]string{
+		"service_provider": "Livepeer Media Server",
+	}
 	_, err = Transcode3(in, out)
 	if err != nil {
 		t.Error(err)
@@ -1660,6 +1666,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
         ffprobe -loglevel warning -show_entries format=format_name,duration test.ts > test.out
         diff -u segment.out test.out
         wc -l test.out | grep 4 # sanity check output file length
+        ffprobe segment.ts 2>&1 | grep 'service_provider: Livepeer Media Server'
     `
 	run(cmd)
 
@@ -1750,6 +1757,50 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 	if err != ErrTranscoderFmt {
 		t.Error("Did not get expected error with invalid format ", err)
 	}
+}
+
+func TestTranscoder_Metadata(t *testing.T) {
+	runTestTranscoder_Metadata(t, Software)
+}
+
+func runTestTranscoder_Metadata(t *testing.T, accel Acceleration) {
+	// check that metadata is there in all segments
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	err := RTMPToHLS("../transcoder/test.ts", dir+"/in.m3u8", dir+"/in_%d.ts", "2", 0)
+	if err != nil {
+		t.Error(err)
+	}
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/in_%d.ts", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Accel:   accel,
+			Oname:   fmt.Sprintf("%s/out_%d.ts", dir, i),
+			Profile: P144p30fps16x9,
+			Metadata: map[string]string{
+				"service_name": fmt.Sprintf("lpms-test-%d", i),
+			},
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	cmd := `
+		ffprobe -hide_banner -i out_1.ts
+		ffprobe -i out_0.ts 2>&1 | grep 'service_name    : lpms-test-0'
+		ffprobe -i out_1.ts 2>&1 | grep 'service_name    : lpms-test-1'
+		ffprobe -i out_2.ts 2>&1 | grep 'service_name    : lpms-test-2'
+		ffprobe -i out_3.ts 2>&1 | grep 'service_name    : lpms-test-3'
+	`
+	run(cmd)
 }
 
 func TestTranscoder_IgnoreUnknown(t *testing.T) {

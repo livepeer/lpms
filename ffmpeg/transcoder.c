@@ -216,6 +216,7 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     octx->muxer = &params[i].muxer;
     octx->audio = &params[i].audio;
     octx->video = &params[i].video;
+    octx->metadata = params[i].metadata;
     octx->vfilters = params[i].vfilters;
     octx->sfilters = params[i].sfilters;
     octx->xcoderParams = params[i].xcoderParams;

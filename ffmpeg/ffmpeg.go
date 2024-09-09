@@ -112,6 +112,7 @@ type TranscodeOptions struct {
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
 	AudioEncoder ComponentOptions
+	Metadata     map[string]string
 }
 
 type MediaInfo struct {
@@ -778,6 +779,7 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 			name: C.CString(audioEncoder),
 			opts: newAVOpts(p.AudioEncoder.Opts),
 		}
+		metadata := newAVOpts(p.Metadata)
 		fromMs := int(p.From.Milliseconds())
 		toMs := int(p.To.Milliseconds())
 		vfilt := C.CString(filters)
@@ -786,7 +788,7 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
-			muxer: muxOpts, audio: audioOpts, video: vidOpts,
+			muxer: muxOpts, audio: audioOpts, video: vidOpts, metadata: metadata,
 			vfilters: vfilt, sfilters: nil, xcoderParams: xcoderOutParams}
 		if p.CalcSign {
 			//signfilter string
@@ -840,6 +842,9 @@ func destroyCOutputParams(params []C.output_params) {
 		}
 		if p.video.opts != nil {
 			C.av_dict_free(&p.video.opts)
+		}
+		if p.metadata != nil {
+			C.av_dict_free(&p.metadata)
 		}
 	}
 }

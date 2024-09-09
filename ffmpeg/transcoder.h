@@ -35,6 +35,7 @@ typedef struct {
   component_opts muxer;
   component_opts audio;
   component_opts video;
+  AVDictionary *metadata;
 } output_params;
 
 typedef struct {
