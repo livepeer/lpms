@@ -51,7 +51,7 @@ func TestAPI_SkippedSegment(t *testing.T) {
 		if res.Decoded.Frames != 120 {
 			t.Error("Did not get decoded frames", res.Decoded.Frames)
 		}
-		if res.Encoded[1].Frames != 245 {
+		if res.Encoded[1].Frames != 246 {
 			t.Error("Did not get encoded frames ", res.Encoded[1].Frames)
 		}
 	}
@@ -68,7 +68,7 @@ func TestAPI_SkippedSegment(t *testing.T) {
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_sw_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
 
     # check image quality
     # TODO really should have frame counts match for ssim
@@ -224,18 +224,14 @@ func countEncodedFrames(t *testing.T, accel Acceleration) {
 		if err != nil {
 			t.Error(err)
 		}
-		expectedFrames := 60
-		if i == 1 || i == 3 {
-			expectedFrames = 61 // TODO figure out why this is!
-		}
-		if res.Encoded[0].Frames != expectedFrames {
-			t.Error(in.Fname, " Mismatched frame count: expected ", expectedFrames, " got ", res.Encoded[0].Frames)
+		if res.Encoded[0].Frames != 60 {
+			t.Error(in.Fname, " Mismatched frame count: expected 60 got ", res.Encoded[0].Frames)
 		}
 		if res.Encoded[1].Frames != 120 {
 			t.Error(in.Fname, " Mismatched frame count: expected 120 got ", res.Encoded[1].Frames)
 		}
-		if res.Encoded[2].Frames != 239 {
-			t.Error(in.Fname, " Mismatched frame count: expected 239 got ", res.Encoded[2].Frames)
+		if res.Encoded[2].Frames != 240 {
+			t.Error(in.Fname, " Mismatched frame count: expected 240 got ", res.Encoded[2].Frames)
 		}
 		if res.Encoded[3].Frames != 120 {
 			t.Error(in.Fname, " Mismatched frame count: expected 120 got ", res.Encoded[3].Frames)
@@ -257,33 +253,33 @@ func countEncodedFrames(t *testing.T, accel Acceleration) {
 pts=129000
 pts=129750
 pts=130500
-pts=306000
 pts=306750
 pts=307500
+pts=308250
 
 ==> out_120fps_1.ts.pts <==
 pts=309000
 pts=309750
 pts=310500
-pts=486000
 pts=486750
 pts=487500
+pts=488250
 
 ==> out_120fps_2.ts.pts <==
 pts=489000
 pts=489750
 pts=490500
-pts=666000
 pts=666750
 pts=667500
+pts=668250
 
 ==> out_120fps_3.ts.pts <==
 pts=669000
 pts=669750
 pts=670500
-pts=846000
 pts=846750
 pts=847500
+pts=848250
 
 ==> out_30fps_0.ts.pts <==
 pts=129000
@@ -297,9 +293,9 @@ pts=306000
 pts=309000
 pts=312000
 pts=315000
+pts=480000
 pts=483000
 pts=486000
-pts=489000
 
 ==> out_30fps_2.ts.pts <==
 pts=489000
@@ -313,9 +309,9 @@ pts=666000
 pts=669000
 pts=672000
 pts=675000
+pts=840000
 pts=843000
 pts=846000
-pts=849000
 
 ==> out_60fps_0.ts.pts <==
 pts=129000
@@ -463,8 +459,8 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_sw_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=245
-      ffprobe -count_frames -show_streams -select_streams v sw_audio_encode_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v sw_audio_encode_$1.ts | grep nb_read_frames=246
 
     # check image quality
     # TODO frame count should really match for ssim
@@ -476,12 +472,146 @@ func TestTranscoder_API_AlternatingTimestamps(t *testing.T) {
     # Really should check relevant audio as well...
     }
 
-
-    # re-enable for seg 0 and 1 when alternating timestamps can be handled
     check 0
     check 1
     check 2
     check 3
+	`
+	run(cmd)
+
+}
+
+func TestTranscoder_API_DTSOverlap(t *testing.T) {
+	dtsOverlap(t, Software)
+}
+
+func dtsOverlap(t *testing.T, accel Acceleration) {
+	// Non-monotonic DTS timestamps are a major problem.
+	// We have one such case here when:
+	// 1. first segment pts starts near zero
+	// 2. B-frames are in use
+	// 3. mpegts is the output format
+	//
+	// the transcoder can produce DTS < 0, PTS = 0 which gets
+	// offset to DTS = 0, PTS = -DTS in the mpegts muxer
+	//
+	// However, transcodes for other segments will not be aware
+	// of this delay, leading to overlap between the first and
+	// second segments.
+	//
+	// This is not a LPMS specific issue but rather one in the
+	// employment of mpegts (always add an offset!); ffmpeg has
+	// the exact same issue.
+
+	// This test case codifies this behavior for now as a sign
+	// that we are aware of it, and if it ever changes somehow,
+	// this should fail and let us know.
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	err := RTMPToHLS("../transcoder/test.ts", dir+"/out.m3u8", dir+"/out_%d.ts", "2", 0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	profile := P144p30fps16x9
+	profile.Framerate = 15
+	profile.Profile = ProfileH264Main
+	// and check no bframes case (which is ok)
+	profileNoB := profile
+	profileNoB.Profile = ProfileH264ConstrainedHigh
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	idx := []int{1, 0}
+	for _, i := range idx {
+		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
+		out := []TranscodeOptions{{
+			Oname:        fmt.Sprintf("%s/bf_%d.ts", dir, i),
+			Profile:      profile,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+			Accel:        accel,
+		}, {
+			Oname:        fmt.Sprintf("%s/nobf_%d.ts", dir, i),
+			Profile:      profileNoB,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+			Accel:        accel,
+		}}
+		res, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+		if res != nil {
+			if res.Decoded.Frames != 120 {
+				t.Error("Did not get decoded frames", res.Decoded.Frames)
+			}
+			if res.Encoded[0].Frames != 30 {
+				t.Error("Mismatched frame count for hw/nv")
+			}
+		}
+	}
+
+	cmd := `
+
+		# ffmpeg has the exact same problem so let's demonstrate that too
+		ffmpeg -loglevel warning -i out_0.ts -c:a copy \
+			-vf fps=15,scale=w=256:h=144 -c:v libx264 -muxdelay 0 -muxpreload 0 -copyts \
+			ffmpeg_sw_0.ts
+		ffmpeg -loglevel warning -i out_1.ts -c:a copy \
+			-vf fps=15,scale=w=256:h=144 -c:v libx264 -muxdelay 0 -muxpreload 0 -copyts \
+			ffmpeg_sw_1.ts
+
+
+		# Ensure timestamps are monotonic by checking deltas
+		# do this for the low fps rendition since those are more
+		# likely to have issues while downsampling fps
+		function calc_delta {
+			cat $1_0.ts $1_1.ts > $1_concat.ts
+			mapfile -t dts_times < <(ffprobe -hide_banner -select_streams v -of csv=p=0 -show_entries packet=dts_time $1_concat.ts | awk -F',' '{print $1}')
+			# Loop through the array and calculate the delta
+			for ((i = 1; i < ${#dts_times[@]}; i++)); do
+				delta=$(echo "${dts_times[$i]} - ${dts_times[$i-1]}" | bc -l)
+				echo "$delta" >> $1_concat.delta
+			done
+			sort $1_concat.delta | uniq -c | sed 's/^ *//g' > $2
+		}
+
+		calc_delta bf deltas.out
+		calc_delta nobf deltas_nobf.out
+		calc_delta ffmpeg_sw ffmpeg_deltas.out
+	`
+
+	if accel == Nvidia {
+		cmd = cmd + `
+			cat <<-EOF > expected_deltas.out
+				1 -.133333
+				20 .066666
+				38 .066667
+			EOF
+		`
+	} else {
+		// for sw transcode, ffmpeg and lpms are exactly the same
+		cmd = cmd + `
+			diff -u deltas.out ffmpeg_deltas.out
+
+			cat <<-EOF > expected_deltas.out
+				1 -.066666
+				20 .066666
+				38 .066667
+			EOF
+	`
+	}
+
+	cmd = cmd + `
+		diff -u expected_deltas.out deltas.out
+
+		# no b-frames case
+		cat <<-EOF > expected_deltas_nobf.out
+			20 .066666
+			39 .066667
+		EOF
+		diff -u expected_deltas_nobf.out deltas_nobf.out
+
   `
 	run(cmd)
 }
@@ -795,11 +925,7 @@ func consecutiveMP4s(t *testing.T, accel Acceleration) {
 				t.Error("Unexpected error ", err)
 				continue
 			}
-			expectedFrames := 60
-			if i == 1 || i == 3 {
-				expectedFrames = 61 // TODO figure out why this is!
-			}
-			if res.Decoded.Frames != 120 || res.Encoded[0].Frames != expectedFrames {
+			if res.Decoded.Frames != 120 || res.Encoded[0].Frames != 60 {
 				t.Error("Unexpected results ", i, inExt, outExt, res)
 			}
 		}
@@ -1119,9 +1245,8 @@ func setGops(t *testing.T, accel Acceleration) {
 
         # intra checks with fixed fps.
         # sanity check number of packets vs keyframes
-        # TODO look into why lpms generates 91 frames instead of 100
-        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 91
-        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 91
+        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags= | wc -l | grep 100
+        ffprobe -loglevel warning lpms_intra_10fps.ts -select_streams v -show_packets | grep flags=K | wc -l | grep 100
     `
 	run(cmd)
 
