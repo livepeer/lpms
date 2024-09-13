@@ -160,11 +160,9 @@ void close_output(struct output_ctx *octx)
   }
   if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
+  free_filter(&octx->vf);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
-  octx->vf.pts_diff = INT64_MIN;
-  octx->vf.prev_frame_pts = 0;
-  octx->vf.segments_complete++;
 }
 
 void free_output(struct output_ctx *octx)
@@ -473,6 +471,19 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
     av_packet_rescale_ts(pkt, tb, ost->time_base);
   }
 
+  /* Enable this if it seems we have issues
+     with the first and second segments overlapping due to bframes
+     See TestTranscoder_API_DTSOverlap
+
+  int delay = av_rescale_q(10, (AVRational){1, 1}, ost->time_base);
+  if (pkt->dts != AV_NOPTS_VALUE) {
+    pkt->dts += delay;
+  }
+  if (pkt->pts != AV_NOPTS_VALUE) {
+    pkt->pts += delay;
+  }
+  */
+
   // drop any preroll audio. may need to drop multiple packets for multichannel
   // XXX this breaks if preroll isn't exactly one AVPacket or drop_ts == 0
   //     hasn't been a problem in practice (so far)
@@ -544,13 +555,26 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
 
   if (!encoder) LPMS_ERR(proc_cleanup, "Trying to transmux; not supported")
 
+  int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
+  int is_audio = (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type);
+
+  if (is_video && filter && !filter->active && inf) {
+    ret = init_video_filters(ictx, octx, inf);
+    if (ret < 0) LPMS_ERR(proc_cleanup, "Unable to initialize video filter");
+  }
+
   if (!filter || !filter->active) {
+    // Don't call encode if nothing has been sent to CUDA yet (via filter
+    // lazy init) because it may cause odd interactions with flushing
+    if (is_video && !inf &&
+        octx->hw_type > AV_HWDEVICE_TYPE_NONE &&
+        AV_HWDEVICE_TYPE_MEDIACODEC != octx->hw_type) {
+      return AVERROR_EOF;
+    }
     // No filter in between decoder and encoder, so use input frame directly
     return encode(encoder, inf, octx, ost);
   }
 
-  int is_video = (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type);
-  int is_audio = (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type);
   ret = filtergraph_write(inf, ictx, octx, filter, is_video);
   if (ret < 0) goto proc_cleanup;
 
