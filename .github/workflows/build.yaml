@@ -57,7 +57,7 @@ jobs:
         run: |
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=/github/home/compiled/lib:/usr/local/lib:/usr/local/cuda-11.2/lib64:/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
-          echo "PATH=$PATH:/github/home/compiled/bin:/github/home/ffmpeg:/usr/local/go/bin" >> $GITHUB_ENV
+          echo "PATH=/github/home/compiled/bin:/github/home/ffmpeg:/usr/local/go/bin:$PATH" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
