@@ -1,4 +1,5 @@
 #include "filter.h"
+#include "encoder.h"
 #include "logging.h"
 
 #include <libavfilter/buffersrc.h>
@@ -112,8 +113,12 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     ret = avfilter_graph_config(vf->graph, NULL);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable configure video filtergraph");
 
+    char *dumped_graph = avfilter_graph_dump(vf->graph, NULL);
     LPMS_DEBUG("Initialized filtergraph: ");
-    LPMS_DEBUG(avfilter_graph_dump(vf->graph, NULL));
+    if (dumped_graph) {
+      LPMS_DEBUG(dumped_graph);
+      av_freep(&dumped_graph);
+    }
 
     vf->frame = av_frame_alloc();
     if (!vf->frame) LPMS_ERR(vf_init_cleanup, "Unable to allocate video frame");
@@ -282,9 +287,45 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
   // We have to reset the filter because we initially set the filter
   // before the decoder is fully ready, and the decoder may change HW params
   // XXX: Unclear if this path is hit on all devices
-  if (is_video && inf && inf->hw_frames_ctx && filter->hwframes &&
-      inf->hw_frames_ctx->data != filter->hwframes) {
-    free_filter(&octx->vf); // XXX really should flush filter first
+  if (is_video && inf && (
+      (inf->hw_frames_ctx && filter->hwframes &&
+        inf->hw_frames_ctx->data != filter->hwframes) ||
+      (filter->src_ctx->nb_outputs > 0 &&
+        filter->src_ctx->outputs[0]->w != inf->width &&
+        filter->src_ctx->outputs[0]->h != inf->height))) {
+
+
+    // flush video filter
+    ret = av_buffersrc_write_frame(filter->src_ctx, NULL);
+    if (ret < 0) LPMS_ERR(fg_write_cleanup, "Error closing filter for reinit");
+    while (!ret) {
+      ret = filtergraph_read(ictx, octx, filter, is_video);
+      if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) break;
+      AVFrame *frame = filter->frame;
+      AVCodecContext *encoder = octx->vc;
+
+      // TODO does clipping need to be handled?
+      // TODO calculate signature?
+
+      // Set GOP interval if necessary
+      if (octx->gop_pts_len && frame && frame->pts >= octx->next_kf_pts) {
+        frame->pict_type = AV_PICTURE_TYPE_I;
+        octx->next_kf_pts = frame->pts + octx->gop_pts_len;
+      }
+      if (frame) {
+        // rescale pts to match encoder timebase if necessary (eg, fps passthrough)
+        AVRational filter_tb = av_buffersink_get_time_base(filter->sink_ctx);
+        if (av_cmp_q(filter_tb, encoder->time_base)) {
+          frame->pts = av_rescale_q(frame->pts, filter_tb, encoder->time_base);
+          // TODO does frame->duration needs to be rescaled too?
+        }
+      }
+      ret = encode(encoder, frame, octx, octx->oc->streams[octx->vi]);
+      if (!ret) LPMS_ERR(fg_write_cleanup, "Encoder error during filter reinit");
+    }
+    ret = 0;
+
+    free_filter(&octx->vf);
     ret = init_video_filters(ictx, octx);
     if (ret < 0) return lpms_ERR_FILTERS;
   }

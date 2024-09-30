@@ -20,7 +20,7 @@ struct input_ctx {
   char *xcoderParams;
 
   // Decoder flush
-  AVPacket *first_pkt;
+  AVPacket *flush_pkt;
   int flushed;
   int flushing;
   // The diff of `packets sent - frames recv` serves as an estimate of
@@ -32,6 +32,9 @@ struct input_ctx {
   // FIXME This is needed due to issue #155 - input/output frame mismatch.
 #define SENTINEL_MAX 8
   uint16_t sentinel_count;
+
+  // Packet held while decoder is blocked and needs to drain
+  AVPacket *blocked_pkt;
 
   // Filter flush
   AVFrame *last_frame_v, *last_frame_a;

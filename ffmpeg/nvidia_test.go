@@ -766,7 +766,7 @@ func portraitTest(t *testing.T, input string, checkResults bool, profiles []Vide
 	return resultErr
 }
 
-func TestTranscoder_Portrait(t *testing.T) {
+func TestNvidia_Portrait(t *testing.T) {
 	hevc := VideoProfile{Name: "P240p30fps16x9", Bitrate: "600k", Framerate: 30, AspectRatio: "16:9", Resolution: "426x240", Encoder: H265}
 
 	// Usuall portrait input sample
@@ -787,8 +787,22 @@ func TestTranscoder_Portrait(t *testing.T) {
 	// Error should be `profile 250x62500 size out of bounds 146x146-4096x4096 input=16x4000 adjusted 250x62500 or 16x4096`
 }
 
+func TestNvidia_Resolution(t *testing.T) {
+	runResolutionTests_H264(t, Nvidia)
+	// TODO HEVC clamping
+}
+
 // XXX test bframes or delayed frames
 
 func TestNvidia_DiscontinuityAudioSegment(t *testing.T) {
 	discontinuityAudioSegment(t, Nvidia)
+}
+
+func TestNvidia_Rotation(t *testing.T) {
+	runRotationTests(t, Nvidia)
+}
+
+func TestNvidia_Metadata(t *testing.T) {
+	// with nvenc we reopen the outputs so exercise that
+	runTestTranscoder_Metadata(t, Nvidia)
 }

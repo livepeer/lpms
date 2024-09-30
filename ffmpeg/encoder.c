@@ -255,7 +255,11 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 	if(strcmp(octx->xcoderParams,"")!=0){
 	    av_opt_set(vc->priv_data, "xcoder-params", octx->xcoderParams, 0);
 	}
-    ret = avcodec_open2(vc, codec, &octx->video->opts);
+    // copy codec options and open encoder
+    AVDictionary *opts = NULL;
+    if (octx->video->opts) av_dict_copy(&opts, octx->video->opts, 0);
+    ret = avcodec_open2(vc, codec, &opts);
+    if (opts) av_dict_free(&opts);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening video encoder");
     octx->hw_type = ictx->hw_type;
   }
@@ -281,6 +285,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
     if (ret < 0) LPMS_ERR(open_output_err, "Error opening output file");
   }
+
+  if (octx->metadata) av_dict_copy(&oc->metadata, octx->metadata, 0);
 
   ret = avformat_write_header(oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(open_output_err, "Error writing header");
@@ -320,6 +326,8 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
     if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-opening output file");
   }
+
+  if (octx->metadata) av_dict_copy(&octx->oc->metadata, octx->metadata, 0);
   ret = avformat_write_header(octx->oc, &octx->muxer->opts);
   if (ret < 0) LPMS_ERR(reopen_out_err, "Error re-writing header");
 
@@ -332,12 +340,81 @@ reopen_out_err:
   return ret;
 }
 
-static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost)
+int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost)
 {
   int ret = 0;
   AVPacket *pkt = NULL;
 
   if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && frame) {
+    if (encoder->width != frame->width || encoder->height != frame->height) {
+      // Frame dimensions changed so need to re-init encoder
+      const AVCodec *codec = avcodec_find_encoder_by_name(octx->video->name);
+      if (!codec) LPMS_ERR(encode_cleanup, "Unable to find encoder");
+      AVCodecContext *vc = avcodec_alloc_context3(codec);
+      if (!vc) LPMS_ERR(encode_cleanup, "Unable to alloc video encoder");
+      // copy any additional params needed from AVCodecParameters
+      AVCodecParameters *codecpar = avcodec_parameters_alloc();
+      if (!codecpar) LPMS_ERR(encode_cleanup, "Unable to alloc codec params");
+      avcodec_parameters_from_context(codecpar, encoder);
+      avcodec_parameters_to_context(vc, codecpar);
+      avcodec_parameters_free(&codecpar);
+      // manually set some additional fields
+      vc->width = frame->width;
+      vc->height = frame->height;
+      vc->time_base = encoder->time_base;
+      vc->flags = encoder->flags;
+      vc->rc_min_rate = encoder->rc_min_rate;
+      vc->rc_max_rate = encoder->rc_max_rate;
+      vc->bit_rate = encoder->bit_rate;
+      vc->rc_buffer_size = encoder->rc_buffer_size;
+      if (encoder->hw_frames_ctx) {
+        if (octx->vf.active && av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx)) {
+          vc->hw_frames_ctx =
+            av_buffer_ref(av_buffersink_get_hw_frames_ctx(octx->vf.sink_ctx));
+          if (!vc->hw_frames_ctx) {
+            LPMS_ERR(encode_cleanup, "Unable to re-alloc encoder hwframes")
+          }
+        } else {
+          vc->hw_frames_ctx = av_buffer_ref(encoder->hw_frames_ctx);
+        }
+      }
+
+      // flush old encoder
+      AVPacket *pkt = av_packet_alloc();
+      if (!pkt) LPMS_ERR(encode_cleanup, "Unable to alloc flush packet");
+      avcodec_send_frame(encoder, NULL);
+      AVRational time_base = encoder->time_base;
+      while (!ret) {
+        av_packet_unref(pkt);
+        ret = avcodec_receive_packet(encoder, pkt);
+        // TODO error handling
+        if (!ret) {
+          if (!octx->fps.den && octx->vf.active) {
+            // adjust timestamps for filter passthrough
+            time_base = octx->vf.time_base;
+            int64_t pts_dts = pkt->pts - pkt->dts;
+            pkt->pts = (int64_t)pkt->opaque; // already in filter timebase
+            pkt->dts = pkt->pts - av_rescale_q(pts_dts, encoder->time_base, time_base);
+          }
+          mux(pkt, time_base, octx, ost);
+        } else if (AVERROR_EOF != ret) {
+          av_packet_free(&pkt);
+          LPMS_ERR(encode_cleanup, "did not get eof");
+        }
+      }
+      av_packet_free(&pkt);
+      avcodec_free_context(&octx->vc);
+
+      // copy codec options and open encoder
+      AVDictionary *opts = NULL;
+      if (octx->video->opts) av_dict_copy(&opts, octx->video->opts, 0);
+      ret = avcodec_open2(vc, codec, &opts);
+      if (opts) av_dict_free(&opts);
+      if (ret < 0) LPMS_ERR(encode_cleanup, "Error opening video encoder");
+      if (octx->gop_pts_len) octx->next_kf_pts = frame->pts + octx->gop_pts_len;
+      octx->vc = vc;
+      encoder = vc;
+    }
     if (!octx->res->frames) {
       frame->pict_type = AV_PICTURE_TYPE_I;
     }
@@ -373,8 +450,9 @@ static int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* oc
     if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && !octx->fps.den && octx->vf.active) {
       // try to preserve source timestamps for fps passthrough.
       time_base = octx->vf.time_base;
+      int64_t pts_dts_diff = pkt->pts - pkt->dts;
       pkt->pts = (int64_t)pkt->opaque; // already in filter timebase
-      pkt->dts = av_rescale_q(pkt->dts, encoder->time_base, time_base);
+      pkt->dts = pkt->pts - av_rescale_q(pts_dts_diff, encoder->time_base, time_base);
     }
     ret = mux(pkt, time_base, octx, ost);
     if (ret < 0) goto encode_cleanup;

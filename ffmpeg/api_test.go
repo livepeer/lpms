@@ -104,11 +104,7 @@ func TestTranscoderAPI_InvalidFile(t *testing.T) {
 	// fail # 1
 	in.Fname = "none"
 	_, err := tc.Transcode(in, out)
-	if err == nil || err.Error() != "TranscoderInvalidVideo" {
-		// Early codec check didn't find video in missing input file so we get `TranscoderInvalidVideo`
-		//  instead of `No such file or directory`
-		t.Error("Expected 'TranscoderInvalidVideo', got ", err)
-	}
+	require.Error(t, err, "No such file or directory")
 
 	// success # 1
 	in.Fname = "../transcoder/test.ts"

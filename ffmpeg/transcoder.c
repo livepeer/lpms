@@ -43,7 +43,7 @@ const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
 
 // MOVED TO decoder.[ch]
 //  Decoder: For audio, we pay the price of closing and re-opening the decoder.
-//           For video, we cache the first packet we read (input_ctx.first_pkt).
+//           For video, we cache the last keyframe read  (input_ctx.flush_pkt).
 //           The pts is set to a sentinel value and fed to the decoder. Once we
 //           receive all frames from the decoder OR have sent too many sentinel
 //           pkts without receiving anything, then we know the decoder has been
@@ -133,7 +133,7 @@ int transcode_shutdown(struct transcode_thread *h, int ret)
   ictx->flushing = 0;
   ictx->pkt_diff = 0;
   ictx->sentinel_count = 0;
-  if (ictx->first_pkt) av_packet_free(&ictx->first_pkt);
+  if (ictx->flush_pkt) av_packet_free(&ictx->flush_pkt);
   if (ictx->ac) avcodec_free_context(&ictx->ac);
   if (ictx->vc && (AV_HWDEVICE_TYPE_NONE == ictx->hw_type)) avcodec_free_context(&ictx->vc);
   for (int i = 0; i < nb_outputs; i++) {
@@ -216,6 +216,7 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     octx->muxer = &params[i].muxer;
     octx->audio = &params[i].audio;
     octx->video = &params[i].video;
+    octx->metadata = params[i].metadata;
     octx->vfilters = params[i].vfilters;
     octx->sfilters = params[i].sfilters;
     octx->xcoderParams = params[i].xcoderParams;

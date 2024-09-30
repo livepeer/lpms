@@ -112,6 +112,7 @@ type TranscodeOptions struct {
 	Muxer        ComponentOptions
 	VideoEncoder ComponentOptions
 	AudioEncoder ComponentOptions
+	Metadata     map[string]string
 }
 
 type MediaInfo struct {
@@ -242,11 +243,13 @@ const (
 )
 
 type MediaFormatInfo struct {
+	Format         string
 	Acodec, Vcodec string
 	PixFormat      PixelFormat
 	Width, Height  int
 	FPS            float32
 	DurSecs        int64
+	AudioBitrate   int
 }
 
 func (f *MediaFormatInfo) ScaledHeight(width int) int {
@@ -261,15 +264,21 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format := MediaFormatInfo{}
 	cfname := C.CString(fname)
 	defer C.free(unsafe.Pointer(cfname))
+	fmtname := C.CString(strings.Repeat("0", 255))
 	acodec_c := C.CString(strings.Repeat("0", 255))
 	vcodec_c := C.CString(strings.Repeat("0", 255))
+	defer C.free(unsafe.Pointer(fmtname))
 	defer C.free(unsafe.Pointer(acodec_c))
 	defer C.free(unsafe.Pointer(vcodec_c))
 	var params_c C.codec_info
+	params_c.format_name = fmtname
 	params_c.video_codec = vcodec_c
 	params_c.audio_codec = acodec_c
 	params_c.pixel_format = C.AV_PIX_FMT_NONE
 	status := CodecStatus(C.lpms_get_codec_info(cfname, &params_c))
+	if C.strlen(fmtname) < 255 {
+		format.Format = C.GoString(fmtname)
+	}
 	if C.strlen(acodec_c) < 255 {
 		format.Acodec = C.GoString(acodec_c)
 	}
@@ -281,6 +290,7 @@ func GetCodecInfo(fname string) (CodecStatus, MediaFormatInfo, error) {
 	format.Height = int(params_c.height)
 	format.FPS = float32(params_c.fps)
 	format.DurSecs = int64(params_c.dur)
+	format.AudioBitrate = int(params_c.audio_bit_rate)
 	return status, format, nil
 }
 
@@ -300,6 +310,19 @@ func GetCodecInfoBytes(data []byte) (CodecStatus, MediaFormatInfo, error) {
 	}
 	fname := fmt.Sprintf("pipe:%d", or.Fd())
 	status, format, err = GetCodecInfo(fname)
+
+	// estimate duration from bitrate and filesize for audio
+	// some formats do not have built-in track duration metadata,
+	// and pipes do not have a filesize on their own which breaks ffmpeg's own
+	// duration estimates. So do the estimation calculation ourselves
+	// NB : mpegts has the same problem but may contain video so let's not handle that
+	//      some other formats, eg ogg, show zero bitrate
+	//
+	// ffmpeg estimation of duration from bitrate:
+	// https://github.com/FFmpeg/FFmpeg/blob/8280ec7a3213c9b7bad88aac3695be2dedd2c00b/libavformat/demux.c#L1798
+	if format.DurSecs == 0 && format.AudioBitrate > 0 && (format.Format == "mp3" || format.Format == "wav" || format.Format == "aac") {
+		format.DurSecs = int64(len(data) * 8 / format.AudioBitrate)
+	}
 	return status, format, err
 }
 
@@ -516,18 +539,6 @@ type CodingSizeLimit struct {
 	WidthMax, HeightMax int
 }
 
-type Size struct {
-	W, H int
-}
-
-func (s *Size) Valid(l *CodingSizeLimit) bool {
-	if s.W < l.WidthMin || s.W > l.WidthMax || s.H < l.HeightMin || s.H > l.HeightMax {
-		glog.Warningf("[not valid] profile %dx%d\n", s.W, s.H)
-		return false
-	}
-	return true
-}
-
 func clamp(val, min, max int) int {
 	if val <= min {
 		return min
@@ -538,74 +549,10 @@ func clamp(val, min, max int) int {
 	return val
 }
 
-func (l *CodingSizeLimit) Clamp(p *VideoProfile, format MediaFormatInfo) error {
-	w, h, err := VideoProfileResolution(*p)
-	if err != nil {
-		return err
-	}
-	if w <= 0 || h <= 0 {
-		return fmt.Errorf("input resolution invalid; probe found w=%d h=%d", w, h)
-	}
-	// detect correct rotation
-	outputAr := float32(w) / float32(h)
-	inputAr := float32(format.Width) / float32(format.Height)
-	if (inputAr > 1.0) != (outputAr > 1.0) {
-		// comparing landscape to portrait, apply rotate on chosen resolution
-		w, h = h, w
-	}
-	// Adjust to minimal encode dimensions keeping aspect ratio
-
-	var adjustedWidth, adjustedHeight Size
-	adjustedWidth.W = clamp(w, l.WidthMin, l.WidthMax)
-	adjustedWidth.H = format.ScaledHeight(adjustedWidth.W)
-	adjustedHeight.H = clamp(h, l.HeightMin, l.HeightMax)
-	adjustedHeight.W = format.ScaledWidth(adjustedHeight.H)
-	if adjustedWidth.Valid(l) {
-		p.Resolution = fmt.Sprintf("%dx%d", adjustedWidth.W, adjustedWidth.H)
-		return nil
-	}
-	if adjustedHeight.Valid(l) {
-		p.Resolution = fmt.Sprintf("%dx%d", adjustedHeight.W, adjustedHeight.H)
-		return nil
-	}
-	// Improve error message to include calculation context
-	return fmt.Errorf("profile %dx%d size out of bounds %dx%d-%dx%d input=%dx%d adjusted %dx%d or %dx%d",
-		w, h, l.WidthMin, l.WidthMin, l.WidthMax, l.HeightMax, format.Width, format.Height, adjustedWidth.W, adjustedWidth.H, adjustedHeight.W, adjustedHeight.H)
-}
-
 // 7th Gen NVENC limits:
 var nvidiaCodecSizeLimts = map[VideoCodec]CodingSizeLimit{
 	H264: {146, 50, 4096, 4096},
 	H265: {132, 40, 8192, 8192},
-}
-
-func ensureEncoderLimits(outputs []TranscodeOptions, format MediaFormatInfo) error {
-	// not using range to be able to make inplace modifications to outputs elements
-	for i := 0; i < len(outputs); i++ {
-		if outputs[i].Accel == Nvidia {
-			limits, haveLimits := nvidiaCodecSizeLimts[outputs[i].Profile.Encoder]
-			resolutionSpecified := outputs[i].Profile.Resolution != ""
-			// Sometimes rendition Resolution is not specified. We skip this rendition.
-			if haveLimits && resolutionSpecified {
-				err := limits.Clamp(&outputs[i].Profile, format)
-				if err != nil {
-					// add more context to returned error
-					p := outputs[i].Profile
-					return fmt.Errorf(
-						"%w; profile index=%d Resolution=%s FPS=%d/%d bps=%s codec=%d input ac=%s vc=%s w=%d h=%d",
-						err, i,
-						p.Resolution,
-						p.Framerate, p.FramerateDen, // given FramerateDen == 0 is corrected to be 1
-						p.Bitrate,
-						p.Encoder,
-						format.Acodec, format.Vcodec,
-						format.Width, format.Height,
-					)
-				}
-			}
-		}
-	}
-	return nil
 }
 
 func isAudioAllDrop(ps []TranscodeOptions) bool {
@@ -645,8 +592,46 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 				return params, finalizer, err
 			}
 		}
-		// preserve aspect ratio along the larger dimension when rescaling
-		filters := fmt.Sprintf("%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", scale_filter, w, h)
+
+		// use these as common limits even for non-nvidia
+		limits := nvidiaCodecSizeLimts[param.Encoder]
+		w = clamp(w, limits.WidthMin, limits.WidthMax)
+		h = clamp(h, limits.HeightMin, limits.HeightMax)
+
+		/*
+			use the larger dimension requested from the transcode resolution
+			and proportionally rescale the smaller side of the input down
+			this does imply transposing the dimensions if necessary
+
+			if this causes the smaller side to rescale below the minimum
+			then set the smaller side to the minimum
+			and rescale the larger side instead
+
+			NB possibility that could also blow past the maximum
+			but the aspect ratio would have to be super skewed
+
+			TODO check for unsupportable aspect ratios in the C
+		*/
+
+		maxD := w
+		if h > w {
+			maxD = h
+		}
+
+		wExpr := fmt.Sprintf(`trunc(
+				if(gte(iw,ih),
+					if(gte(%d*ih/iw,%d),%d,-2),
+					if(gte(%d,%d*iw/ih),%d,-2)
+				)/2)*2`, maxD, limits.HeightMin, maxD, limits.WidthMin, maxD, limits.WidthMin)
+
+		hExpr := fmt.Sprintf(`trunc(
+			if(gt(ih,iw),
+				if(gte(%d*iw/ih,%d),%d,-2),
+				if(gte(%d,%d*ih/iw),%d,-2)
+			)/2)*2`, maxD, limits.WidthMin, maxD, limits.HeightMin, maxD, limits.HeightMin)
+
+		filters := fmt.Sprintf("%s='w=%s:h=%s'", scale_filter, wExpr, hExpr)
+
 		if interpAlgo != "" {
 			filters = fmt.Sprintf("%s:interp_algo=%s", filters, interpAlgo)
 		}
@@ -794,6 +779,7 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 			name: C.CString(audioEncoder),
 			opts: newAVOpts(p.AudioEncoder.Opts),
 		}
+		metadata := newAVOpts(p.Metadata)
 		fromMs := int(p.From.Milliseconds())
 		toMs := int(p.To.Milliseconds())
 		vfilt := C.CString(filters)
@@ -802,7 +788,7 @@ func createCOutputParams(input *TranscodeOptionsIn, ps []TranscodeOptions) ([]C.
 		params[i] = C.output_params{fname: oname, fps: fps,
 			w: C.int(w), h: C.int(h), bitrate: C.int(bitrate),
 			gop_time: C.int(gopMs), from: C.int(fromMs), to: C.int(toMs),
-			muxer: muxOpts, audio: audioOpts, video: vidOpts,
+			muxer: muxOpts, audio: audioOpts, video: vidOpts, metadata: metadata,
 			vfilters: vfilt, sfilters: nil, xcoderParams: xcoderOutParams}
 		if p.CalcSign {
 			//signfilter string
@@ -857,7 +843,23 @@ func destroyCOutputParams(params []C.output_params) {
 		if p.video.opts != nil {
 			C.av_dict_free(&p.video.opts)
 		}
+		if p.metadata != nil {
+			C.av_dict_free(&p.metadata)
+		}
 	}
+}
+
+func hasVideoMetadata(fname string) bool {
+	if strings.HasPrefix(strings.ToLower(fname), "pipe:") {
+		return false
+	}
+
+	fileInfo, err := os.Stat(fname)
+	if err != nil {
+		return false
+	}
+
+	return !fileInfo.IsDir()
 }
 
 func hasVideoMetadata(fname string) bool {
@@ -890,16 +892,7 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		if err != nil {
 			return nil, err
 		}
-		videoTrackPresent := format.Vcodec != ""
-		if status == CodecStatusOk && videoTrackPresent {
-			// We don't return error in case status != CodecStatusOk because proper error would be returned later in the logic.
-			// Like 'TranscoderInvalidVideo' or `No such file or directory` would be replaced by error we specify here.
-			// here we require input size and aspect ratio
-			err = ensureEncoderLimits(ps, format)
-			if err != nil {
-				return nil, err
-			}
-		}
+		// TODO hoist the rest of this into C so we don't have to invoke GetCodecInfo
 		if !t.started {
 			// NeedsBypass is state where video is present in container & without any frames
 			videoMissing := status == CodecStatusNeedsBypass || format.Vcodec == ""

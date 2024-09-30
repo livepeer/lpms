@@ -22,12 +22,13 @@ static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFra
     return ret;
 }
 
-static int send_first_pkt(struct input_ctx *ictx)
+static int send_flush_pkt(struct input_ctx *ictx)
 {
   if (ictx->flushed) return 0;
-  if (!ictx->first_pkt) return lpms_ERR_INPUT_NOKF;
+  if (!ictx->flush_pkt) return lpms_ERR_INPUT_NOKF;
 
-  int ret = avcodec_send_packet(ictx->vc, ictx->first_pkt);
+  int ret = avcodec_send_packet(ictx->vc, ictx->flush_pkt);
+  if (ret == AVERROR(EAGAIN)) return ret; // decoder is mid-reset
   ictx->sentinel_count++;
   if (ret < 0) {
     LPMS_ERR(packet_cleanup, "Error sending flush packet");
@@ -68,13 +69,25 @@ int decode_in(struct input_ctx *ictx, AVPacket *pkt, AVFrame *frame, int *stream
     return 0;
   }
 
-  if (!ictx->first_pkt && pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
-    ictx->first_pkt = av_packet_clone(pkt);
-    ictx->first_pkt->pts = -1;
+  // Set up flush packet. Do this every keyframe in case the underlying frame changes
+  if (pkt->flags & AV_PKT_FLAG_KEY && decoder == ictx->vc) {
+    if (!ictx->flush_pkt) ictx->flush_pkt = av_packet_clone(pkt);
+    else {
+      av_packet_unref(ictx->flush_pkt);
+      av_packet_ref(ictx->flush_pkt, pkt);
+    }
+    ictx->flush_pkt->pts = -1;
   }
 
   ret = lpms_send_packet(ictx, decoder, pkt);
-  if (ret < 0) {
+  if (ret == AVERROR(EAGAIN)) {
+    // Usually means the decoder needs to drain itself - block demuxing until then
+    // Seems to happen during mid-stream resolution changes
+    if (ictx->blocked_pkt) LPMS_ERR_RETURN("unexpectedly got multiple blocked packets");
+    ictx->blocked_pkt = av_packet_clone(pkt);
+    if (!ictx->blocked_pkt) LPMS_ERR_RETURN("could not clone packet for blocking");
+    // continue in an attempt to drain the decoder
+  } else if (ret < 0) {
     LPMS_ERR_RETURN("Error sending packet to decoder");
   }
   ret = lpms_receive_frame(ictx, decoder, frame);
@@ -104,8 +117,10 @@ int flush_in(struct input_ctx *ictx, AVFrame *frame, int *stream_index)
   // TODO this is unnecessary for SW decoding! SW process should match audio
   if (ictx->vc && !ictx->flushed && ictx->pkt_diff > 0) {
     ictx->flushing = 1;
-    ret = send_first_pkt(ictx);
-    if (ret < 0) {
+    ret = send_flush_pkt(ictx);
+    if (ret == AVERROR(EAGAIN)) {
+      // do nothing; decoder recently reset and needs to drain so let it
+    } else if (ret < 0) {
       ictx->flushed = 1;
       return ret;
     }
@@ -137,7 +152,10 @@ int process_in(struct input_ctx *ictx, AVFrame *frame, AVPacket *pkt,
   av_packet_unref(pkt);
 
   // Demux next packet
-  ret = demux_in(ictx, pkt);
+  if (ictx->blocked_pkt) {
+    av_packet_move_ref(pkt, ictx->blocked_pkt);
+    av_packet_free(&ictx->blocked_pkt);
+  } else ret = demux_in(ictx, pkt);
   // See if we got anything
   if (ret == AVERROR_EOF) {
     // no more packets, flush the decoder(s)
@@ -376,5 +394,6 @@ void free_input(struct input_ctx *inctx)
   if (inctx->hw_device_ctx) av_buffer_unref(&inctx->hw_device_ctx);
   if (inctx->last_frame_v) av_frame_free(&inctx->last_frame_v);
   if (inctx->last_frame_a) av_frame_free(&inctx->last_frame_a);
+  if (inctx->blocked_pkt) av_packet_free(&inctx->blocked_pkt);
 }
 

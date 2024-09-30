@@ -155,93 +155,112 @@ func TestSegmenter_DropLatePackets(t *testing.T) {
 	run(cmd)
 }
 
-func TestTranscoder_UnevenRes(t *testing.T) {
-	// Ensure transcoding still works on input with uneven resolutions
-	// and that aspect ratio is maintained
+func TestTranscoder_Resolution(t *testing.T) {
+	runResolutionTests_H264(t, Software)
+	// TODO test HEVC clamping
+}
 
+func runResolutionTests_H264(t *testing.T, accel Acceleration) {
+	// Test clamping behavior of rescaler
+	// and that aspect ratio is still maintained
+
+	// TODO make it possible to run setupTest within sub-tests
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
-	// Craft an input with an uneven res
-	cmd := `
-		# borrow the test.ts from the transcoder dir, output with 123x456 res
-		ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:a copy -c:v mpeg4 -s 123x456 test.mp4
+	tests := []struct {
+		name string
+		// input width and height
+		input string
+		// target resolution
+		target string
+		// expected width and height
+		expected string
+	}{{
+		name:     "h > w",
+		input:    "150x200",
+		target:   "0x250",
+		expected: "188x250",
+	}, {
+		name:     "h > w, rounded height",
+		input:    "200x300",
+		target:   "0x427",
+		expected: "284x426",
+	}, {
+		name:     "h > w, target swapped",
+		input:    "200x300",
+		target:   "426x0",
+		expected: "284x426",
+	}, {
+		name:     "h > w, w < min",
+		input:    "123x456",
+		target:   "0x426",
+		expected: "146x542",
+	}, {
+		name:     "h > w, rounded width",
+		input:    "200x300",
+		target:   "0x428",
+		expected: "286x428",
+	}, {
+		name:     "h > w, w < min and h < min",
+		input:    "400x456",
+		target:   "0x40",
+		expected: "146x166", // will always hit min width here
+	}, {
+		name:     "w > h",
+		input:    "456x123",
+		target:   "426x0",
+		expected: "426x114",
+	}, {
+		name:     "w > h, target swapped and rounded width",
+		input:    "456x123",
+		target:   "0x301",
+		expected: "300x80",
+	}, {
+		name:     "w > h, w < min",
+		input:    "456x400",
+		target:   "100x0",
+		expected: "146x128",
+	}, {
+		name:     "w > h, target swapped and h < min",
+		input:    "500x100",
+		target:   "0x200",
+		expected: "250x50",
+	}, {
+		name:     "w > h, target swapped",
+		input:    "456x120",
+		target:   "0x400",
+		expected: "400x106",
+	}, {
+		name:     "square",
+		input:    "123x123",
+		target:   "426x0",
+		expected: "426x426",
+	}}
 
-		# sanity check resulting resolutions
-		ffprobe -loglevel warning -i test.mp4 -show_streams -select_streams v | grep width=123
-		ffprobe -loglevel warning -i test.mp4 -show_streams -select_streams v | grep height=456
-
-		# and generate another sample with an odd value in the larger dimension
-		ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:a copy -c:v mpeg4 -s 123x457 test_larger.mp4
-		ffprobe -loglevel warning -i test_larger.mp4 -show_streams -select_streams v | grep width=123
-		ffprobe -loglevel warning -i test_larger.mp4 -show_streams -select_streams v | grep height=457
-
-	`
-	run(cmd)
-
-	err := Transcode(dir+"/test.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// TODO optimize  by reusing inputs if possible
+			cmd := fmt.Sprintf(`
+				echo '%s'
+				ffmpeg -loglevel warning -i "$1/../transcoder/test.ts" -c:a copy -c:v mpeg4 -s %s -t 1 test-%d.mp4
+				ffprobe -hide_banner -show_entries stream=width,height -of csv=p=0:s=x test-%d.mp4 | grep %s
+		`, tt.name, tt.input, i, i, tt.input)
+			run(cmd)
+			_, err := Transcode3(&TranscodeOptionsIn{
+				Fname: fmt.Sprintf("%s/test-%d.mp4", dir, i),
+			}, []TranscodeOptions{{
+				Oname:   fmt.Sprintf("%s/out-test-%d.mp4", dir, i),
+				Profile: VideoProfile{Resolution: tt.target, Bitrate: "50k"},
+				Accel:   accel,
+			}})
+			assert.Nil(t, err)
+			cmd = fmt.Sprintf(`
+					echo '%s'
+					ffprobe -hide_banner -show_entries stream=width,height -of csv=p=0:s=x out-test-%d.mp4 | grep %s`, tt.name, i, tt.expected)
+			run(cmd)
+		})
 	}
-
-	err = Transcode(dir+"/test_larger.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// Check output resolutions
-	cmd = `
-		ffprobe -loglevel warning -show_streams -select_streams v out0test.mp4 | grep width=64
-		ffprobe -loglevel warning -show_streams -select_streams v out0test.mp4 | grep height=240
-		ffprobe -loglevel warning -show_streams -select_streams v out0test_larger.mp4 | grep width=64
-		ffprobe -loglevel warning -show_streams -select_streams v out0test_larger.mp4 | grep height=240
-	`
-	run(cmd)
-
-	// Transpose input and do the same checks as above.
-	cmd = `
-		ffmpeg -loglevel warning -i test.mp4 -c:a copy -c:v mpeg4 -vf transpose transposed.mp4
-
-		# sanity check resolutions
-		ffprobe -loglevel warning -show_streams -select_streams v transposed.mp4 | grep width=456
-		ffprobe -loglevel warning -show_streams -select_streams v transposed.mp4 | grep height=123
-	`
-	run(cmd)
-
-	err = Transcode(dir+"/transposed.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// Check output resolutions for transposed input
-	cmd = `
-		ffprobe -loglevel warning -show_streams -select_streams v out0transposed.mp4 | grep width=426
-		ffprobe -loglevel warning -show_streams -select_streams v out0transposed.mp4 | grep height=114
-	`
-	run(cmd)
-
-	// check special case of square resolutions
-	cmd = `
-		ffmpeg -loglevel warning -i test.mp4 -c:a copy -c:v mpeg4 -s 123x123 square.mp4
-
-		# sanity check resolutions
-		ffprobe -loglevel warning -show_streams -select_streams v square.mp4 | grep width=123
-		ffprobe -loglevel warning -show_streams -select_streams v square.mp4 | grep height=123
-	`
-	run(cmd)
-
-	err = Transcode(dir+"/square.mp4", dir, []VideoProfile{P240p30fps16x9})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// Check output resolutions are still square
-	cmd = `
-		ffprobe -loglevel warning -i out0square.mp4 -show_streams -select_streams v | grep width=426
-		ffprobe -loglevel warning -i out0square.mp4 -show_streams -select_streams v | grep height=426
-	`
-	run(cmd)
-
 	// TODO set / check sar/dar values?
 }
 
@@ -448,7 +467,7 @@ func TestTranscoder_Statistics_Encoded(t *testing.T) {
 	p144p60fps := P144p30fps16x9
 	p144p60fps.Framerate = 60
 	// odd / nonstandard input just to sanity check.
-	podd123fps := VideoProfile{Resolution: "124x70", Framerate: 123, Bitrate: "100k"}
+	podd123fps := VideoProfile{Resolution: "146x82", Framerate: 123, Bitrate: "100k"}
 
 	// Construct output parameters.
 	// Quickcheck style tests would be nice here one day?
@@ -532,15 +551,15 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
     `
 	run(cmd)
 
-	// This will be adjusted to 124x70 by the rescaler (since source is 16:9)
-	pAdj := VideoProfile{Resolution: "124x456", Framerate: 16, Bitrate: "100k"}
+	// This will be adjusted to 146x82 by the rescaler (since source is 16:9)
+	pAdj := VideoProfile{Resolution: "0x123", Framerate: 16, Bitrate: "100k"}
 	out := []TranscodeOptions{{Profile: pAdj, Oname: dir + "/adj.mp4"}}
 	res, err := Transcode3(&TranscodeOptionsIn{Fname: dir + "/test.ts"}, out)
 	if err != nil || len(res.Encoded) <= 0 {
 		t.Error(err)
 	}
 	r := res.Encoded[0]
-	if r.Frames != int(pAdj.Framerate+1) || r.Pixels != int64(r.Frames*124*70) {
+	if r.Frames != int(pAdj.Framerate+1) || r.Pixels != int64(r.Frames*146*82) {
 		t.Error(fmt.Errorf("Results did not match: %v ", r))
 	}
 }
@@ -1516,6 +1535,75 @@ func TestTranscoder_PassthroughFPS(t *testing.T) {
 	run(cmd)
 }
 
+func TestTranscoder_PassthroughFPS_AdjustTimestamps(t *testing.T) {
+	// check timestamp adjustments for fps passthrough
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+		ffmpeg -i "$1/../transcoder/test.ts" -an -c:v copy -t 0.5 test-short.ts
+		ffprobe -loglevel warning -show_entries frame=pts,duration -of csv=p=0 test-short.ts | grep -v '^$' > expected-frame-pts.out
+		wc -l expected-frame-pts.out | grep "32 expected-frame-pts.out"
+		cat << EXPECTED_TS_EOF > expected-pkt-ts.out
+pts,dts,duration
+128970,125970,1500
+134910,127410,1500
+131940,128940,1500
+130500,130500,1500
+133380,131880,1500
+137970,133470,1500
+136440,134940,1500
+143910,136410,1500
+140940,137940,1500
+139410,139410,1500
+142470,140970,1500
+149940,142440,1500
+146970,143970,1500
+145440,145440,1500
+148500,147000,1500
+155970,148470,1500
+152910,149910,1500
+151380,151380,1500
+154440,152940,1500
+161910,154410,1500
+158940,155940,1500
+157410,157410,1500
+160470,158970,1500
+167940,160440,1500
+164970,161970,1500
+163440,163440,1500
+166500,165000,1500
+173970,166470,1500
+170910,167910,1500
+169380,169380,1500
+172440,170940,1500
+176940,172440,1500
+EXPECTED_TS_EOF
+	`
+	run(cmd)
+
+	in := &TranscodeOptionsIn{Fname: dir + "/test-short.ts"}
+	out := []TranscodeOptions{{Profile: P144p30fps16x9}}
+	out[0].Profile.Framerate = 0 // Passthrough!
+	out[0].Profile.Profile = ProfileH264High
+	out[0].Oname = dir + "/out-0.ts"
+	_, err := Transcode3(in, out)
+	require.Nil(t, err)
+	cmd = `
+		echo "pts,dts,duration" > received-pkt-ts.out
+		ffprobe -loglevel warning -show_entries packet=pts,dts,duration,pict_type -of csv=p=0 out-0.ts | grep -v '^$' | sed 's/,*$//g' >> received-pkt-ts.out
+		ffprobe -loglevel warning -show_entries frame=pts,duration -of csv=p=0 test-short.ts | grep -v '^$' > received-frame-pts.out
+
+		# ensure packet pts+dts matches what is expected
+		diff -u expected-pkt-ts.out received-pkt-ts.out
+
+		# ensure all pts are accounted for from original
+		diff -u expected-frame-pts.out received-frame-pts.out
+	`
+	run(cmd)
+}
+
 func TestTranscoder_FormatOptions(t *testing.T) {
 	// Test combinations of VideoProfile.Format and TranscodeOptions.Muxer
 	// The former takes precedence over the latter if set
@@ -1540,6 +1628,9 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		Oname:        dir + "/test.flv",
 		VideoEncoder: ComponentOptions{Name: "copy"},
 		AudioEncoder: ComponentOptions{Name: "copy"},
+		Metadata: map[string]string{
+			"encoded_by": "Livepeer Media Server",
+		},
 	}}
 	if out[0].Profile.Format != FormatNone {
 		t.Error("Expected empty profile for output option")
@@ -1549,7 +1640,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 		t.Error(err)
 	}
 	cmd = `
-        ffprobe -loglevel warning -show_format test.flv | grep format_name=flv
+        ffprobe -loglevel warning -show_format test.flv | grep 'format_name=flv\|encoded_by=Livepeer Media Server'
     `
 	run(cmd)
 
@@ -1558,6 +1649,9 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 	out[0].Muxer = ComponentOptions{Name: "hls", Opts: map[string]string{
 		"hls_segment_filename": dir + "/test_segment_%d.ts",
 	}}
+	out[0].Metadata = map[string]string{
+		"service_provider": "Livepeer Media Server",
+	}
 	_, err = Transcode3(in, out)
 	if err != nil {
 		t.Error(err)
@@ -1572,6 +1666,7 @@ func TestTranscoder_FormatOptions(t *testing.T) {
         ffprobe -loglevel warning -show_entries format=format_name,duration test.ts > test.out
         diff -u segment.out test.out
         wc -l test.out | grep 4 # sanity check output file length
+        ffprobe segment.ts 2>&1 | grep 'service_provider: Livepeer Media Server'
     `
 	run(cmd)
 
@@ -1662,6 +1757,50 @@ func TestTranscoder_FormatOptions(t *testing.T) {
 	if err != ErrTranscoderFmt {
 		t.Error("Did not get expected error with invalid format ", err)
 	}
+}
+
+func TestTranscoder_Metadata(t *testing.T) {
+	runTestTranscoder_Metadata(t, Software)
+}
+
+func runTestTranscoder_Metadata(t *testing.T, accel Acceleration) {
+	// check that metadata is there in all segments
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	err := RTMPToHLS("../transcoder/test.ts", dir+"/in.m3u8", dir+"/in_%d.ts", "2", 0)
+	if err != nil {
+		t.Error(err)
+	}
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	for i := 0; i < 4; i++ {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("%s/in_%d.ts", dir, i),
+			Accel: accel,
+		}
+		out := []TranscodeOptions{{
+			Accel:   accel,
+			Oname:   fmt.Sprintf("%s/out_%d.ts", dir, i),
+			Profile: P144p30fps16x9,
+			Metadata: map[string]string{
+				"service_name": fmt.Sprintf("lpms-test-%d", i),
+			},
+		}}
+		_, err := tc.Transcode(in, out)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	cmd := `
+		ffprobe -hide_banner -i out_1.ts
+		ffprobe -i out_0.ts 2>&1 | grep 'service_name    : lpms-test-0'
+		ffprobe -i out_1.ts 2>&1 | grep 'service_name    : lpms-test-1'
+		ffprobe -i out_2.ts 2>&1 | grep 'service_name    : lpms-test-2'
+		ffprobe -i out_3.ts 2>&1 | grep 'service_name    : lpms-test-3'
+	`
+	run(cmd)
 }
 
 func TestTranscoder_IgnoreUnknown(t *testing.T) {
@@ -1810,65 +1949,6 @@ func TestTranscoder_Clip2(t *testing.T) {
 	assert.Equal(t, int64(22155264), res.Encoded[0].Pixels)
 }
 
-func TestResolution_Clamp(t *testing.T) {
-	// expect no error
-	checkError := require.NoError
-	test := func(limit CodingSizeLimit, profile, input, expected Size) {
-		p := &VideoProfile{Resolution: fmt.Sprintf("%dx%d", profile.W, profile.H)}
-		m := MediaFormatInfo{Width: input.W, Height: input.H}
-		// call function we are testing:
-		err := limit.Clamp(p, m)
-		checkError(t, err)
-		var resultW, resultH int
-		_, err = fmt.Sscanf(p.Resolution, "%dx%d", &resultW, &resultH)
-		require.NoError(t, err)
-		assert.Equal(t, expected, Size{resultW, resultH})
-	}
-
-	l := CodingSizeLimit{
-		WidthMin:  70,
-		HeightMin: 50,
-		WidthMax:  700,
-		HeightMax: 500,
-	}
-	// use aspect ratio == 2 to easily check calculation
-	portrait := Size{900, 1800}
-	landscape := Size{1800, 900}
-
-	// no change, fits within hw limits
-	test(l, Size{120, 60}, landscape, Size{120, 60})
-	// h=40 too small must be 50
-	test(l, Size{80, 40}, landscape, Size{100, 50})
-	// In portrait mode our profile 80x40 is interpreted as 40x80, increasing h=70
-	test(l, Size{80, 40}, portrait, Size{70, 140})
-	// portrait 60x120 used with landscape source, rotated to 120x60, within limits
-	test(l, Size{60, 120}, landscape, Size{120, 60})
-	// portrait 60x120 profile on portrait source does not rotate, increasing w=70
-	test(l, Size{60, 120}, portrait, Size{70, 140})
-
-	// test choice between adjustedWidth adjustedHeight variants:
-	test(l, Size{30, 60}, portrait, Size{70, 140})
-	test(l, Size{30, 60}, landscape, Size{100, 50})
-
-	// Test max values:
-	test(l, Size{1000, 500}, landscape, Size{700, 350})
-	test(l, Size{1000, 500}, portrait, Size{250, 500})
-	test(l, Size{500, 1000}, landscape, Size{700, 350})
-	test(l, Size{600, 300}, portrait, Size{250, 500})
-	test(l, Size{300, 600}, portrait, Size{250, 500})
-
-	// Test impossible limits for aspect ratio == 2
-	l = CodingSizeLimit{
-		WidthMin:  500,
-		HeightMin: 500,
-		WidthMax:  600,
-		HeightMax: 600,
-	}
-	// expect error
-	checkError = require.Error
-	test(l, Size{300, 600}, portrait, Size{300, 600})
-}
-
 func TestTranscoder_VFR(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
@@ -1987,28 +2067,313 @@ func TestDurationFPS_GetCodecInfo(t *testing.T) {
 	ffprobe -loglevel warning -show_format test.m4a | grep duration=2.042993
 	ffmpeg -loglevel warning -i test-short.mp4 -vn -c:a flac test.flac
 	ffprobe -loglevel warning -show_format test.flac | grep duration=2.043356
+
+	ffmpeg -loglevel warning -i test.mp4 -vn -c:a copy stereo-audio.aac
+	ffprobe -show_entries stream=channels,channel_layout -of csv stereo-audio.aac | grep stream,2,stereo
+	ffprobe -show_format stereo-audio.aac | grep duration=52.440083
+
+	ffmpeg -i test.mp4 -vn stereo-audio.wav
+	ffprobe -show_format stereo-audio.wav | grep duration=60.139683
+
+	cp $1/../data/audio.mp3 test.mp3
+	ffprobe -show_format test.mp3 | grep duration=1.968000
+
+	cp $1/../data/audio.ogg test.ogg
+	ffprobe -show_format test.ogg | grep duration=1.974500
 	`
 	run(cmd)
 
 	files := []struct {
 		Filename string
+		Format   string
 		Duration int64
 		FPS      float32
+
+		// skip check if bytes version is known to fail duration
+		BytesSkipDuration bool
 	}{
-		{Filename: "test-short.mp4", Duration: 2, FPS: 24},
-		{Filename: "test.ts", Duration: 2, FPS: 30.0},
-		{Filename: "test.flac", Duration: 2, FPS: 0.0},
-		{Filename: "test.webm", Duration: 2, FPS: 24},
-		{Filename: "test.m4a", Duration: 2, FPS: 0.0},
+		{Filename: "test-short.mp4", Format: "mov,mp4,m4a,3gp,3g2,mj2", Duration: 2, FPS: 24},
+		{Filename: "test.ts", Format: "mpegts", Duration: 2, FPS: 30.0, BytesSkipDuration: true},
+		{Filename: "test.flac", Format: "flac", Duration: 2},
+		{Filename: "test.webm", Format: "matroska,webm", Duration: 2, FPS: 24},
+		{Filename: "test.m4a", Format: "mov,mp4,m4a,3gp,3g2,mj2", Duration: 2},
+		{Filename: "stereo-audio.aac", Format: "aac", Duration: 52},
+		{Filename: "stereo-audio.wav", Format: "wav", Duration: 60},
+		{Filename: "test.mp3", Format: "mp3", Duration: 1},
+		{Filename: "test.ogg", Format: "ogg", Duration: 1, BytesSkipDuration: true},
 	}
 	for _, file := range files {
 		t.Run(file.Filename, func(t *testing.T) {
-			assert := assert.New(t)
-			status, format, err := GetCodecInfo(path.Join(dir, file.Filename))
-			assert.Nil(err, "getcodecinfo error")
-			assert.Equal(CodecStatusOk, status, "status not ok")
-			assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
-			assert.Equal(file.FPS, format.FPS, "fps mismatch")
+			fname := path.Join(dir, file.Filename)
+			// use 'bytes' prefix to prevent test runner regex matching
+			for _, tt := range []string{"GetCodecInfo", "BytesGetCodecInfo"} {
+				t.Run(tt, func(t *testing.T) {
+					assert := assert.New(t)
+					f := func() (CodecStatus, MediaFormatInfo, error) {
+						if tt == "GetCodecInfo" {
+							return GetCodecInfo(fname)
+						}
+						d, err := os.ReadFile(fname)
+						assert.Nil(err, "reading file")
+						return GetCodecInfoBytes(d)
+					}
+					status, format, err := f()
+					assert.Nil(err, "getcodecinfo error")
+					assert.Equal(CodecStatusOk, status, "status not ok")
+					assert.Equal(file.Format, format.Format, "format mismatch")
+					if tt == "BytesGetCodecInfo" && file.BytesSkipDuration {
+						assert.Equal(int64(0), format.DurSecs, "special duration mismatch")
+					} else {
+						assert.Equal(file.Duration, format.DurSecs, "duration mismatch")
+					}
+					assert.Equal(file.FPS, format.FPS, "fps mismatch")
+				})
+			}
 		})
 	}
+}
+
+func TestTranscoder_Rotation(t *testing.T) {
+	runRotationTests(t, Software)
+	// TODO hevc
+}
+
+func runRotationTests(t *testing.T, accel Acceleration) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// generate a sample that is rotated mid-stream
+	cmd := `
+		ffmpeg -i "$1/../transcoder/test.ts" -an -c:v libx264 -g 120 -s 100x56 -f segment -t 6 test-%d.ts
+		ffmpeg -i test-1.ts -vf transpose -c:v libx264 -c:a copy -copyts -muxdelay 0 test-1-transposed.ts
+		ffprobe -select_streams v -show_entries format=start_time,duration:stream=width,height -of default=nw=1 test-1.ts > test-1.data
+		ffprobe -select_streams v -count_frames -show_entries format=start_time,duration:stream=width,height,nb_read_frames -of default=nw=1 test-1-transposed.ts > test-1-transposed.data
+
+		cat <<-EOF1 > test-1.expected
+			width=100
+			height=56
+			width=100
+			height=56
+			start_time=3.433333
+			duration=2.000000
+		EOF1
+
+		# transposed
+		cat <<-EOF2 > test-1-transposed.expected
+			width=56
+			height=100
+			nb_read_frames=120
+			width=56
+			height=100
+			nb_read_frames=120
+			start_time=3.433333
+			duration=2.000000
+		EOF2
+
+		diff -u test-1.expected test-1.data
+		diff -u test-1-transposed.expected test-1-transposed.data
+
+		cat test-0.ts test-1-transposed.ts test-2.ts > double-rotated.ts
+		cat test-0.ts test-1-transposed.ts > single-rotated.ts
+	`
+	run(cmd)
+
+	profile := P144p30fps16x9
+	profilePassthrough := profile
+	profilePassthrough.Framerate = 0
+	res, err := Transcode3(
+		&TranscodeOptionsIn{Fname: dir + "/double-rotated.ts", Accel: accel},
+		[]TranscodeOptions{{
+			Profile: profile,
+			Oname:   dir + "/out-double-rotated-30fps.ts",
+			Accel:   accel,
+		}, {
+			Profile: profilePassthrough,
+			Oname:   dir + "/out-double-rotated.ts",
+			Accel:   accel,
+		}})
+	require.NoError(t, err)
+
+	assert.Equal(t, 360, res.Decoded.Frames)
+	assert.Equal(t, 181, res.Encoded[0].Frames) // should be 180 ... ts rounding ?
+	assert.Equal(t, 360, res.Encoded[1].Frames)
+
+	// TODO test rollover of gop interval during flush
+
+	cmd = `
+		ffprobe -count_frames -show_streams out-double-rotated.ts | grep nb_read_frames=360
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-double-rotated.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > out.dims
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-double-rotated-30fps.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > out-30fps.dims
+	`
+
+	// compare timestamps with input but software-only for now
+	// nvidia timestamps differ by the first 2 and last 2 packets
+	// TODO figure out why that is
+	// TODO ideally check for this diff anyway w nvidia (so we know when / if it changes)
+	if accel == Software {
+		cmd = cmd + `
+			ffprobe -show_entries packet=dts -of csv=p=0 out-double-rotated.ts | sed 's/,$//g' > out.ptsdts
+			ffprobe -show_entries packet=dts -of csv=p=0 double-rotated.ts | sed 's/,$//g' > expected.ptsdts
+			diff -u expected.ptsdts out.ptsdts
+		`
+	}
+
+	// TODO figure out why cpu/gpu are different
+	if accel == Nvidia {
+		cmd = cmd + `
+			cat <<-EOF1 > expected.dims
+				115 256,144
+				120 146,260
+				125 256,144
+			EOF1
+
+			cat <<-EOF2 > expected-30fps.dims
+				58 256,144
+				60 146,260
+				63 256,144
+			EOF2
+		`
+	} else {
+		cmd = cmd + `
+			cat <<-EOF1 > expected.dims
+				120 256,144
+				120 146,260
+				120 256,144
+			EOF1
+
+			cat <<-EOF2 > expected-30fps.dims
+				60 256,144
+				60 146,260
+				61 256,144
+			EOF2
+		`
+	}
+
+	cmd = cmd + `
+		diff -u expected.dims out.dims
+		diff -u expected-30fps.dims out-30fps.dims
+	`
+
+	run(cmd)
+
+	// double check separate transcodes of portrait vs landscape
+	_, err = Transcode3(
+		&TranscodeOptionsIn{Fname: dir + "/test-1-transposed.ts", Accel: accel},
+		[]TranscodeOptions{{
+			Profile: profile,
+			Oname:   dir + "/out-transposed-30fps.ts",
+			Accel:   accel,
+		}, {
+			Profile: profilePassthrough,
+			Oname:   dir + "/out-transposed.ts",
+			Accel:   accel,
+		}})
+	require.NoError(t, err)
+
+	// use the same transcoder instance for the landscape stuff
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	_, err = tc.Transcode(&TranscodeOptionsIn{
+		Fname: dir + "/test-0.ts", Accel: accel,
+	}, []TranscodeOptions{{
+		Profile: profile,
+		Oname:   dir + "/out-test-0-30fps.ts",
+		Accel:   accel,
+	}, {
+		Profile: profilePassthrough,
+		Oname:   dir + "/out-test-0.ts",
+		Accel:   accel,
+	}})
+	require.NoError(t, err)
+
+	_, err = tc.Transcode(&TranscodeOptionsIn{
+		Fname: dir + "/test-2.ts", Accel: accel,
+	}, []TranscodeOptions{{
+		Profile: profile,
+		Oname:   dir + "/out-test-2-30fps.ts",
+		Accel:   accel,
+	}, {
+		Profile: profilePassthrough,
+		Oname:   dir + "/out-test-2.ts",
+		Accel:   accel,
+	}})
+	require.NoError(t, err)
+
+	// TODO figure out why nvidia is different; green screen?
+	if accel == Software {
+		cmd = `
+		cat out-test-0.ts  out-transposed.ts out-test-2.ts > out-test-concat.ts
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height -of csv out-test-concat.ts > out-test-concat.framedata
+
+		cat out-test-0-30fps.ts  out-transposed-30fps.ts out-test-2-30fps.ts > out-test-concat-30fps.ts
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height out-test-concat-30fps.ts -of csv > out-test-concat-30fps.framedata
+
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height out-double-rotated.ts -of csv > out-double-rotated.framedata
+
+		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height out-double-rotated-30fps.ts -of csv > out-double-rotated-30fps.framedata
+
+		diff -u out-test-concat.framedata out-double-rotated.framedata
+
+		# this does not line up
+		#diff -u out-test-concat-30fps.framedata out-double-rotated-30fps.framedata
+	`
+		run(cmd)
+	}
+
+	// check single rotations
+	res, err = Transcode3(
+		&TranscodeOptionsIn{Fname: dir + "/single-rotated.ts", Accel: accel},
+		[]TranscodeOptions{{
+			Profile: profile,
+			Oname:   dir + "/out-single-rotated-30fps.ts",
+			Accel:   accel,
+		}, {
+			Profile: profilePassthrough,
+			Oname:   dir + "/out-single-rotated.ts",
+			Accel:   accel,
+		}})
+	require.NoError(t, err)
+
+	assert.Equal(t, 240, res.Decoded.Frames)
+	assert.Equal(t, 121, res.Encoded[0].Frames) // should be 120 ... ts rounding ?
+	assert.Equal(t, 240, res.Encoded[1].Frames)
+
+	cmd = `
+		ffprobe -count_frames -show_streams out-single-rotated.ts | grep nb_read_frames=24
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-single-rotated.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > single-out.dims
+		ffprobe -show_entries frame=height,width -of csv=p=0 out-single-rotated-30fps.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > single-out-30fps.dims
+	`
+
+	// TODO figure out why cpu/gpu are different
+	if accel == Nvidia {
+		cmd = cmd + `
+			cat <<-EOF1 > single-expected.dims
+				115 256,144
+				125 146,260
+			EOF1
+
+			cat <<-EOF2 > single-expected-30fps.dims
+				58 256,144
+				63 146,260
+			EOF2
+		`
+	} else {
+		cmd = cmd + `
+			cat <<-EOF1 > single-expected.dims
+				120 256,144
+				120 146,260
+			EOF1
+
+			cat <<-EOF2 > single-expected-30fps.dims
+				60 256,144
+				61 146,260
+			EOF2
+		`
+	}
+
+	cmd = cmd + `
+		diff -u single-expected.dims single-out.dims
+		diff -u single-expected-30fps.dims single-out-30fps.dims
+	`
+	run(cmd)
 }
