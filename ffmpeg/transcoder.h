@@ -59,6 +59,8 @@ typedef struct {
 
   // concatenates multiple inputs into the same output
   int transmuxing;
+  // loops input n times. -1 for forever
+  int loop;
 } input_params;
 
 #define MAX_CLASSIFY_SIZE 10
