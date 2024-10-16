@@ -153,6 +153,16 @@ if [[ ! -e "$ROOT/x264" ]]; then
   make -j$NPROC install-lib-static
 fi
 
+if [[ ! -e "$ROOT/zlib-1.2.11" ]]; then
+  cd "$ROOT"
+  curl -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
+  tar xf zlib-1.2.11.tar.gz
+  cd zlib-1.2.11
+  ./configure --prefix="$ROOT/compiled" --static
+  make -j$NPROC
+  make -j$NPROC install
+fi
+
 if [[ "$GOOS" == "linux" && "$BUILD_TAGS" == *"debug-video"* ]]; then
   sudo apt-get install -y libnuma-dev cmake
   if [[ ! -e "$ROOT/x265" ]]; then
