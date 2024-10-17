@@ -22,19 +22,6 @@ struct filter_ctx {
   // uniformly and monotonically increasing.
   int64_t custom_pts;
 
-  // Previous PTS to be used to manually calculate duration for custom_pts
-  int64_t prev_frame_pts;
-
-  // Count of complete segments that have been processed by this filtergraph
-  int segments_complete;
-
-  // We need to update the post-filtergraph PTS before sending the frame for
-  // encoding because we modified the input PTS.
-  // We do this by calculating the difference between our custom PTS and actual
-  // PTS for the first-frame of every segment, and then applying this diff to
-  // every subsequent frame in the segment.
-  int64_t pts_diff;
-
   // When draining the filtergraph, we inject fake frames.
   // These frames have monotonically increasing timestamps at the same interval
   // as a normal stream of frames. The custom_pts is set to more than usual jump
@@ -43,6 +30,8 @@ struct filter_ctx {
   // We mark this boolean as flushed when done flushing.
   int flushed;
   int flushing;
+
+  int closed;
 };
 
 struct output_ctx {
