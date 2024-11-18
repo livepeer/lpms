@@ -2377,3 +2377,65 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 	`
 	run(cmd)
 }
+
+func TestTranscoder_DemuxerOpts(t *testing.T) {
+	// generate test files: a few frames of raw video
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+		# use an unusual pixel format
+		ffmpeg -i "$1/../transcoder/test.ts" -an -c:v rawvideo -pix_fmt gbrp12be -s 320x240 -r 1 -frames:v 3 -f rawvideo test.raw
+		ffprobe -show_streams -count_frames -pixel_format gbrp12be -video_size 320x240 -f rawvideo test.raw 2>&1 | grep nb_read_frames=3
+	`
+	run(cmd)
+	res, err := Transcode3(
+		&TranscodeOptionsIn{
+			Fname: dir + "/test.raw",
+			Demuxer: ComponentOptions{
+				Name: "rawvideo",
+				Opts: map[string]string{
+					"fflags":       "+discardcorrupt+nobuffer",
+					"pixel_format": "gbrp12be",
+					"video_size":   "320x240",
+				},
+			},
+		},
+		[]TranscodeOptions{{
+			Oname: dir + "/out-%d.png",
+			Profile: VideoProfile{
+				Name:       "-",
+				Resolution: "200x150",
+				Bitrate:    "10k",
+			},
+		}})
+	assert.Nil(t, err, "transcoder returned error")
+	assert := assert.New(t)
+	// we transcode 3 but decode/encode 2 due to nobuffer
+	assert.Equal(2, res.Decoded.Frames, "decoded frame count did  not match")
+	assert.Equal(2, res.Encoded[0].Frames, "encoded frame count did not match")
+	assert.Equal(int64(2*320*240), res.Decoded.Pixels, "decoded pixel count did not match")
+	assert.Equal(int64(2*200*150), res.Encoded[0].Pixels, "encoded frame count did not match")
+}
+
+func TestTranscoder_DemuxerOptsError(t *testing.T) {
+
+	// nonexistent demuxer
+	_, err := Transcode3(&TranscodeOptionsIn{
+		Fname: "../transcoder/test.ts",
+		Demuxer: ComponentOptions{
+			Name: "nonexistent",
+		},
+	}, nil)
+	assert.Equal(t, "Demuxer not found", err.Error())
+
+	// wrong demuxer
+	_, err = Transcode3(&TranscodeOptionsIn{
+		Fname: "../transcoder/test.ts",
+		Demuxer: ComponentOptions{
+			Name: "mp4",
+		},
+	}, nil)
+	assert.Equal(t, "Invalid data found when processing input", err.Error())
+
+}
