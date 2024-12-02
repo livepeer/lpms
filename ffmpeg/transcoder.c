@@ -336,6 +336,19 @@ int transcode(struct transcode_thread *h,
     av_frame_unref(dframe);
     ret = process_in(ictx, dframe, ipkt, &stream_index);
     if (ret == AVERROR_EOF) {
+      // if we're to loop, mark discontinuity and seek back to 0
+      if (ictx->loop != 0) {
+        lpms_transcode_discontinuity(h);
+        ret = avformat_seek_file(ictx->ic, -1, INT64_MIN, 0, INT64_MAX, 0);
+        if (ret < 0) {
+          LPMS_WARN("loop failed");
+          return ret;
+        }
+        if (ictx->loop > 0) {
+          ictx->loop--;
+        }
+        continue;
+      }
       // no more processing, go for flushes
       break;
     }

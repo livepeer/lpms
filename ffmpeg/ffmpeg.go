@@ -98,6 +98,8 @@ type TranscodeOptionsIn struct {
 	Device      string
 	Transmuxing bool
 	Profile     VideoProfile
+	Demuxer     ComponentOptions
+	Loop        int
 }
 
 type TranscodeOptions struct {
@@ -949,8 +951,16 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 	var demuxerOpts C.component_opts
 
 	ext := filepath.Ext(input.Fname)
-	// If the input has an image file extension setup the image2 demuxer
-	if ext == ".png" {
+	if input.Demuxer.Name != "" {
+		// If we have a specified demuxer, use that
+		demuxerName := C.CString(input.Demuxer.Name)
+		defer C.free(unsafe.Pointer(demuxerName))
+		demuxerOpts = C.component_opts{
+			name: demuxerName,
+			opts: newAVOpts(input.Demuxer.Opts),
+		}
+	} else if ext == ".png" {
+		// If the input has an image file extension setup the image2 demuxer
 		image2 := C.CString("image2")
 		defer C.free(unsafe.Pointer(image2))
 
@@ -971,8 +981,15 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		}
 	}
 
-	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
-		handle: t.handle, demuxer: demuxerOpts}
+	inp := &C.input_params{
+		fname:        fname,
+		hw_type:      hw_type,
+		device:       device,
+		xcoderParams: xcoderParams,
+		handle:       t.handle,
+		demuxer:      demuxerOpts,
+		loop:         C.int(input.Loop),
+	}
 	if input.Transmuxing {
 		inp.transmuxing = 1
 	}
