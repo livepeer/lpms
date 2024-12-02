@@ -168,7 +168,15 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
   if (!ictx->ic) {
     // reopen demuxer for the input segment if needed
     // XXX could open_input() be re-used here?
-    ret = avformat_open_input(&ictx->ic, inp->fname, NULL, demuxer_opts);
+    const AVInputFormat *fmt = NULL;
+    if (inp->demuxer.name) {
+      fmt = av_find_input_format(inp->demuxer.name);
+      if (!fmt) {
+        ret = AVERROR_DEMUXER_NOT_FOUND;
+        LPMS_ERR(transcode_cleanup, "Invalid demuxer name")
+      }
+    }
+    ret = avformat_open_input(&ictx->ic, inp->fname, fmt, demuxer_opts);
     if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to reopen demuxer");
     // If avformat_open_input replaced the options AVDictionary with options that were not found free it
     if (demuxer_opts) av_dict_free(demuxer_opts);

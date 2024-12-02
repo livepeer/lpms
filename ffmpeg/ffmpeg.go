@@ -98,6 +98,7 @@ type TranscodeOptionsIn struct {
 	Device      string
 	Transmuxing bool
 	Profile     VideoProfile
+	Demuxer     ComponentOptions
 }
 
 type TranscodeOptions struct {
@@ -948,6 +949,12 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 
 	var demuxerOpts C.component_opts
 
+	if input.Demuxer.Name != "" {
+		demuxerName := C.CString(input.Demuxer.Name)
+		defer C.free(unsafe.Pointer(demuxerName))
+		demuxerOpts.name = demuxerName
+	}
+
 	ext := filepath.Ext(input.Fname)
 	// If the input has an image file extension setup the image2 demuxer
 	if ext == ".png" {
@@ -963,12 +970,15 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				input.Profile.FramerateDen = 1
 			}
 
-			// Do not try to free in this function because in the C code avformat_open_input()
-			// will destroy this
-			demuxerOpts.opts = newAVOpts(map[string]string{
-				"framerate": fmt.Sprintf("%d/%d", input.Profile.Framerate, input.Profile.FramerateDen),
-			})
+			// changing the input map here is maybe not great
+			input.Demuxer.Opts["framerate"] = fmt.Sprintf("%d/%d", input.Profile.Framerate, input.Profile.FramerateDen)
 		}
+	}
+
+	if len(input.Demuxer.Opts) > 0 {
+		// Do not free in this function because avformat_open_input()
+		// in the C code will destroy this
+		demuxerOpts.opts = newAVOpts(input.Demuxer.Opts)
 	}
 
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device, xcoderParams: xcoderParams,
