@@ -205,7 +205,7 @@ fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
   echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
-  DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
+  DEV_FFMPEG_FLAGS="--enable-muxer=md5 --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
   DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
   DEV_FFMPEG_FLAGS+="--enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx --enable-bsf=noise "
 else
@@ -221,7 +221,7 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
-    --enable-muxer=mp3,wav,flac,mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=mp3,wav,flac,flv,mpegts,mp4,mov,webm,matroska,image2 \
+    --enable-muxer=mp3,wav,flac,mpegts,hls,segment,mp4,hevc,matroska,webm,flv,null --enable-demuxer=mp3,wav,flac,flv,mpegts,mp4,mov,webm,matroska,image2 \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
     --enable-parser=mpegaudio,vorbis,opus,flac,aac,aac_latm,h264,hevc,vp8,vp9,png \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
