@@ -2439,3 +2439,27 @@ func TestTranscoder_DemuxerOptsError(t *testing.T) {
 	assert.Equal(t, "Invalid data found when processing input", err.Error())
 
 }
+
+func TestTranscoder_PNGDemuxerOpts(t *testing.T) {
+	// we implicitly add demuxer opts to png input that has a framerate
+	// so test those
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+		ffmpeg -i $1/../transcoder/test.ts -an -frames:v 3 test-%d.png
+	`
+	run(cmd)
+	res, err := Transcode3(&TranscodeOptionsIn{
+		Fname: dir + "/test-%d.png",
+		Profile: VideoProfile{
+			Framerate:    1,
+			FramerateDen: 3,
+		},
+	}, []TranscodeOptions{{
+		Profile: P144p30fps16x9,
+		Oname:   "out.ts",
+	}})
+	assert.Nil(t, err)
+	assert.Equal(t, 3, res.Decoded.Frames)
+	assert.Equal(t, 180, res.Encoded[0].Frames)
+}

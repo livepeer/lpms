@@ -971,6 +971,9 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 			}
 
 			// changing the input map here is maybe not great
+			if input.Demuxer.Opts == nil {
+				input.Demuxer.Opts = map[string]string{}
+			}
 			input.Demuxer.Opts["framerate"] = fmt.Sprintf("%d/%d", input.Profile.Framerate, input.Profile.FramerateDen)
 		}
 	}
