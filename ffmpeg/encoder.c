@@ -216,6 +216,7 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   AVCodecContext *vc  = NULL;
 
   // open muxer
+  fprintf(stderr, "JOSH muxer name %s fname %s\n", octx->muxer->name, octx->fname);
   fmt = av_guess_format(octx->muxer->name, octx->fname, NULL);
   if (!fmt) LPMS_ERR(open_output_err, "Unable to guess output format");
   ret = avformat_alloc_output_context2(&oc, fmt, NULL, octx->fname);
