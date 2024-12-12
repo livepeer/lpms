@@ -70,7 +70,6 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     if (vf->graph == NULL) {
       vf->graph = avfilter_graph_alloc();
     }
-    vf->pts_diff = INT64_MIN;
     if (!outputs || !inputs || !vf->graph) {
       ret = AVERROR(ENOMEM);
       LPMS_ERR(vf_init_cleanup, "Unable to allocate filters");
@@ -124,6 +123,7 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     if (!vf->frame) LPMS_ERR(vf_init_cleanup, "Unable to allocate video frame");
 
     vf->active = 1;
+    vf->closed = 0;
 
 vf_init_cleanup:
     avfilter_inout_free(&inputs);
@@ -222,7 +222,6 @@ int init_signature_filters(struct output_ctx *octx, AVFrame *inf)
     outputs = avfilter_inout_alloc();
     inputs = avfilter_inout_alloc();
     sf->graph = avfilter_graph_alloc();
-    sf->pts_diff = INT64_MIN;
     if (!outputs || !inputs || !sf->graph) {
       ret = AVERROR(ENOMEM);
       LPMS_ERR(sf_init_cleanup, "Unable to allocate filters");
@@ -283,6 +282,7 @@ sf_init_cleanup:
 
 int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video)
 {
+  if (filter->closed) return 0;
   int ret = 0;
   // We have to reset the filter because we initially set the filter
   // before the decoder is fully ready, and the decoder may change HW params
@@ -334,21 +334,15 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
   AVStream *vst = ictx->ic->streams[ictx->vi];
   if (inf) { // Non-Flush Frame
     inf->opaque = (void *) inf->pts; // Store original PTS for calc later
-    if (is_video && octx->fps.den) {
-      // Custom PTS set when FPS filter is used
-      int64_t ts_step = inf->pts - filter->prev_frame_pts;
-      if (filter->segments_complete && !filter->prev_frame_pts) {
-        // We are on the first frame of the second (or later) segment
-        // So in this case just increment the pts by 1/fps
-        ts_step = av_rescale_q_rnd(1, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
-      }
-      filter->custom_pts += ts_step;
-      filter->prev_frame_pts = inf->pts;
-    } else {
-      // FPS Passthrough or Audio case
-      filter->custom_pts = inf->pts;
-    }
+    filter->custom_pts = inf->pts;
   } else if (!filter->flushed) { // Flush Frame
+    // close filter right away if we already have some frames
+    if (octx->res->frames) {
+      filter->closed = 1;
+      return av_buffersrc_write_frame(filter->src_ctx, NULL);
+    }
+    // we don't have frames yet so flush the filter
+    // needed for extremely short or low-fps content
     int64_t ts_step;
     inf = (is_video) ? ictx->last_frame_v : ictx->last_frame_a;
     inf->opaque = (void *) (INT64_MIN); // Store INT64_MIN as pts for flush frames
@@ -391,17 +385,6 @@ int filtergraph_read(struct input_ctx *ictx, struct output_ctx *octx, struct fil
       // don't set flushed flag in case this is a flush from a previous segment
       if (filter->flushing) filter->flushed = 1;
       ret = lpms_ERR_FILTER_FLUSHED;
-    } else if (frame && is_video && octx->fps.den) {
-      // TODO why limit to fps filter? what about non-fps filtergraphs, eg scale?
-      // We set custom PTS as an input of the filtergraph so we need to
-      // re-calculate our output PTS before passing it on to the encoder
-      if (filter->pts_diff == INT64_MIN) {
-        int64_t pts = (int64_t)frame->opaque; // original input PTS
-        pts = av_rescale_q_rnd(pts, ictx->ic->streams[ictx->vi]->time_base, av_buffersink_get_time_base(filter->sink_ctx), AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
-        // difference between rescaled input PTS and the segment's first frame PTS of the filtergraph output
-        filter->pts_diff = pts - frame->pts;
-      }
-      frame->pts += filter->pts_diff; // Re-calculate by adding back this segment's difference calculated at start
     }
 fg_read_cleanup:
     return ret;

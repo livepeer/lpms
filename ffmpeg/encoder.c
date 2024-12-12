@@ -159,11 +159,9 @@ void close_output(struct output_ctx *octx)
   }
   if (octx->vc && octx->hw_type == AV_HWDEVICE_TYPE_NONE) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
+  free_filter(&octx->vf);
   octx->af.flushed = octx->vf.flushed = 0;
   octx->af.flushing = octx->vf.flushing = 0;
-  octx->vf.pts_diff = INT64_MIN;
-  octx->vf.prev_frame_pts = 0;
-  octx->vf.segments_complete++;
 }
 
 void free_output(struct output_ctx *octx)
@@ -314,6 +312,8 @@ int reopen_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   // re-attach video encoder
   if (octx->vc) {
+    ret = init_video_filters(ictx, octx);
+    if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to reopen filter")
     ret = add_video_stream(octx, ictx);
     if (ret < 0) LPMS_ERR(reopen_out_err, "Unable to re-add video stream");
   } else LPMS_INFO("No video stream!?");
@@ -469,6 +469,19 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
   if (av_cmp_q(tb, ost->time_base)) {
     av_packet_rescale_ts(pkt, tb, ost->time_base);
   }
+
+  /* Enable this if it seems we have issues
+     with the first and second segments overlapping due to bframes
+     See TestTranscoder_API_DTSOverlap
+
+  int delay = av_rescale_q(10, (AVRational){1, 1}, ost->time_base);
+  if (pkt->dts != AV_NOPTS_VALUE) {
+    pkt->dts += delay;
+  }
+  if (pkt->pts != AV_NOPTS_VALUE) {
+    pkt->pts += delay;
+  }
+  */
 
   // drop any preroll audio. may need to drop multiple packets for multichannel
   // XXX this breaks if preroll isn't exactly one AVPacket or drop_ts == 0

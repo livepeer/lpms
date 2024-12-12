@@ -423,12 +423,10 @@ func TestNvidia_DrainFilters(t *testing.T) {
     # sanity check with ffmpeg itself
     ffmpeg -loglevel warning -i test.ts -c:a copy -c:v libx264 -vf fps=100 -vsync 0 ffmpeg-out.ts
 
-    ffprobe -loglevel warning -show_streams -select_streams v -count_frames ffmpeg-out.ts > ffmpeg.out
-    ffprobe -loglevel warning -show_streams -select_streams v -count_frames out.ts > probe.out
+    ffprobe -loglevel warning -select_streams v -count_frames -show_entries stream=nb_read_frames,time_base,duration,r_frame_rate,avg_frame_rate,start_pts,start_time,duration_ts,duration ffmpeg-out.ts > ffmpeg.out
+    ffprobe -loglevel warning -select_streams v -count_frames -show_entries stream=nb_read_frames,time_base,duration,r_frame_rate,avg_frame_rate,start_pts,start_time,duration_ts,duration out.ts > probe.out
 
-    # These used to be same, but aren't since we've diverged the flushing and PTS handling from ffmpeg
-    grep nb_read_frames=101 probe.out
-    grep duration=1.0100 probe.out
+		diff -u ffmpeg.out probe.out
     grep nb_read_frames=102 ffmpeg.out
     grep duration=1.0200 ffmpeg.out
   `
@@ -559,9 +557,9 @@ func TestNvidia_API_MixedOutput(t *testing.T) {
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_nv_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=245
-      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=245
-      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=246
 
     # check image quality
     ffmpeg -loglevel warning -i nv_$1.ts -i ffmpeg_nv_$1.ts \
@@ -601,6 +599,7 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 	profile := P144p30fps16x9
 	profile.Framerate = 123
 	tc := NewTranscoder()
+	defer tc.StopTranscoder()
 	idx := []int{1, 0, 3, 2}
 	for _, i := range idx {
 		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
@@ -623,9 +622,6 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 			Profile: profile,
 		}}
 		res, err := tc.Transcode(in, out)
-		if (i == 1 || i == 3) && err != nil {
-			t.Error(err)
-		}
 		if err != nil {
 			t.Error(err)
 		}
@@ -650,9 +646,9 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 
       # sanity check ffmpeg frame count against ours
       ffprobe -count_frames -show_streams -select_streams v ffmpeg_nv_$1.ts | grep nb_read_frames=246
-      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=245
-      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=245
-      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=245
+      ffprobe -count_frames -show_streams -select_streams v nv_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v sw_$1.ts | grep nb_read_frames=246
+      ffprobe -count_frames -show_streams -select_streams v nv_audio_encode_$1.ts | grep nb_read_frames=246
 
     # check image quality
     ffmpeg -loglevel warning -i nv_$1.ts -i ffmpeg_nv_$1.ts \
@@ -673,11 +669,13 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
     check 1
     check 2
     check 3
-  `
+	`
 	run(cmd)
-	tc.StopTranscoder()
 }
 
+func TestNvidia_DTSOverlap(t *testing.T) {
+	dtsOverlap(t, Nvidia)
+}
 func TestNvidia_ShortSegments(t *testing.T) {
 	shortSegments(t, Nvidia, 1)
 	shortSegments(t, Nvidia, 2)

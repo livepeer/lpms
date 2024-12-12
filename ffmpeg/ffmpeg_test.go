@@ -493,16 +493,17 @@ func TestTranscoder_Statistics_Encoded(t *testing.T) {
 			t.Error("Mismatched pixel counts")
 		}
 		// Since this is a 1-second input we should ideally have count of frames
-		if r.Frames != int(out[i].Profile.Framerate+1) {
-
+		if r.Frames == int(out[i].Profile.Framerate) {
+			// cool all good
+		} else {
 			// Some "special" cases (already have test cases covering these)
 			if p144p60fps == out[i].Profile {
 				if r.Frames != int(out[i].Profile.Framerate)+1 {
 					t.Error("Mismatched frame counts for 60fps; expected 61 frames but got ", r.Frames)
 				}
 			} else if podd123fps == out[i].Profile {
-				if r.Frames != 124 {
-					t.Error("Mismatched frame counts for 123fps; expected 124 frames but got ", r.Frames)
+				if r.Frames != 125 {
+					t.Error("Mismatched frame counts for 123fps; expected 125 frames but got ", r.Frames)
 				}
 			} else {
 				t.Error("Mismatched frame counts ", r.Frames, out[i].Profile.Framerate)
@@ -559,7 +560,7 @@ func TestTranscoder_StatisticsAspectRatio(t *testing.T) {
 		t.Error(err)
 	}
 	r := res.Encoded[0]
-	if r.Frames != int(pAdj.Framerate+1) || r.Pixels != int64(r.Frames*146*82) {
+	if r.Frames != int(pAdj.Framerate) || r.Pixels != int64(r.Frames*146*82) {
 		t.Error(fmt.Errorf("Results did not match: %v ", r))
 	}
 }
@@ -851,7 +852,7 @@ func TestTranscoder_StreamCopy(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 31 ||
+	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 ||
 		res.Encoded[1].Frames != 0 {
 		t.Error("Unexpected frame counts from stream copy")
 		t.Error(res)
@@ -995,7 +996,7 @@ func TestTranscoder_Drop(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 31 {
+	if res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 {
 		t.Error("Unexpected count of decoded frames ", res.Decoded.Frames, res.Decoded.Pixels)
 	}
 
@@ -1027,7 +1028,7 @@ func TestTranscoder_Drop(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Decoded.Frames != 31 || res.Encoded[0].Frames != 31 {
+	if res.Decoded.Frames != 30 || res.Encoded[0].Frames != 30 {
 		t.Error("Unexpected encoded/decoded frame counts ", res.Decoded.Frames, res.Encoded[0].Frames)
 	}
 	in.Fname = dir + "/novideo.ts"
@@ -1223,7 +1224,7 @@ func TestTranscoder_RepeatedTranscodes(t *testing.T) {
 	in = &TranscodeOptionsIn{Fname: dir + "/test-short-with-audio.ts"}
 	out = []TranscodeOptions{{Oname: dir + "/audio-0.ts", Profile: P144p30fps16x9}}
 	res, err = Transcode3(in, out)
-	if err != nil || res.Decoded.Frames != 60 || res.Encoded[0].Frames != 31 {
+	if err != nil || res.Decoded.Frames != 60 || res.Encoded[0].Frames != 30 {
 		t.Error("Unexpected preconditions ", err, res)
 	}
 	frames = res.Encoded[0].Frames
@@ -1398,7 +1399,7 @@ nb_read_frames=%d
 		b.Flush()
 
 		// Run a ffmpeg command that attempts to match the given encode settings
-		run(fmt.Sprintf(`ffmpeg -loglevel warning -hide_banner -i %s -vsync passthrough -c:a aac -ar 44100 -ac 2 -c:v libx264 -vf fps=%d/1:eof_action=pass,scale=%dx%d -copyts -muxdelay 0 -y ffmpeg.ts`, in.Fname, out.Profile.Framerate, w, h))
+		run(fmt.Sprintf(`ffmpeg -loglevel warning -hide_banner -i %s -vsync passthrough -c:a aac -ar 44100 -ac 2 -c:v libx264 -vf fps=%d/1,scale=%dx%d -copyts -muxdelay 0 -y ffmpeg.ts`, in.Fname, out.Profile.Framerate, w, h))
 
 		// Gather some ffprobe stats on the output of the above ffmpeg command
 		run(`ffprobe -loglevel warning -hide_banner -count_frames -select_streams v -show_streams 2>&1 ffmpeg.ts | grep '^width=\|^height=\|nb_read_frames=' > ffmpeg.stats`)
@@ -1438,7 +1439,7 @@ nb_read_frames=%d
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Encoded[0].Frames != 31 {
+	if res.Encoded[0].Frames != 30 {
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
 	checkStatsFile(in, &out[0], res)
@@ -1464,10 +1465,10 @@ nb_read_frames=%d
 	if err != nil {
 		t.Error(err)
 	}
-	if res.Encoded[0].Frames != 124 { // TODO Find out why this isn't 126 (ffmpeg)
+	if res.Encoded[0].Frames != 125 { // TODO Find out why this isn't 126 (ffmpeg)
 		t.Error("Did not get expected frame count ", res.Encoded[0].Frames)
 	}
-	// checkStatsFile(in, &out[0], res) // TODO framecounts don't match ffmpeg
+	checkStatsFile(in, &out[0], res)
 }
 
 func TestTranscoder_PassthroughFPS(t *testing.T) {
@@ -2037,9 +2038,10 @@ PTS_EOF
 	// check output
 	cmd = `
     # reproduce expected lpms output using ffmpeg
-    ffmpeg -debug_ts -loglevel trace -i in.ts -vf 'scale=136x240,fps=30/1:eof_action=pass' -c:v libx264 -copyts -muxdelay 0 out-ffmpeg.ts
+    ffmpeg -debug_ts -loglevel trace -i in.ts -vf 'scale=136x240,fps=30/1' -c:v libx264 -copyts -muxdelay 0 out-ffmpeg.ts
 
-    ffprobe -show_packets out-ffmpeg.ts | grep dts= > ffmpeg-dts.out
+		# ffmpeg produces one more packet than lpms in this case so just trim that out
+    ffprobe -show_packets out-ffmpeg.ts | grep dts= | head -n -1 > ffmpeg-dts.out
     ffprobe -show_packets out0in.ts | grep dts= > lpms-dts.out
 
     diff -u lpms-dts.out ffmpeg-dts.out
@@ -2195,7 +2197,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 360, res.Decoded.Frames)
-	assert.Equal(t, 181, res.Encoded[0].Frames) // should be 180 ... ts rounding ?
+	assert.Equal(t, 180, res.Encoded[0].Frames)
 	assert.Equal(t, 360, res.Encoded[1].Frames)
 
 	// TODO test rollover of gop interval during flush
@@ -2230,7 +2232,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 			cat <<-EOF2 > expected-30fps.dims
 				58 256,144
 				60 146,260
-				63 256,144
+				62 256,144
 			EOF2
 		`
 	} else {
@@ -2244,7 +2246,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 			cat <<-EOF2 > expected-30fps.dims
 				60 256,144
 				60 146,260
-				61 256,144
+				60 256,144
 			EOF2
 		`
 	}
@@ -2335,7 +2337,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 240, res.Decoded.Frames)
-	assert.Equal(t, 121, res.Encoded[0].Frames) // should be 120 ... ts rounding ?
+	assert.Equal(t, 120, res.Encoded[0].Frames)
 	assert.Equal(t, 240, res.Encoded[1].Frames)
 
 	cmd = `
@@ -2354,7 +2356,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 
 			cat <<-EOF2 > single-expected-30fps.dims
 				58 256,144
-				63 146,260
+				62 146,260
 			EOF2
 		`
 	} else {
@@ -2366,7 +2368,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 
 			cat <<-EOF2 > single-expected-30fps.dims
 				60 256,144
-				61 146,260
+				60 146,260
 			EOF2
 		`
 	}
