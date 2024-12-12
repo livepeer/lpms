@@ -13,7 +13,7 @@ concurrency:
 jobs:
   build:
     name: Test and build lpms project
-    runs-on: ubuntu-20.04
+    runs-on: gpu-amd64
     container:
       image: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
       env:
@@ -95,7 +95,7 @@ jobs:
 
       - name: Test
         shell: bash
-        run: PATH="/github/home/compiled/bin:$PATH" go test -coverprofile cover.out ./...
+        run: PATH="/github/home/compiled/bin:$PATH" go test --tags=nvidia -coverprofile cover.out ./...
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
