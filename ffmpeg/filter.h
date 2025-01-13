@@ -11,7 +11,7 @@ struct filter_ctx {
   AVFilterContext *sink_ctx;
   AVFilterContext *src_ctx;
 
-  uint8_t *hwframes; // GPU frame pool data
+  AVBufferRef *hw_frames_ctx; // GPU frame pool data
 
   // Input timebase for this filter
   AVRational time_base;
@@ -46,6 +46,7 @@ struct filter_ctx {
 };
 
 struct output_ctx {
+  int initialized;     // whether this output is ready
   char *fname;         // required output file name
   char *vfilters;      // required output video filters
   char *sfilters;      // required output signature filters
@@ -82,7 +83,7 @@ struct output_ctx {
   char *xcoderParams;
 };
 
-int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx);
+int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx, AVFrame *inf);
 int init_audio_filters(struct input_ctx *ictx, struct output_ctx *octx);
 int init_signature_filters(struct output_ctx *octx, AVFrame *inf);
 int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *octx, struct filter_ctx *filter, int is_video);

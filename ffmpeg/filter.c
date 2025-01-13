@@ -47,7 +47,7 @@ int filtergraph_parser(struct filter_ctx *fctx, char* filters_descr, AVFilterInO
   return ret;
 }
 
-int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
+int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx, AVFrame *inf)
 {
     char args[512];
     int ret = 0;
@@ -92,8 +92,9 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx)
     if (ictx->vc && ictx->vc->hw_frames_ctx) {
       // XXX a bit problematic in that it's set before decoder is fully ready
       AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
-      srcpar->hw_frames_ctx = ictx->vc->hw_frames_ctx;
-      vf->hwframes = ictx->vc->hw_frames_ctx->data;
+      AVBufferRef *hw_frames_ctx = inf && inf->hw_frames_ctx ? inf->hw_frames_ctx : ictx->vc->hw_frames_ctx;
+      srcpar->hw_frames_ctx = hw_frames_ctx;
+      av_buffer_replace(&vf->hw_frames_ctx, hw_frames_ctx);
       av_buffersrc_parameters_set(vf->src_ctx, srcpar);
       av_freep(&srcpar);
     }
@@ -243,13 +244,13 @@ int init_signature_filters(struct output_ctx *octx, AVFrame *inf)
     if (octx->vc && inf && inf->hw_frames_ctx) {
       AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();      
       srcpar->hw_frames_ctx = inf->hw_frames_ctx;
-      sf->hwframes = inf->hw_frames_ctx->data;
+      av_buffer_replace(&sf->hw_frames_ctx, inf->hw_frames_ctx);
       av_buffersrc_parameters_set(sf->src_ctx, srcpar);
       av_freep(&srcpar);
     } else if (octx->vc && octx->vc->hw_frames_ctx) {
       AVBufferSrcParameters *srcpar = av_buffersrc_parameters_alloc();
       srcpar->hw_frames_ctx = octx->vc->hw_frames_ctx;
-      sf->hwframes = octx->vc->hw_frames_ctx->data;
+      av_buffer_replace(&sf->hw_frames_ctx, octx->vc->hw_frames_ctx);
       av_buffersrc_parameters_set(sf->src_ctx, srcpar);
       av_freep(&srcpar);
     }
@@ -288,8 +289,8 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
   // before the decoder is fully ready, and the decoder may change HW params
   // XXX: Unclear if this path is hit on all devices
   if (is_video && inf && (
-      (inf->hw_frames_ctx && filter->hwframes &&
-        inf->hw_frames_ctx->data != filter->hwframes) ||
+      (inf->hw_frames_ctx && filter->hw_frames_ctx &&
+        inf->hw_frames_ctx->data != filter->hw_frames_ctx->data) ||
       (filter->src_ctx->nb_outputs > 0 &&
         filter->src_ctx->outputs[0]->w != inf->width &&
         filter->src_ctx->outputs[0]->h != inf->height))) {
@@ -326,7 +327,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
     ret = 0;
 
     free_filter(&octx->vf);
-    ret = init_video_filters(ictx, octx);
+    ret = init_video_filters(ictx, octx, inf);
     if (ret < 0) return lpms_ERR_FILTERS;
   }
 
@@ -411,5 +412,6 @@ void free_filter(struct filter_ctx *filter)
 {
   if (filter->frame) av_frame_free(&filter->frame);
   if (filter->graph) avfilter_graph_free(&filter->graph);
+  if (filter->hw_frames_ctx) av_buffer_unref(&filter->hw_frames_ctx);
   memset(filter, 0, sizeof(struct filter_ctx));
 }

@@ -3,6 +3,7 @@
 #include "filter.h"
 #include "encoder.h"
 #include "logging.h"
+#include "queue.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -236,19 +237,13 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
     octx->dv = ictx->vi < 0 || is_drop(octx->video->name);
     octx->da = ictx->ai < 0 || is_drop(octx->audio->name);
     octx->res = &results[i];
+    octx->initialized = h->initialized && (AV_HWDEVICE_TYPE_NONE != octx->hw_type || ictx->transmuxing);
 
-    // first segment of a stream, need to initalize output HW context
-    // XXX valgrind this line up
+    // either first segment of a GPU stream or a CPU stream
     // when transmuxing we're opening output with first segment, but closing it
     // only when lpms_transcode_stop called, so we don't want to re-open it
     // on subsequent segments
-    if (!h->initialized || (AV_HWDEVICE_TYPE_NONE == octx->hw_type && !ictx->transmuxing)) {
-      ret = open_output(octx, ictx);
-      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
-      if (ictx->transmuxing) {
-        octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
-        octx->oc->flush_packets = 1;
-      }
+    if (!octx->initialized) {
       continue;
     }
 
@@ -325,14 +320,18 @@ int transcode(struct transcode_thread *h,
   int ret = 0;
   AVPacket *ipkt = NULL;
   AVFrame *dframe = NULL;
+  AVFifo *frame_queue = NULL;
   struct input_ctx *ictx = &h->ictx;
   struct output_ctx *outputs = h->outputs;
   int nb_outputs = h->nb_outputs;
+  int outputs_ready = 0, hit_eof = 0;
 
   ipkt = av_packet_alloc();
   if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
   dframe = av_frame_alloc();
   if (!dframe) LPMS_ERR(transcode_cleanup, "Unable to allocate frame");
+  frame_queue = queue_create();
+  if (!frame_queue) LPMS_ERR(transcode_cleanup, "Unable to allocate audio queue");
 
   while (1) {
     // DEMUXING & DECODING
@@ -342,16 +341,72 @@ int transcode(struct transcode_thread *h,
     int stream_index = -1;
 
     av_frame_unref(dframe);
-    ret = process_in(ictx, dframe, ipkt, &stream_index);
+
+    // Check if we have any queued frames and if not, process normally
+    int queue_ret = 0;
+    if (outputs_ready || hit_eof) {
+      queue_ret = queue_read(frame_queue, dframe,  ipkt, &stream_index, &ret);
+    }
+    if (!outputs_ready || queue_ret < 0) {
+      ret = process_in(ictx, dframe, ipkt, &stream_index);
+    }
     if (ret == AVERROR_EOF) {
       // no more processing, go for flushes
-      break;
+      if (!outputs_ready) hit_eof = 1; // Set flag to force opening all outputs
+      else break;
     }
     else if (lpms_ERR_PACKET_ONLY == ret) ; // keep going for stream copy
     else if (ret == AVERROR(EAGAIN)) ;  // this is a-ok
     else if (lpms_ERR_INPUT_NOKF == ret) {
       LPMS_ERR(transcode_cleanup, "Could not decode; No keyframes in input");
     } else if (ret < 0) LPMS_ERR(transcode_cleanup, "Could not decode; stopping");
+
+    // This is for the case when we _are_ decoding but frame is not complete yet
+    // So for example multislice h.264 picture without all slices fed in.
+    // IMPORTANT: this should also be false if we are transmuxing, and it is not
+    // so, at least not automatically, because then process_in returns 0 and not
+    // lpms_ERR_PACKET_ONLY
+    has_frame = lpms_ERR_PACKET_ONLY != ret;
+
+    // Open outputs. Do this here because we can't initialize a hw encoder
+    // until we first receive a hw-decoded frame
+    int is_ready = 1, set_outputs = 0, packet_ret = ret, is_eof = AVERROR_EOF == ret;
+    for (int i = 0; !outputs_ready && i < nb_outputs; i++) {
+      struct output_ctx *octx = &outputs[i];
+      if (!octx->initialized) {
+        // only open output if any of the following are true:
+        if ((ictx->vi >= 0 && stream_index == ictx->vi) || // is a video frame
+            ictx->vi < 0 || // input does not have video
+            octx->dv || // video is being dropped from output
+            is_eof) {  // eof was hit, so force opening outputs
+          ret = open_output(octx, ictx);
+          if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to open output");
+        }
+        if (ictx->transmuxing) {
+          octx->oc->flags |= AVFMT_FLAG_FLUSH_PACKETS;
+          octx->oc->flush_packets = 1;
+        }
+        set_outputs = 1;
+      }
+      is_ready = is_ready && octx->initialized;
+    }
+    outputs_ready = is_ready;
+    if (set_outputs) {
+      int output_frame = has_frame;
+      // We add both video / audio streams simultaneously.
+      // Since video is always added first if present, queue up audio
+      // until we receive a video frame from the decoder
+      if (stream_index == ictx->vi) {
+        // width / height will be zero for pure streamcopy (no decoding)
+        output_frame = has_frame && dframe->width && dframe->height;
+      } else if (stream_index == ictx->ai) {
+        output_frame = has_frame && dframe->nb_samples;
+      }
+      ret = queue_write(frame_queue, is_eof ? NULL : ipkt, output_frame ? dframe : NULL, packet_ret);
+      if (ret < 0) LPMS_ERR(transcode_cleanup, "Unable to queue packet");
+      goto whileloop_end;
+    }
+
 
     // So here we have several possibilities:
     // ipkt: usually it will be here, but if we are decoding, and if we reached
@@ -361,13 +416,6 @@ int transcode(struct transcode_thread *h,
     // copying), it won't be set
 
     ist = ictx->ic->streams[stream_index];
-
-    // This is for the case when we _are_ decoding but frame is not complete yet
-    // So for example multislice h.264 picture without all slices fed in.
-    // IMPORTANT: this should also be false if we are transmuxing, and it is not
-    // so, at least not automatically, because then process_in returns 0 and not
-    // lpms_ERR_PACKET_ONLY
-    has_frame = lpms_ERR_PACKET_ONLY != ret;
 
     // Now apart from if (is_flush_frame(dframe)) goto whileloop_end; statement
     // this code just updates has_frame properly for video and audio, updates
@@ -516,6 +564,7 @@ whileloop_end:
 transcode_cleanup:
   if (dframe) av_frame_free(&dframe);
   if (ipkt) av_packet_free(&ipkt);  // needed for early exits
+  if (frame_queue) queue_free(&frame_queue);
   return transcode_shutdown(h, ret);
 }
 
