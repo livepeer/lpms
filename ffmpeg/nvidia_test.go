@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,8 +24,7 @@ func TestNvidia_BadCodecs(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	fname := dir + "/test.flv"
-	//oname := dir + "/out.ts"
-	oname := "/home/josh/out.ts"
+	oname := dir + "/out.ts"
 	prof := P240p30fps16x9
 
 	cmd := `
@@ -605,6 +603,7 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 	tc := NewTranscoder()
 	idx := []int{1, 0, 3, 2}
 	for _, i := range idx {
+		// TODO this breaks with nvidia acceleration on the input!
 		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
 		out := []TranscodeOptions{{
 			Oname:        fmt.Sprintf("%s/%d.md5", dir, i),
@@ -823,8 +822,8 @@ func TestNvidia_H264Parser(t *testing.T) {
 		Profile: P240p30fps16x9,
 		Accel:   Nvidia,
 	}})
-	assert.Nil(t, err)
-	assert.Equal(t, 500, res.Decoded.Frames)
+	require.Nil(t, err)
+	require.Equal(t, 500, res.Decoded.Frames)
 
 	_, err = Transcode3(&TranscodeOptionsIn{
 		Fname: "../data/broken-h264-parser.ts",
@@ -834,7 +833,7 @@ func TestNvidia_H264Parser(t *testing.T) {
 		Profile: P240p30fps16x9,
 		Accel:   Nvidia,
 	}})
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	_, err = Transcode3(&TranscodeOptionsIn{
 		Fname: "../data/broken-h264-parser.ts",
@@ -844,7 +843,7 @@ func TestNvidia_H264Parser(t *testing.T) {
 		Profile: P240p30fps16x9,
 		Accel:   Software,
 	}})
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	// TODO nvidia is one frame offset (first frame seems to be duplicated)
 	// and this leads to a poor ssim score compared to software encoding
