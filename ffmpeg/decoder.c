@@ -188,38 +188,17 @@ enum AVPixelFormat hw2pixfmt(AVCodecContext *ctx)
   return AV_PIX_FMT_NONE;
 }
 
-/**
- * Callback to negotiate the pixel format for AVCodecContext.
- */
-static enum AVPixelFormat get_hw_pixfmt(AVCodecContext *vc, const enum AVPixelFormat *pix_fmts)
+static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,
+                                        const enum AVPixelFormat *pix_fmts)
 {
-  AVHWFramesContext *frames;
-  int ret = 0;
+  const enum AVPixelFormat *p;
+  const enum AVPixelFormat hw_pix_fmt = hw2pixfmt(ctx);
 
-  // XXX Ideally this would be auto initialized by the HW device ctx
-  //     However the initialization doesn't occur in time to set up filters
-  //     So we do it here. Also see avcodec_get_hw_frames_parameters
-  av_buffer_unref(&vc->hw_frames_ctx);
-  vc->hw_frames_ctx = av_hwframe_ctx_alloc(vc->hw_device_ctx);
-  if (!vc->hw_frames_ctx) LPMS_ERR(pixfmt_cleanup, "Unable to allocate hwframe context for decoding");
+  for (p = pix_fmts; *p != -1; p++) {
+    if (*p == hw_pix_fmt) return *p;
+  }
 
-  frames = (AVHWFramesContext*)vc->hw_frames_ctx->data;
-  frames->format = hw2pixfmt(vc);
-  frames->sw_format = vc->sw_pix_fmt;
-  frames->width = vc->width;
-  frames->height = vc->height;
-
-  // May want to allocate extra HW frames if we encounter samples where
-  // the defaults are insufficient. Raising this increases GPU memory usage
-  // For now, the defaults seems OK.
-  //vc->extra_hw_frames = 16 + 1; // H.264 max refs
-
-  ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
-  if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
-  if (ret < 0) LPMS_ERR(pixfmt_cleanup, "Unable to initialize a hardware frame pool");
-  return frames->format;
-
-pixfmt_cleanup:
+  fprintf(stderr, "Failed to get HW surface format.\n");
   return AV_PIX_FMT_NONE;
 }
 
@@ -253,38 +232,6 @@ open_audio_err:
   return ret;
 }
 
-char* get_hw_decoder(int ff_codec_id, int hw_type)
-{
-    switch (hw_type) {
-        case AV_HWDEVICE_TYPE_CUDA:
-            switch (ff_codec_id) {
-                case AV_CODEC_ID_H264:
-                    return "h264_cuvid";
-                case AV_CODEC_ID_HEVC:
-                    return "hevc_cuvid";
-                case AV_CODEC_ID_VP8:
-                    return "vp8_cuvid";
-                case AV_CODEC_ID_VP9:
-                    return "vp9_cuvid";
-                default:
-                    return "";
-            }
-        case AV_HWDEVICE_TYPE_MEDIACODEC:
-            switch (ff_codec_id) {
-                case AV_CODEC_ID_H264:
-                    return "h264_ni_dec";
-                case AV_CODEC_ID_HEVC:
-                    return "h265_ni_dec";
-                case AV_CODEC_ID_VP8:
-                    return "";
-                case AV_CODEC_ID_VP9:
-                    return "";
-                default:
-                    return "";
-            }
-    }
-}
-
 int open_video_decoder(input_params *params, struct input_ctx *ctx)
 {
   int ret = 0;
@@ -298,14 +245,6 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
     LPMS_WARN("No video stream found in input");
   } else {
     if (params->hw_type > AV_HWDEVICE_TYPE_NONE) {
-      char* decoder_name = get_hw_decoder(codec->id, params->hw_type);
-      if (!*decoder_name) {
-        ret = lpms_ERR_INPUT_CODEC;
-        LPMS_ERR(open_decoder_err, "Input codec does not support hardware acceleration");
-      }
-      const AVCodec *c = avcodec_find_decoder_by_name(decoder_name);
-      if (c) codec = c;
-      else LPMS_WARN("Nvidia decoder not found; defaulting to software");
       if (AV_PIX_FMT_YUV420P != ic->streams[ctx->vi]->codecpar->format &&
           AV_PIX_FMT_YUVJ420P != ic->streams[ctx->vi]->codecpar->format) {
         // TODO check whether the color range is truncated if yuvj420p is used
@@ -330,13 +269,19 @@ int open_video_decoder(input_params *params, struct input_ctx *ctx)
       ret = av_hwdevice_ctx_create(&ctx->hw_device_ctx, params->hw_type, params->device, NULL, 0);
       if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open hardware context for decoding")
       vc->hw_device_ctx = av_buffer_ref(ctx->hw_device_ctx);
-      vc->get_format = get_hw_pixfmt;
+      vc->get_format = get_hw_format;
     }
     ctx->hw_type = params->hw_type;
     vc->pkt_timebase = ic->streams[ctx->vi]->time_base;
     av_opt_set(vc->priv_data, "xcoder-params", ctx->xcoderParams, 0);
     ret = avcodec_open2(vc, codec, opts);
     if (ret < 0) LPMS_ERR(open_decoder_err, "Unable to open video decoder");
+    if (params->hw_type > AV_HWDEVICE_TYPE_NONE) {
+      if (AV_PIX_FMT_NONE == hw2pixfmt(vc)) {
+        ret = lpms_ERR_INPUT_CODEC;
+        LPMS_ERR(open_decoder_err, "Input codec does not support hardware acceleration");
+      }
+    }
   }
 
   return 0;

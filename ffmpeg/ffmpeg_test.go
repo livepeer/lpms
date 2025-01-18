@@ -2218,23 +2218,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 		`
 	}
 
-	// TODO figure out why cpu/gpu are different
-	if accel == Nvidia {
-		cmd = cmd + `
-			cat <<-EOF1 > expected.dims
-				115 256,144
-				120 146,260
-				125 256,144
-			EOF1
-
-			cat <<-EOF2 > expected-30fps.dims
-				58 256,144
-				60 146,260
-				63 256,144
-			EOF2
-		`
-	} else {
-		cmd = cmd + `
+	cmd = cmd + `
 			cat <<-EOF1 > expected.dims
 				120 256,144
 				120 146,260
@@ -2246,10 +2230,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 				60 146,260
 				61 256,144
 			EOF2
-		`
-	}
 
-	cmd = cmd + `
 		diff -u expected.dims out.dims
 		diff -u expected-30fps.dims out-30fps.dims
 	`
@@ -2299,9 +2280,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 	}})
 	require.NoError(t, err)
 
-	// TODO figure out why nvidia is different; green screen?
-	if accel == Software {
-		cmd = `
+	cmd = `
 		cat out-test-0.ts  out-transposed.ts out-test-2.ts > out-test-concat.ts
 		ffprobe -show_entries frame=pts,pkt_dts,duration,pict_type,width,height -of csv out-test-concat.ts > out-test-concat.framedata
 
@@ -2317,8 +2296,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 		# this does not line up
 		#diff -u out-test-concat-30fps.framedata out-double-rotated-30fps.framedata
 	`
-		run(cmd)
-	}
+	run(cmd)
 
 	// check single rotations
 	res, err = Transcode3(
@@ -2344,21 +2322,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 		ffprobe -show_entries frame=height,width -of csv=p=0 out-single-rotated-30fps.ts | sed 's/,$//g' | uniq -c | sed 's/^ *//g' > single-out-30fps.dims
 	`
 
-	// TODO figure out why cpu/gpu are different
-	if accel == Nvidia {
-		cmd = cmd + `
-			cat <<-EOF1 > single-expected.dims
-				115 256,144
-				125 146,260
-			EOF1
-
-			cat <<-EOF2 > single-expected-30fps.dims
-				58 256,144
-				63 146,260
-			EOF2
-		`
-	} else {
-		cmd = cmd + `
+	cmd = cmd + `
 			cat <<-EOF1 > single-expected.dims
 				120 256,144
 				120 146,260
@@ -2368,10 +2332,7 @@ func runRotationTests(t *testing.T, accel Acceleration) {
 				60 256,144
 				61 146,260
 			EOF2
-		`
-	}
 
-	cmd = cmd + `
 		diff -u single-expected.dims single-out.dims
 		diff -u single-expected-30fps.dims single-out-30fps.dims
 	`

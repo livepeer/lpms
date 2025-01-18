@@ -23,15 +23,15 @@ func TestNvidia_BadCodecs(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
-	fname := dir + "/mpeg2.ts"
+	fname := dir + "/test.flv"
 	oname := dir + "/out.ts"
 	prof := P240p30fps16x9
 
 	cmd := `
 	cp "$1/../transcoder/test.ts" test.ts
-		# Generate an input file that uses unsupported codec MPEG2 and sanity check
-		ffmpeg -loglevel warning -i test.ts -an -c:v mpeg2video -t 1 mpeg2.ts
-		ffprobe -loglevel warning mpeg2.ts -show_streams | grep codec_name=mpeg2video
+		# Generate an input file that uses unsupported codec FLV and sanity check
+		ffmpeg -loglevel warning -i test.ts -an -c:v flv -t 1 test.flv
+		ffprobe -loglevel warning test.flv -show_streams | grep codec_name=flv
 	`
 	run(cmd)
 
@@ -603,6 +603,7 @@ func TestNvidia_API_AlternatingTimestamps(t *testing.T) {
 	tc := NewTranscoder()
 	idx := []int{1, 0, 3, 2}
 	for _, i := range idx {
+		// TODO this breaks with nvidia acceleration on the input!
 		in := &TranscodeOptionsIn{Fname: fmt.Sprintf("%s/out_%d.ts", dir, i)}
 		out := []TranscodeOptions{{
 			Oname:        fmt.Sprintf("%s/%d.md5", dir, i),
@@ -805,4 +806,55 @@ func TestNvidia_Rotation(t *testing.T) {
 func TestNvidia_Metadata(t *testing.T) {
 	// with nvenc we reopen the outputs so exercise that
 	runTestTranscoder_Metadata(t, Nvidia)
+}
+
+func TestNvidia_H264Parser(t *testing.T) {
+	// this sample breaks with the cuvid (nvidia) h264 parser, so ensure ffmpeg parser is used
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	res, err := Transcode3(&TranscodeOptionsIn{
+		Fname: "../data/bad-cuvid.ts",
+		Accel: Nvidia,
+	}, []TranscodeOptions{{
+		Oname:   dir + "/out.ts",
+		Profile: P240p30fps16x9,
+		Accel:   Nvidia,
+	}})
+	require.Nil(t, err)
+	require.Equal(t, 500, res.Decoded.Frames)
+
+	_, err = Transcode3(&TranscodeOptionsIn{
+		Fname: "../data/broken-h264-parser.ts",
+		Accel: Nvidia,
+	}, []TranscodeOptions{{
+		Oname:   dir + "/nv.ts",
+		Profile: P240p30fps16x9,
+		Accel:   Nvidia,
+	}})
+	require.Nil(t, err)
+
+	_, err = Transcode3(&TranscodeOptionsIn{
+		Fname: "../data/broken-h264-parser.ts",
+		Accel: Software,
+	}, []TranscodeOptions{{
+		Oname:   dir + "/sw.ts",
+		Profile: P240p30fps16x9,
+		Accel:   Software,
+	}})
+	require.Nil(t, err)
+
+	// TODO nvidia is one frame offset (first frame seems to be duplicated)
+	// and this leads to a poor ssim score compared to software encoding
+	// Figure out why this is! Ideally scores should be >99 for ALL frames
+	cmd := `
+    # check image quality
+    ffmpeg -loglevel warning -i sw.ts -i nv.ts \
+      -lavfi "[0:v][1:v]ssim=stats.log" -f null -
+    grep -Po 'All:\K\d+.\d+' stats.log | \
+      awk '{ if ($1 < 0.90) count=count+1 } END{ exit count > 30 }'
+	`
+	run(cmd)
+
 }

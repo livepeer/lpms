@@ -224,7 +224,7 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
 
   // add video encoder if a decoder exists and this output requires one
   if (ictx->vc && needs_decoder(octx->video->name)) {
-    ret = init_video_filters(ictx, octx);
+    ret = init_video_filters(ictx, octx, NULL);
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open video filter");
 
     codec = avcodec_find_encoder_by_name(octx->video->name);
@@ -295,6 +295,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     ret = init_signature_filters(octx, NULL);
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
   }
+
+  octx->initialized = 1;
 
   return 0;
 
@@ -521,7 +523,7 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
 static int calc_signature(AVFrame *inf, struct output_ctx *octx)
 {
   int ret = 0;
-  if (inf->hw_frames_ctx && octx->sf.hwframes && inf->hw_frames_ctx->data != octx->sf.hwframes) {
+  if (inf->hw_frames_ctx && octx->sf.hw_frames_ctx && inf->hw_frames_ctx->data != octx->sf.hw_frames_ctx->data) {
       free_filter(&octx->sf);
       ret = init_signature_filters(octx, inf);
       if (ret < 0) return lpms_ERR_FILTERS;
