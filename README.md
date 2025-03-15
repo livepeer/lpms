@@ -202,4 +202,4 @@ To get started:
 
 - Read the [contribution guide](doc/contributing.md)
 - Check out the [open issues](https://github.com/livepeer/lpms/issues)
-- Join the #dev channel in the [Discord](https://discord.gg/uaPhtyrWsF)
+- Join the #dev channel in the [Discord](https://discord.gg/livepeer)
