@@ -128,10 +128,10 @@ if [[ "$GOOS" != "windows" && "$GOARCH" == "amd64" ]]; then
     # sudo apt-get -y install asciidoc xmlto # this fails :(
     cd "$ROOT"
     curl -o nasm-2.14.02.tar.gz "https://gstreamer.freedesktop.org/src/mirror/nasm-2.14.02.tar.xz"
-    echo 'e24ade3e928f7253aa8c14aa44726d1edf3f98643f87c9d72ec1df44b26be8f5  nasm-2.14.02.tar.xz' >nasm-2.14.02.tar.xz.sha256
-    sha256sum -c nasm-2.14.02.tar.xz.sha256
-    tar xf nasm-2.14.02.tar.xz
-    rm nasm-2.14.02.tar.xz nasm-2.14.02.tar.xz.sha256
+    echo 'e24ade3e928f7253aa8c14aa44726d1edf3f98643f87c9d72ec1df44b26be8f5  nasm-2.14.02.tar.gz' >nasm-2.14.02.tar.gz.sha256
+    sha256sum -c nasm-2.14.02.tar.gz.sha256
+    tar xf nasm-2.14.02.tar.gz
+    rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
     cd "$ROOT/nasm-2.14.02"
     ./configure --prefix="$ROOT/compiled"
     make -j$NPROC
