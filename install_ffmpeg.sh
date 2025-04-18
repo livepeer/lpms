@@ -3,7 +3,7 @@
 set -exuo pipefail
 
 ROOT="${1:-$HOME}"
-NPROC=${NPROC:-$(nproc)}
+NPROC="${NPROC:-$(nproc)}"
 EXTRA_CFLAGS=""
 EXTRA_LDFLAGS=""
 EXTRA_X264_FLAGS=""
@@ -30,7 +30,7 @@ echo "GOOS: $GOOS"
 echo "GOARCH: $GOARCH"
 
 function check_sysroot() {
-  if ! stat $SYSROOT > /dev/null; then
+  if ! stat $SYSROOT >/dev/null; then
     echo "cross-compilation sysroot not found at $SYSROOT, try setting SYSROOT to the correct path"
     exit 1
   fi
@@ -116,9 +116,8 @@ mkdir -p "$ROOT/"
 # NVENC only works on Windows/Linux
 if [[ "$GOOS" != "darwin" ]]; then
   if [[ ! -e "$ROOT/nv-codec-headers" ]]; then
-    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
+    git clone --depth 1 --single-branch --branch n12.2.72.0 https://github.com/FFmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
     cd $ROOT/nv-codec-headers
-    git checkout n12.2.72.0
     make -e PREFIX="$ROOT/compiled"
     make install -e PREFIX="$ROOT/compiled"
   fi
@@ -128,11 +127,11 @@ if [[ "$GOOS" != "windows" && "$GOARCH" == "amd64" ]]; then
   if [[ ! -e "$ROOT/nasm-2.14.02" ]]; then
     # sudo apt-get -y install asciidoc xmlto # this fails :(
     cd "$ROOT"
-    curl -o nasm-2.14.02.tar.gz https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.gz
-    echo 'b34bae344a3f2ed93b2ca7bf25f1ed3fb12da89eeda6096e3551fd66adeae9fc  nasm-2.14.02.tar.gz' >nasm-2.14.02.tar.gz.sha256
-    sha256sum -c nasm-2.14.02.tar.gz.sha256
-    tar xf nasm-2.14.02.tar.gz
-    rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
+    curl -o nasm-2.14.02.tar.gz "https://gstreamer.freedesktop.org/src/mirror/nasm-2.14.02.tar.xz"
+    echo 'e24ade3e928f7253aa8c14aa44726d1edf3f98643f87c9d72ec1df44b26be8f5  nasm-2.14.02.tar.xz' >nasm-2.14.02.tar.xz.sha256
+    sha256sum -c nasm-2.14.02.tar.xz.sha256
+    tar xf nasm-2.14.02.tar.xz
+    rm nasm-2.14.02.tar.xz nasm-2.14.02.tar.xz.sha256
     cd "$ROOT/nasm-2.14.02"
     ./configure --prefix="$ROOT/compiled"
     make -j$NPROC
@@ -233,7 +232,7 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
     --prefix="$ROOT/compiled" \
     $EXTRA_FFMPEG_FLAGS \
     $DEV_FFMPEG_FLAGS || (tail -100 ${ROOT}/ffmpeg/ffbuild/config.log && exit 1)
-    # If configure fails, then print the last 100 log lines for debugging and exit.
+  # If configure fails, then print the last 100 log lines for debugging and exit.
 fi
 
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" || $BUILD_TAGS == *"debug-video"* ]]; then
