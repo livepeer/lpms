@@ -33,6 +33,7 @@ var ErrTranscoderHw = errors.New("TranscoderInvalidHardware")
 var ErrTranscoderInp = errors.New("TranscoderInvalidInput")
 var ErrTranscoderClipConfig = errors.New("TranscoderInvalidClipConfig")
 var ErrTranscoderVid = errors.New("TranscoderInvalidVideo")
+var ErrTranscoderDuration = errors.New("TranscoderInvalidDuration")
 var ErrTranscoderStp = errors.New("TranscoderStopped")
 var ErrTranscoderFmt = errors.New("TranscoderUnrecognizedFormat")
 var ErrTranscoderPrf = errors.New("TranscoderUnrecognizedProfile")
@@ -879,6 +880,10 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 		status, format, err := GetCodecInfo(input.Fname)
 		if err != nil {
 			return nil, err
+		}
+		if format.DurSecs > 300 {
+			glog.Errorf("Input file %s has duration of %d seconds, which is more than 5 minutes. This is not supported by the transcoder.", input.Fname, format.DurSecs)
+			return nil, ErrTranscoderDuration
 		}
 		// TODO hoist the rest of this into C so we don't have to invoke GetCodecInfo
 		if !t.started {
