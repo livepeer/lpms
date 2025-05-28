@@ -2470,9 +2470,7 @@ func TestTranscode_DurationLimit(t *testing.T) {
 	_, errBadInput := transcoder.Transcode(badInput, options)
 
 	// Check that the correct error was returned
-	if errBadInput != ErrTranscoderDuration {
-		t.Errorf("Expected ErrTranscoderDuration for video longer than 5 minutes, got %v", errBadInput)
-	}
+	assert.Equal(t, ErrTranscoderDuration, errBadInput)
 
 	// transcode good input
 	_, errGoodInput := transcoder.Transcode(goodInput, options)
