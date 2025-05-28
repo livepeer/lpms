@@ -2430,8 +2430,10 @@ func TestTranscode_DurationLimit(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 	cmd := `
-		ffmpeg -f lavfi -i color=c=blue:s=1280x720 -r 1 -frames:v 301 -c:v libx264 test-dur-bad.ts
-		ffmpeg -f lavfi -i color=c=blue:s=1280x720 -r 1 -frames:v 300 -c:v libx264 test-dur-good.ts
+		# generate a 1fps sample
+		ffmpeg -i $1../transcoder/test.ts -c copy -bsf:v setts=ts=N/TB_OUT/1 -frames:v 301 -y test.ts
+		# double check the sample actually has the characteristics we expect
+		ffprobe -show_format test.ts  | grep duration=301.00
 	`
 	run(cmd)
 
