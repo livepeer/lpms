@@ -2431,7 +2431,7 @@ func TestTranscode_DurationLimit(t *testing.T) {
 	defer os.RemoveAll(dir)
 	cmd := `
 		# generate a 1fps sample
-		ffmpeg -i "$1"/../transcoder/test.ts -an -c copy -bsf:v setts=ts=N/TB/1 -frames:v 301 -y test.ts
+		ffmpeg -i "$1"/../transcoder/test.ts -c copy -bsf:v setts=ts=N/TB/1 -frames:v 301 -y test.ts
 		# double check the sample actually has the characteristics we expect
 		ffprobe -show_format test.ts  | grep duration=301.00
 	`
@@ -2474,7 +2474,7 @@ func TestTranscoder_NoDurationLimitBytes(t *testing.T) {
 
 	cmd := `
 		# generate a 1fps sample
-		ffmpeg -i "$1"/../transcoder/test.ts -an -c copy -bsf:v setts=ts=N/TB/1 -frames:v 301 -y test.ts
+		ffmpeg -i "$1"/../transcoder/test.ts -c copy -bsf:v setts=ts=N/TB/1 -frames:v 301 -y test.ts
 		# double check the sample actually has the characteristics we expect
 		ffprobe -show_format test.ts  | grep duration=301.00
 	`
