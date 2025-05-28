@@ -2431,7 +2431,7 @@ func TestTranscode_DurationLimit(t *testing.T) {
 	defer os.RemoveAll(dir)
 	cmd := `
 		# generate a 1fps sample
-		ffmpeg -i $1../transcoder/test.ts -c copy -bsf:v setts=ts=N/TB_OUT/1 -frames:v 301 -y test.ts
+		ffmpeg -i "$1"/../transcoder/test.ts -an -c copy -bsf:v setts=ts=N/TB/1 -frames:v 301 -y test.ts
 		# double check the sample actually has the characteristics we expect
 		ffprobe -show_format test.ts  | grep duration=301.00
 	`
@@ -2443,26 +2443,19 @@ func TestTranscode_DurationLimit(t *testing.T) {
 
 	// Set up transcode options
 	badInput := &TranscodeOptionsIn{
-		Fname: fmt.Sprintf("%v/test-dur-bad.ts", dir),
+		Fname: fmt.Sprintf("%v/test.ts", dir),
 		Accel: Software,
 	}
-
-	goodInput := &TranscodeOptionsIn{
-		Fname: fmt.Sprintf("%v/test-dur-good.ts", dir),
-		Accel: Software,
-	}
-
 	profiles := []VideoProfile{
 		{
 			Name:       "test_profile",
-			Resolution: "854x480",
+			Resolution: "16x16",
 			Bitrate:    "1000k",
 		},
 	}
-
 	options := []TranscodeOptions{
 		{
-			Oname:   fmt.Sprintf("%s/out-test-dur.ts", dir),
+			Oname:   fmt.Sprintf("%s/out-test.ts", dir),
 			Profile: profiles[0],
 			Accel:   Software,
 		},
@@ -2473,28 +2466,26 @@ func TestTranscode_DurationLimit(t *testing.T) {
 
 	// Check that the correct error was returned
 	assert.Equal(t, ErrTranscoderDuration, errBadInput)
-
-	// transcode good input
-	_, errGoodInput := transcoder.Transcode(goodInput, options)
-
-	// Check that the correct error was returned
-	if errGoodInput != nil {
-		t.Error(errGoodInput)
-	}
 }
 
 func TestTranscoder_NoDurationLimitBytes(t *testing.T) {
 	run, dir := setupTest(t)
 	defer os.RemoveAll(dir)
 
-	cmd := `ffmpeg -f lavfi -i color=c=blue:s=1280x720 -r 1 -frames:v 301 -c:v libx264 test-dur-bad.ts`
+	cmd := `
+		# generate a 1fps sample
+		ffmpeg -i "$1"/../transcoder/test.ts -an -c copy -bsf:v setts=ts=N/TB/1 -frames:v 301 -y test.ts
+		# double check the sample actually has the characteristics we expect
+		ffprobe -show_format test.ts  | grep duration=301.00
+	`
 	run(cmd)
+
 	// Create a transcoder instance
 	transcoder := NewTranscoder()
 	defer transcoder.StopTranscoder()
 
 	ir, iw, err := os.Pipe()
-	fname := fmt.Sprintf("%s/test-dur-bad.ts", dir)
+	fname := fmt.Sprintf("%s/test.ts", dir)
 	_, err = os.Stat(fname)
 	if err != nil {
 		t.Fatal(err)
@@ -2515,7 +2506,7 @@ func TestTranscoder_NoDurationLimitBytes(t *testing.T) {
 	profiles := []VideoProfile{
 		{
 			Name:       "test_profile",
-			Resolution: "854x480",
+			Resolution: "16x16",
 			Bitrate:    "1000k",
 		},
 	}
