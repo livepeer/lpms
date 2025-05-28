@@ -2424,3 +2424,60 @@ func TestTranscoder_PNGDemuxerOpts(t *testing.T) {
 	assert.Equal(t, 3, res.Decoded.Frames)
 	assert.Equal(t, 180, res.Encoded[0].Frames)
 }
+
+func TestTranscode_DurationLimit(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+		ffmpeg -f lavfi -i color=c=blue:s=1280x720 -r 1 -frames:v 301 -c:v libx264 test-dur-bad.ts
+		ffmpeg -f lavfi -i color=c=blue:s=1280x720 -r 1 -frames:v 300 -c:v libx264 test-dur-good.ts
+	`
+	run(cmd)
+
+	// Create a transcoder instance
+	transcoder := NewTranscoder()
+	defer transcoder.StopTranscoder()
+
+	// Set up transcode options
+	badInput := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("%v/test-dur-bad.ts", dir),
+		Accel: Software,
+	}
+
+	goodInput := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("%v/test-dur-good.ts", dir),
+		Accel: Software,
+	}
+
+	profiles := []VideoProfile{
+		{
+			Name:       "test_profile",
+			Resolution: "854x480",
+			Bitrate:    "1000k",
+		},
+	}
+
+	options := []TranscodeOptions{
+		{
+			Oname:   fmt.Sprintf("%s/out-test-dur.ts", dir),
+			Profile: profiles[0],
+			Accel:   Software,
+		},
+	}
+
+	// transcode bad input
+	_, errBadInput := transcoder.Transcode(badInput, options)
+
+	// Check that the correct error was returned
+	if errBadInput != ErrTranscoderDuration {
+		t.Errorf("Expected ErrTranscoderDuration for video longer than 5 minutes, got %v", errBadInput)
+	}
+
+	// transcode good input
+	_, errGoodInput := transcoder.Transcode(goodInput, options)
+
+	// Check that the correct error was returned
+	if errGoodInput != nil {
+		t.Error(errGoodInput)
+	}
+}
