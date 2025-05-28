@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -2480,4 +2481,55 @@ func TestTranscode_DurationLimit(t *testing.T) {
 	if errGoodInput != nil {
 		t.Error(errGoodInput)
 	}
+}
+
+func TestTranscoder_NoDurationLimitBytes(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `ffmpeg -f lavfi -i color=c=blue:s=1280x720 -r 1 -frames:v 301 -c:v libx264 test-dur-bad.ts`
+	run(cmd)
+	// Create a transcoder instance
+	transcoder := NewTranscoder()
+	defer transcoder.StopTranscoder()
+
+	ir, iw, err := os.Pipe()
+	fname := fmt.Sprintf("%s/test-dur-bad.ts", dir)
+	_, err = os.Stat(fname)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	go func(iw *os.File) {
+		defer iw.Close()
+		f, _ := os.Open(fname)
+		io.Copy(iw, f)
+	}(iw)
+
+	badInput := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("pipe:%d", ir.Fd()),
+		Accel: Software,
+	}
+
+	profiles := []VideoProfile{
+		{
+			Name:       "test_profile",
+			Resolution: "854x480",
+			Bitrate:    "1000k",
+		},
+	}
+
+	options := []TranscodeOptions{
+		{
+			Oname:   fmt.Sprintf("%s/out-test-dur.ts", dir),
+			Profile: profiles[0],
+			Accel:   Software,
+		},
+	}
+
+	// transcode bad input
+	_, errBadInput := transcoder.Transcode(badInput, options)
+
+	assert.Nil(t, errBadInput)
 }
