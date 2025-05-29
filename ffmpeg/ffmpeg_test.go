@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -2423,4 +2424,46 @@ func TestTranscoder_PNGDemuxerOpts(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 3, res.Decoded.Frames)
 	assert.Equal(t, 180, res.Encoded[0].Frames)
+}
+
+func TestTranscode_DurationLimit(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	cmd := `
+		# generate a 1fps sample
+		ffmpeg -i "$1"/../transcoder/test.ts -c copy -bsf:v setts=ts=N/TB/1 -frames:v 301 -y test.ts
+		# double check the sample actually has the characteristics we expect
+		ffprobe -show_format test.ts  | grep duration=301.00
+	`
+	run(cmd)
+
+	// Set up transcode options
+	fileInput := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("%v/test.ts", dir),
+	}
+	options := []TranscodeOptions{
+		{
+			Oname:        fmt.Sprintf("%s/out-test.ts", dir),
+			VideoEncoder: ComponentOptions{Name: "copy"},
+			AudioEncoder: ComponentOptions{Name: "copy"},
+			Muxer:        ComponentOptions{Name: "md5"},
+		},
+	}
+
+	// transcode long input from file, should error out
+	_, err := Transcode3(fileInput, options)
+	assert.Equal(t, ErrTranscoderDuration, err)
+
+	// transcode long input from pipe, should *not* error out
+	ir, iw, err := os.Pipe()
+	go func(iw *os.File) {
+		defer iw.Close()
+		f, _ := os.Open(fileInput.Fname)
+		io.Copy(iw, f)
+	}(iw)
+	pipeInput := &TranscodeOptionsIn{
+		Fname: fmt.Sprintf("pipe:%d", ir.Fd()),
+	}
+	_, err = Transcode3(pipeInput, options)
+	assert.Nil(t, err)
 }
