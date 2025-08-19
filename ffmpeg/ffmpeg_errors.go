@@ -20,6 +20,7 @@ var lpmsErrors = []struct {
 	{Code: C.lpms_ERR_INPUT_CODEC, Desc: "Unsupported input codec"},
 	{Code: C.lpms_ERR_INPUT_NOKF, Desc: "No keyframes in input"},
 	{Code: C.lpms_ERR_UNRECOVERABLE, Desc: "Unrecoverable state, restart process"},
+	{Code: C.lpms_ERR_OUTPUT_SIZE, Desc: "Output size limit exceeded"},
 }
 
 func error_map() map[int]error {
@@ -67,6 +68,7 @@ func non_retryable_errs() []string {
 	transcoderErrors := []error{
 		ErrTranscoderRes, ErrTranscoderVid, ErrTranscoderFmt,
 		ErrTranscoderPrf, ErrTranscoderGOP, ErrTranscoderDev,
+		ErrTranscoderOutputSize,
 	}
 	for _, v := range transcoderErrors {
 		errs = append(errs, v.Error())

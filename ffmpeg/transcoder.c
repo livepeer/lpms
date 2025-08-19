@@ -20,6 +20,7 @@ const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_FILTER_FLUSHED = FFERRTAG('F','L','F','L');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
 const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
+const int lpms_ERR_OUTPUT_SIZE = FFERRTAG('O','U','S','Z');
 
 //
 //  Notes on transcoder internals:
@@ -538,6 +539,10 @@ int transcode(struct transcode_thread *h,
         ret = process_out(ictx, octx, encoder, ost, filter, dframe);
       }
       if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) continue;
+      else if (ret == lpms_ERR_OUTPUT_SIZE) {
+        // Muxer throws this error if it detects abnormal output size growth compared to input size
+        LPMS_ERR(transcode_cleanup, "Output size limit exceeded");
+      }
       else if (ret < 0) LPMS_ERR(transcode_cleanup, "Error encoding");
     }
 whileloop_end:

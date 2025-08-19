@@ -296,6 +296,24 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (ret < 0) LPMS_ERR(open_output_err, "Unable to open signature filter");
   }
 
+  // Get input file size for comparison with written output size
+  if (ictx->ic && ictx->ic->pb) {
+    octx->input_file_size = avio_size(ictx->ic->pb);
+  } else {
+    octx->input_file_size = 0;
+  }
+
+  // Set maximum output size to 3x input size or 1GB if input size unknown
+  octx->output_bytes_written = 0;
+  if (octx->input_file_size > 0) {
+    octx->max_output_size = octx->input_file_size * 3;
+    av_log(NULL, AV_LOG_DEBUG, "Setting output size limit to 3x input size: input_size=%lld, max_output_size=%lld\n",
+           (long long)octx->input_file_size, (long long)octx->max_output_size);
+  } else {
+    octx->max_output_size = 1024LL * 1024 * 1024;
+    av_log(NULL, AV_LOG_DEBUG, "Setting output size limit to 1GB (input size unknown)\n");
+  }
+
   octx->initialized = 1;
 
   return 0;
@@ -398,7 +416,11 @@ int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVS
             pkt->pts = (int64_t)pkt->opaque; // already in filter timebase
             pkt->dts = pkt->pts - av_rescale_q(pts_dts, encoder->time_base, time_base);
           }
-          mux(pkt, time_base, octx, ost);
+          ret = mux(pkt, time_base, octx, ost);
+          if (ret < 0) {
+            av_packet_free(&pkt);
+            LPMS_ERR(encode_cleanup, "Error muxing packet during encoder flush");
+          }
         } else if (AVERROR_EOF != ret) {
           av_packet_free(&pkt);
           LPMS_ERR(encode_cleanup, "did not get eof");
@@ -517,6 +539,20 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
       octx->last_video_dts = pkt->dts;
   }
 
+  // Track output size and check for size limit before writing
+  if (pkt->size > 0) {
+    octx->output_bytes_written += pkt->size;
+    if (octx->output_bytes_written > octx->max_output_size) {
+      av_log(NULL, AV_LOG_ERROR, "Output size limit exceeded: %lld bytes written, limit is %lld bytes. "
+                                 "Input file size: %lld bytes. Output filename: %s.\n",
+             (long long)octx->output_bytes_written,
+             (long long)octx->max_output_size,
+             (long long)octx->input_file_size,
+             octx->fname ? octx->fname : "unknown");
+      return lpms_ERR_OUTPUT_SIZE;
+    }
+  }
+
   return av_interleaved_write_frame(octx->oc, pkt);
 }
 
@@ -626,6 +662,13 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       }
 
       ret = encode(encoder, frame, octx, ost);
+
+      // Abort further processing if output size limit is exceeded
+      if (ret == lpms_ERR_OUTPUT_SIZE) {
+        av_frame_unref(frame);
+        return ret;
+      }
+
 skip:
     av_frame_unref(frame);
     // For HW we keep the encoder open so will only get EAGAIN.
