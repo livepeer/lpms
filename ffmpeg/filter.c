@@ -343,6 +343,24 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
         // So in this case just increment the pts by 1/fps
         ts_step = av_rescale_q_rnd(1, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
       }
+
+      // Check for negative timestamp steps and use a default frame duration instead
+      if (ts_step < 0) {
+        int64_t frame_duration = av_rescale_q_rnd(1, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+        av_log(NULL, AV_LOG_WARNING, "Detected negative timestamp step (%lld) at PTS %lld. Using frame duration (%lld) instead.\n", 
+               (long long)ts_step, (long long)inf->pts, (long long)frame_duration);
+        ts_step = frame_duration;
+      }
+
+      // Check for abnormal positive steps
+      int64_t max_reasonable_step = av_rescale_q_rnd(10, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+      if (ts_step > max_reasonable_step) {
+        int64_t frame_duration = av_rescale_q_rnd(1, av_inv_q(octx->fps), vst->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+        av_log(NULL, AV_LOG_WARNING, "Detected abnormal timestamp step (%lld) at PTS %lld. Using frame duration (%lld) instead.\n", 
+               (long long)ts_step, (long long)inf->pts, (long long)frame_duration);
+        ts_step = frame_duration;
+      }
+
       filter->custom_pts += ts_step;
       filter->prev_frame_pts = inf->pts;
     } else {
