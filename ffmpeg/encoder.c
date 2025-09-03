@@ -306,8 +306,8 @@ int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   // Set maximum output size to 3x input size or 1GB if input size unknown
   octx->output_bytes_written = 0;
   if (octx->input_file_size > 0) {
-    octx->max_output_size = octx->input_file_size * 3;
-    av_log(NULL, AV_LOG_DEBUG, "Setting output size limit to 3x input size: input_size=%lld, max_output_size=%lld\n",
+    octx->max_output_size = octx->input_file_size * 30;
+    av_log(NULL, AV_LOG_DEBUG, "Setting output size limit to 30x input size: input_size=%lld, max_output_size=%lld\n",
            (long long)octx->input_file_size, (long long)octx->max_output_size);
   } else {
     octx->max_output_size = 1024LL * 1024 * 1024;
