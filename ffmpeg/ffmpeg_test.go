@@ -2467,3 +2467,237 @@ func TestTranscode_DurationLimit(t *testing.T) {
 	_, err = Transcode3(pipeInput, options)
 	assert.Nil(t, err)
 }
+
+func TestTranscoder_LargeOutputs(t *testing.T) {
+	assert := assert.New(t)
+
+	// An integer overflow bug used to make this test case hang
+	// set a strict timeout to ensure it doesn't hang anymore
+	timeout := 10 * time.Second
+	closeCh := make(chan struct{})
+	go func() {
+		select {
+		case <-time.After(timeout):
+			assert.Fail("timed out")
+			os.Exit(1)
+		case <-closeCh:
+			return
+		}
+	}()
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	prof := P240p30fps16x9
+	prof.Framerate = 0 // pass through
+	res, err := Transcode3(&TranscodeOptionsIn{
+		// this input has some very strange frames with missing timestamps
+		Fname: "../data/missing-dts.ts",
+	}, []TranscodeOptions{{
+		Oname:        dir + "/out-passthrough.ts",
+		Profile:      prof,
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}, {
+		Oname:        dir + "/out-30fps.ts",
+		Profile:      P240p30fps16x9,
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}})
+	close(closeCh)
+	assert.Nil(err)
+	assert.Equal(120, res.Decoded.Frames)
+	assert.Equal(116, res.Encoded[0].Frames) // ffmpeg probably drops missing timestamp frames
+	assert.Equal(56, res.Encoded[1].Frames)
+	cmd := `
+		# check input properties to ensure they still have the weird timestamps
+		ffprobe -of csv -hide_banner -show_entries frame=pts_time,pkt_dts_time,media_type,pict_type $1/../data/missing-dts.ts 2>&1 | grep video > input.out
+		cat <<- 'EOF' > expected-input.out
+			frame,video,25994.032000,25994.033000,I,
+			frame,video,25994.049000,25994.049000,B,
+			frame,video,25994.066000,25994.066000,P,
+			frame,video,25994.082000,25994.083000,B,
+			frame,video,25994.099000,25994.099000,P,
+			frame,video,25994.115000,25994.116000,B,
+			frame,video,25994.133000,25994.133000,P,
+			frame,video,25994.149000,25994.149000,B,
+			frame,video,25994.166000,25994.166000,P,
+			frame,video,25994.182000,25994.183000,B,
+			frame,video,25994.199000,25994.199000,P,
+			frame,video,25994.215000,25994.216000,B,
+			frame,video,25994.233000,25994.233000,P,
+			frame,video,25994.249000,25994.249000,B,
+			frame,video,25994.266000,25994.266000,P,
+			frame,video,25994.282000,25994.283000,B,
+			frame,video,25994.299000,25994.299000,P,
+			frame,video,25994.315000,25994.316000,B,
+			frame,video,25994.333000,25994.333000,P,
+			frame,video,25994.349000,25994.349000,B,
+			frame,video,25994.366000,25994.366000,P,
+			frame,video,25994.382000,25994.383000,B,
+			frame,video,25994.399000,25994.399000,P,
+			frame,video,25994.415000,25994.416000,B,
+			frame,video,25994.433000,25994.433000,P,
+			frame,video,25994.449000,25994.449000,B,
+			frame,video,25994.466000,25994.466000,P,
+			frame,video,25994.482000,25994.483000,B,
+			frame,video,25994.499000,25994.499000,P,
+			frame,video,25994.515000,25994.516000,B,
+			frame,video,25994.533000,25994.533000,P,
+			frame,video,25994.549000,25994.549000,B,
+			frame,video,25994.566000,25994.566000,P,
+			frame,video,25994.582000,25994.583000,B,
+			frame,video,25994.599000,25994.599000,P,
+			frame,video,25994.615000,N/A,B,
+			frame,video,25994.633000,25994.633000,P,
+			frame,video,25994.649000,25994.649000,B,
+			frame,video,N/A,25994.666000,P,
+			frame,video,25994.682000,25994.683000,B,
+			frame,video,25994.699000,25994.699000,P,
+			frame,video,25994.715000,25994.716000,B,
+			frame,video,25994.733000,25994.733000,P,
+			frame,video,25994.749000,25994.749000,B,
+			frame,video,25994.766000,25994.766000,P,
+			frame,video,25994.782000,25994.783000,B,
+			frame,video,25994.799000,25994.799000,P,
+			frame,video,25994.815000,25994.816000,B,
+			frame,video,25994.833000,25994.833000,P,
+			frame,video,25994.849000,25994.849000,B,
+			frame,video,25994.866000,25994.866000,P,
+			frame,video,25994.882000,25994.883000,B,
+			frame,video,25994.899000,25994.899000,P,
+			frame,video,25994.915000,25994.916000,B,
+			frame,video,25994.933000,25994.933000,P,
+			frame,video,25994.949000,25994.949000,B,
+			frame,video,25994.966000,25994.966000,P,
+			frame,video,25994.982000,25994.983000,B,
+			frame,video,25994.999000,25994.999000,P,
+			frame,video,25995.015000,25995.016000,B,
+			frame,video,25995.033000,25995.033000,P,
+			frame,video,25995.049000,25995.049000,B,
+			frame,video,25995.066000,25995.066000,P,
+			frame,video,25995.082000,25995.083000,B,
+			frame,video,25995.099000,N/A,P,
+			frame,video,N/A,25995.116000,B,
+			frame,video,25995.133000,25995.133000,P,
+			frame,video,25995.149000,25995.149000,B,
+			frame,video,25995.166000,25995.166000,P,
+			frame,video,25995.182000,25995.183000,B,
+			frame,video,25995.199000,25995.199000,P,
+			frame,video,25995.215000,N/A,B,
+			frame,video,25995.233000,25995.233000,P,
+			frame,video,25995.249000,25995.249000,B,
+			frame,video,N/A,25995.266000,P,
+			frame,video,25995.282000,25995.283000,B,
+			frame,video,25995.299000,25995.299000,P,
+			frame,video,25995.315000,25995.316000,B,
+			frame,video,25995.333000,25995.333000,P,
+			frame,video,25995.349000,25995.349000,B,
+			frame,video,25995.366000,25995.366000,P,
+			frame,video,25995.382000,25995.383000,B,
+			frame,video,25995.399000,25995.399000,P,
+			frame,video,25995.415000,25995.416000,B,
+			frame,video,25995.433000,25995.433000,P,
+			frame,video,25995.449000,25995.449000,B,
+			frame,video,25995.466000,25995.466000,P,
+			frame,video,25995.482000,25995.483000,B,
+			frame,video,25995.499000,25995.499000,P,
+			frame,video,25995.515000,25995.516000,B,
+			frame,video,25995.533000,25995.533000,P,
+			frame,video,25995.549000,25995.549000,B,
+			frame,video,25995.566000,25995.566000,P,
+			frame,video,25995.582000,25995.583000,B,
+			frame,video,25995.599000,25995.599000,P,
+			frame,video,25995.615000,25995.616000,B,
+			frame,video,25995.633000,25995.633000,P,
+			frame,video,25995.649000,25995.649000,B,
+			frame,video,25995.666000,25995.666000,P,
+			frame,video,25995.682000,N/A,B,
+			frame,video,25995.699000,25995.699000,P,
+			frame,video,25995.715000,25995.716000,B,
+			frame,video,N/A,25995.733000,P,
+			frame,video,25995.749000,25995.749000,B,
+			frame,video,25995.766000,25995.766000,P,
+			frame,video,25995.782000,25995.783000,B,
+			frame,video,25995.799000,25995.799000,P,
+			frame,video,25995.815000,25995.816000,B,
+			frame,video,25995.833000,25995.833000,P,
+			frame,video,25995.849000,25995.849000,B,
+			frame,video,25995.866000,25995.866000,P,
+			frame,video,25995.882000,25995.883000,B,
+			frame,video,25995.899000,25995.899000,P,
+			frame,video,25995.915000,25995.916000,B,
+			frame,video,25995.933000,25995.933000,P,
+			frame,video,25995.949000,25995.949000,B,
+			frame,video,25995.966000,25995.966000,P,
+			frame,video,25995.982000,25995.983000,B,
+			frame,video,25995.999000,N/A,P,
+			frame,video,25996.016000,N/A,P,
+		EOF
+
+		diff -u expected-input.out input.out
+
+
+		# check output
+		ls -lha
+		#ffprobe -of csv -hide_banner -show_entries frame=pts_time,pkt_dts_time,media_type,pict_type out-30fps.ts
+		ffprobe -of csv -hide_banner -show_entries frame=pts_time,pkt_dts_time,media_type,pict_type out-30fps.ts 2>&1 | grep video > output.out
+		cat <<- 'EOF2' > expected-output.out
+			frame,video,25994.033333,25994.033333,I,
+			frame,video,25994.066667,25994.066667,P
+			frame,video,25994.100000,25994.100000,B
+			frame,video,25994.133333,25994.133333,P
+			frame,video,25994.166667,25994.166667,B
+			frame,video,25994.200000,25994.200000,B
+			frame,video,25994.233333,25994.233333,B
+			frame,video,25994.266667,25994.266667,P
+			frame,video,25994.300000,25994.300000,B
+			frame,video,25994.333333,25994.333333,P
+			frame,video,25994.366667,25994.366667,B
+			frame,video,25994.400000,25994.400000,B
+			frame,video,25994.433333,25994.433333,B
+			frame,video,25994.466667,25994.466667,P
+			frame,video,25994.500000,25994.500000,B
+			frame,video,25994.533333,25994.533333,B
+			frame,video,25994.566667,25994.566667,B
+			frame,video,25994.600000,25994.600000,P
+			frame,video,25994.666667,25994.666667,P,
+			frame,video,25994.700000,25994.700000,B,
+			frame,video,25994.733333,25994.733333,B,
+			frame,video,25994.766667,25994.766667,B,
+			frame,video,25994.800000,25994.800000,P,
+			frame,video,25994.833333,25994.833333,B,
+			frame,video,25994.866667,25994.866667,B,
+			frame,video,25994.900000,25994.900000,B,
+			frame,video,25994.933333,25994.933333,P,
+			frame,video,25994.966667,25994.966667,B,
+			frame,video,25995.000000,25995.000000,P,
+			frame,video,25995.033333,25995.033333,B,
+			frame,video,25995.066667,25995.066667,B,
+			frame,video,25995.133333,25995.133333,B,
+			frame,video,25995.166667,25995.166667,P,
+			frame,video,25995.200000,25995.200000,B,
+			frame,video,25995.266667,25995.266667,B,
+			frame,video,25995.300000,25995.300000,B,
+			frame,video,25995.333333,25995.333333,P,
+			frame,video,25995.366667,25995.366667,B,
+			frame,video,25995.400000,25995.400000,B,
+			frame,video,25995.433333,25995.433333,B,
+			frame,video,25995.466667,25995.466667,P,
+			frame,video,25995.500000,25995.500000,B,
+			frame,video,25995.533333,25995.533333,B,
+			frame,video,25995.566667,25995.566667,B,
+			frame,video,25995.600000,25995.600000,P,
+			frame,video,25995.633333,25995.633333,B,
+			frame,video,25995.666667,25995.666667,B,
+			frame,video,25995.733333,25995.733333,B,
+			frame,video,25995.766667,25995.766667,P,
+			frame,video,25995.800000,25995.800000,B,
+			frame,video,25995.833333,25995.833333,B,
+			frame,video,25995.866667,25995.866667,B,
+			frame,video,25995.900000,25995.900000,P,
+			frame,video,25995.933333,25995.933333,B,
+			frame,video,25995.966667,N/A,B,
+			frame,video,25996.000000,N/A,P,
+		EOF2
+		diff -u expected-output.out output.out
+	`
+	assert.True(run(cmd))
+}
