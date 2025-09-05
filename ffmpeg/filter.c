@@ -366,7 +366,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
 
   if (inf) {
     // Apply the custom pts, then reset for the next output
-    int old_pts = inf->pts;
+    int64_t old_pts = inf->pts;
     inf->pts = filter->custom_pts;
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
     inf->pts = old_pts;
