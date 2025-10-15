@@ -340,7 +340,26 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
   // Timestamp handling code
   AVStream *vst = ictx->ic->streams[ictx->vi];
   if (inf) { // Non-Flush Frame
-    inf->opaque = (void *) inf->pts; // Store original PTS for calc later
+    if (is_video) {
+      int64_t pts = inf->pts;
+      if (pts == AV_NOPTS_VALUE) pts = inf->best_effort_timestamp;
+      if (pts == AV_NOPTS_VALUE && ictx->segment_pts_samples > 0) {
+        int64_t step = inf->duration;
+        if (!step && vst->r_frame_rate.den){
+          step = av_rescale_q(1, av_inv_q(vst->r_frame_rate), vst->time_base);
+        }
+        if (step){
+          pts = ictx->segment_last_pts + step;
+        }
+      }
+      inf->opaque = (void *)pts;
+      inf->pts = pts;
+    } else {
+      inf->opaque = (void *) inf->pts;
+    }
+    if (inf->pts == AV_NOPTS_VALUE) {
+      av_log(NULL, AV_LOG_WARNING, "Filter frame pts is AV_NOPTS_VALUE\n");
+    }
     if (is_video && octx->fps.den) {
       // Custom PTS set when FPS filter is used
       int64_t ts_step = inf->pts - filter->prev_frame_pts;
@@ -372,7 +391,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
 
   if (inf) {
     // Apply the custom pts, then reset for the next output
-    int64_t old_pts = inf->pts;
+    int64_t old_pts = inf->pts;ts;
     inf->pts = filter->custom_pts;
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
     inf->pts = old_pts;
