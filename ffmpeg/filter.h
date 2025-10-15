@@ -81,6 +81,13 @@ struct output_ctx {
 
   output_results  *res; // data to return for this output
   char *xcoderParams;
+
+  int64_t segment_first_output_pts;
+  int64_t segment_last_output_pts;
+  int64_t segment_accum_output_duration;
+  int64_t guard_target_frame_duration; // cached duration of one frame in encoder timebase when fps is fixed
+  int guard_has_target_fps;            // non-zero when this rendition enforces a constant fps
+
 };
 
 int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx, AVFrame *inf);
