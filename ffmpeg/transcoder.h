@@ -17,6 +17,8 @@ extern const int lpms_ERR_PACKET_ONLY;
 extern const int lpms_ERR_FILTER_FLUSHED;
 extern const int lpms_ERR_OUTPUTS;
 extern const int lpms_ERR_UNRECOVERABLE;
+extern const int lpms_ERR_OUTPUT_GUARD_DURATION;
+extern const int lpms_ERR_OUTPUT_GUARD_FRAME_BUDGET;
 
 struct transcode_thread;
 

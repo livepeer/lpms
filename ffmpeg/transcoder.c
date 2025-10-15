@@ -9,6 +9,7 @@
 #include <libavformat/avformat.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersrc.h>
+#include <libavutil/avutil.h>
 #include <stdbool.h>
 
 // Not great to appropriate internal API like this...
@@ -20,6 +21,8 @@ const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_FILTER_FLUSHED = FFERRTAG('F','L','F','L');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
 const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
+const int lpms_ERR_OUTPUT_GUARD_DURATION = FFERRTAG('O', 'G', 'R', 'D');
+const int lpms_ERR_OUTPUT_GUARD_FRAME_BUDGET = FFERRTAG('O', 'G', 'R', 'F');
 
 //
 //  Notes on transcoder internals:
@@ -326,6 +329,19 @@ int transcode(struct transcode_thread *h,
   int nb_outputs = h->nb_outputs;
   int outputs_ready = 0, hit_eof = 0;
 
+  ictx->segment_first_pts = AV_NOPTS_VALUE;
+  ictx->segment_last_pts = AV_NOPTS_VALUE;
+  ictx->segment_pts_samples = 0;
+  ictx->segment_accum_duration = 0;
+
+  for (int i = 0; i < nb_outputs; i++) {
+    outputs[i].segment_first_output_pts = AV_NOPTS_VALUE;
+    outputs[i].segment_last_output_pts = AV_NOPTS_VALUE;
+    outputs[i].segment_accum_output_duration = 0;
+    outputs[i].guard_target_frame_duration = 0;
+    outputs[i].guard_has_target_fps = outputs[i].fps.den != 0;
+  }
+
   ipkt = av_packet_alloc();
   if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
   dframe = av_frame_alloc();
@@ -427,6 +443,18 @@ int transcode(struct transcode_thread *h,
       decoded_results->pixels += dframe->width * dframe->height;
       has_frame = has_frame && dframe->width && dframe->height;
       if (has_frame) last_frame = ictx->last_frame_v;
+      if (has_frame) {
+        int64_t pts = dframe->pts;
+        if (pts == AV_NOPTS_VALUE) pts = dframe->best_effort_timestamp;
+        if (pts == AV_NOPTS_VALUE && ictx->segment_pts_samples > 0 && dframe->duration)
+          pts = ictx->segment_last_pts + dframe->duration;
+        if (ictx->segment_first_pts == AV_NOPTS_VALUE && pts != AV_NOPTS_VALUE)
+          ictx->segment_first_pts = pts;
+        if (pts != AV_NOPTS_VALUE) ictx->segment_last_pts = pts;
+        ictx->segment_pts_samples++;
+        if (dframe->duration)
+          ictx->segment_accum_duration += dframe->duration;
+      }
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
       has_frame = has_frame && dframe->nb_samples;
       if (has_frame) last_frame = ictx->last_frame_a;
