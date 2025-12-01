@@ -20,6 +20,8 @@ var lpmsErrors = []struct {
 	{Code: C.lpms_ERR_INPUT_CODEC, Desc: "Unsupported input codec"},
 	{Code: C.lpms_ERR_INPUT_NOKF, Desc: "No keyframes in input"},
 	{Code: C.lpms_ERR_UNRECOVERABLE, Desc: "Unrecoverable state, restart process"},
+	{Code: C.lpms_ERR_OUTPUT_GUARD_DURATION, Desc: "Output duration larger than input duration"},
+	{Code: C.lpms_ERR_OUTPUT_GUARD_FRAME_BUDGET, Desc: "Output frame count larger than expected"},
 }
 
 func error_map() map[int]error {

@@ -173,6 +173,10 @@ void free_output(struct output_ctx *octx)
   free_filter(&octx->vf);
   free_filter(&octx->af);
   free_filter(&octx->sf);
+  octx->segment_first_output_pts = AV_NOPTS_VALUE;
+  octx->segment_last_output_pts = AV_NOPTS_VALUE;
+  octx->guard_target_frame_duration = 0;
+  octx->guard_has_target_fps = 0;
 }
 
 int open_remux_output(struct input_ctx *ictx, struct output_ctx *octx)
@@ -422,6 +426,18 @@ int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVS
     }
     octx->res->frames++;
     octx->res->pixels += encoder->width * encoder->height;
+
+    if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type) {
+      int64_t pts_out = frame ? frame->pts : AV_NOPTS_VALUE;
+      if (octx->segment_first_output_pts == AV_NOPTS_VALUE && pts_out != AV_NOPTS_VALUE)
+        octx->segment_first_output_pts = pts_out;
+      if (pts_out != AV_NOPTS_VALUE)
+        octx->segment_last_output_pts = pts_out;
+
+      int64_t step = frame && frame->duration ? frame->duration : octx->guard_target_frame_duration;
+      if (step <= 0) step = 1;
+      octx->segment_accum_output_duration += step;
+    }
   }
 
   // We don't want to send NULL frames for HW encoding
@@ -622,6 +638,54 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         if (av_cmp_q(filter_tb, encoder->time_base)) {
           frame->pts = av_rescale_q(frame->pts, filter_tb, encoder->time_base);
           // TODO does frame->duration needs to be rescaled too?
+        }
+      }
+
+      if (is_video && frame) {
+        // Guard checks keep the encoded timeline bounded by the source timeline.
+        // `segment_first_pts/last_pts` come from the decoder and `segment_accum_output_duration`
+        // is updated whenever a frame successfully encodes. Use both to ensure
+        // the next frame would not push the output timeline past the input.
+        AVRational in_tb = ictx->ic->streams[ictx->vi]->time_base;
+        AVRational out_tb = encoder->time_base;
+        int64_t input_start = av_rescale_q(ictx->segment_first_pts, in_tb, out_tb);
+        int64_t input_end = av_rescale_q(ictx->segment_last_pts, in_tb, out_tb);
+        int64_t implicit_dur = input_end - input_start;
+        if (implicit_dur < 0) implicit_dur = 0;
+        int64_t accum_dur = av_rescale_q(ictx->segment_accum_duration,
+                                          ictx->ic->streams[ictx->vi]->time_base,
+                                          out_tb);
+        int64_t input_duration = FFMAX(implicit_dur, accum_dur);
+
+        if (input_duration > 0) {
+          int64_t duration_slack = input_duration / 10; // allow 10% slack
+          int64_t min_slack = av_rescale_q(100, (AVRational){1, 1000}, out_tb); // min 100ms in encoder timebase
+          if (duration_slack < min_slack) duration_slack = min_slack;
+
+          if (octx->segment_accum_output_duration > input_duration + duration_slack) {
+            // Would emit more timeline than the source contained – abort the segment.
+            return lpms_ERR_OUTPUT_GUARD_DURATION;
+          }
+        }
+
+        if (octx->guard_has_target_fps) {
+          // When this rendition has an explicit FPS, compute the expected
+          // frame budget from the same input duration. The cached
+          // `guard_target_frame_duration` is the encoder-timebase duration of
+          // a single target frame.
+          if (octx->guard_target_frame_duration <= 0) {
+            int64_t frame_dur = av_rescale_q(1, av_inv_q(octx->fps), out_tb);
+            if (frame_dur < 1) frame_dur = 1;
+            octx->guard_target_frame_duration = frame_dur;
+          }
+          int64_t frame_dur = octx->guard_target_frame_duration;
+          int64_t expected_frames = (input_duration + frame_dur / 2) / frame_dur;
+          int64_t frame_slack = expected_frames / 10; // allow 10% slack
+          if (frame_slack < 5) frame_slack = 5; // min 5 frames
+          if (octx->res->frames > expected_frames + frame_slack) {
+            // Fixed-fps outputs should never exceed the predicted frame budget.
+            return lpms_ERR_OUTPUT_GUARD_FRAME_BUDGET;
+          }
         }
       }
 

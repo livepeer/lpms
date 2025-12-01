@@ -7,6 +7,7 @@
 
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
+#include <libavutil/avutil.h>
 
 #include <assert.h>
 
@@ -100,14 +101,16 @@ int init_video_filters(struct input_ctx *ictx, struct output_ctx *octx, AVFrame 
     }
 
     /* buffer video sink: to terminate the filter chain. */
-    ret = avfilter_graph_create_filter(&vf->sink_ctx, buffersink,
-                                       "out", NULL, NULL, vf->graph);
-    if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot create video buffer sink");
-
+    vf->sink_ctx = avfilter_graph_alloc_filter(vf->graph, buffersink, "out");
+    if (!vf->sink_ctx) {
+      ret = AVERROR(ENOMEM);
+      LPMS_ERR(vf_init_cleanup, "Cannot allocate video buffer sink");
+    }
     ret = av_opt_set_int_list(vf->sink_ctx, "pix_fmts", pix_fmts,
                               AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot set output pixel format");
-
+    ret = avfilter_init_str(vf->sink_ctx, NULL);
+    if (ret < 0) LPMS_ERR(vf_init_cleanup, "Cannot initialize video buffer sink");
     ret = filtergraph_parser(vf, filters_descr, &inputs, &outputs);
     if (ret < 0) LPMS_ERR(vf_init_cleanup, "Unable to parse video filters desc");
 
@@ -256,13 +259,16 @@ int init_signature_filters(struct output_ctx *octx, AVFrame *inf)
     }
 
     /* buffer video sink: to terminate the filter chain. */
-    ret = avfilter_graph_create_filter(&sf->sink_ctx, buffersink,
-                                       "out", NULL, NULL, sf->graph);
-    if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot create video buffer sink");
-
+    sf->sink_ctx = avfilter_graph_alloc_filter(sf->graph, buffersink, "out");
+    if (!sf->sink_ctx) {
+      ret = AVERROR(ENOMEM);
+      LPMS_ERR(sf_init_cleanup, "Cannot allocate signature buffer sink");
+    }
     ret = av_opt_set_int_list(sf->sink_ctx, "pix_fmts", pix_fmts,
                               AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
     if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot set output pixel format");
+    ret = avfilter_init_str(sf->sink_ctx, NULL);
+    if (ret < 0) LPMS_ERR(sf_init_cleanup, "Cannot initialize signature buffer sink");
 
     ret = filtergraph_parser(sf, filters_descr, &inputs, &outputs);
     if (ret < 0) LPMS_ERR(sf_init_cleanup, "Unable to parse signature filters desc");
