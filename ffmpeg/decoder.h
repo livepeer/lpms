@@ -55,6 +55,9 @@ struct input_ctx {
   // In HW transcoding, demuxer is opened once and used,
   // so it is necessary to check whether the input pixel format does not change in the middle.
   enum AVPixelFormat last_format;
+
+  // per-segment tracking (reset for each segment)
+  int64_t segment_last_pts;        // best-effort pts of most recent decoded video frame
 };
 
 // Exported methods
