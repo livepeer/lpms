@@ -340,7 +340,7 @@ int filtergraph_write(AVFrame *inf, struct input_ctx *ictx, struct output_ctx *o
         av_log(NULL, AV_LOG_WARNING, "Filter frame pts is AV_NOPTS_VALUE. Falling back to best_effort_timestamp\n");
         pts = inf->best_effort_timestamp;
       }
-      if (pts == AV_NOPTS_VALUE && ictx->segment_pts_samples > 0) {
+      if (pts == AV_NOPTS_VALUE && ictx->segment_last_pts != AV_NOPTS_VALUE) {
         av_log(NULL, AV_LOG_WARNING, "Filter frame pts is still AV_NOPTS_VALUE. Falling back to segment_last_pts + step\n");
         int64_t step = inf->duration;
         if (!step && vst->r_frame_rate.den){

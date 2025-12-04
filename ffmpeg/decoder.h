@@ -57,10 +57,7 @@ struct input_ctx {
   enum AVPixelFormat last_format;
 
   // per-segment tracking (reset for each segment)
-  int64_t segment_first_pts;       // best-effort pts of first decoded video frame
   int64_t segment_last_pts;        // best-effort pts of most recent decoded video frame
-  int64_t segment_accum_duration;  // sum of decoded frame durations (input timebase)
-  int segment_pts_samples;         // number of decoded frames contributing timestamps
 };
 
 // Exported methods

@@ -326,10 +326,7 @@ int transcode(struct transcode_thread *h,
   int nb_outputs = h->nb_outputs;
   int outputs_ready = 0, hit_eof = 0;
 
-  ictx->segment_first_pts = AV_NOPTS_VALUE;
   ictx->segment_last_pts = AV_NOPTS_VALUE;
-  ictx->segment_pts_samples = 0;
-  ictx->segment_accum_duration = 0;
 
   ipkt = av_packet_alloc();
   if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
@@ -434,15 +431,13 @@ int transcode(struct transcode_thread *h,
       if (has_frame) {
         last_frame = ictx->last_frame_v;
         int64_t pts = dframe->pts;
+        // Try best effort timestamp if pts is not available
         if (pts == AV_NOPTS_VALUE) pts = dframe->best_effort_timestamp;
-        if (pts == AV_NOPTS_VALUE && ictx->segment_pts_samples > 0 && dframe->duration)
+        // If best effort timestamp is not available, try to use segment last pts + duration
+        if (pts == AV_NOPTS_VALUE && ictx->segment_last_pts != AV_NOPTS_VALUE && dframe->duration)
           pts = ictx->segment_last_pts + dframe->duration;
-        if (ictx->segment_first_pts == AV_NOPTS_VALUE && pts != AV_NOPTS_VALUE)
-          ictx->segment_first_pts = pts;
+        // Only update segment last pts if pts is valid
         if (pts != AV_NOPTS_VALUE) ictx->segment_last_pts = pts;
-        ictx->segment_pts_samples++;
-        if (dframe->duration)
-          ictx->segment_accum_duration += dframe->duration;
       }
     } else if (AVMEDIA_TYPE_AUDIO == ist->codecpar->codec_type) {
       has_frame = has_frame && dframe->nb_samples;
