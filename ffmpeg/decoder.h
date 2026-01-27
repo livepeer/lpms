@@ -13,6 +13,9 @@ struct input_ctx {
   int vi, ai; // video and audio stream indices
   int dv, da; // flags whether to drop video or audio
 
+  // Decoded results for current transcode call (for early abort checks)
+  output_results *decoded_res;
+
   // Hardware decoding support
   AVBufferRef *hw_device_ctx;
   enum AVHWDeviceType hw_type;

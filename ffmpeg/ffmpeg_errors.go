@@ -20,6 +20,7 @@ var lpmsErrors = []struct {
 	{Code: C.lpms_ERR_INPUT_CODEC, Desc: "Unsupported input codec"},
 	{Code: C.lpms_ERR_INPUT_NOKF, Desc: "No keyframes in input"},
 	{Code: C.lpms_ERR_UNRECOVERABLE, Desc: "Unrecoverable state, restart process"},
+	{Code: C.lpms_ERR_ENC_RUNAWAY, Desc: "Encoded frames runaway"},
 }
 
 func error_map() map[int]error {

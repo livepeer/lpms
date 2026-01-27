@@ -4,6 +4,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
+#include <string.h>
 
 static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
 {
@@ -624,6 +625,23 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
           // TODO does frame->duration needs to be rescaled too?
         }
       }
+
+    // Check for runaway encodes where the FPS filter produces too many frames
+    // Unclear what causes these
+    if (is_video && frame && ictx->decoded_res && ictx->decoded_res->frames > 0) {
+      if (ictx->ic && ictx->ic->iformat &&
+          !strcmp(ictx->ic->iformat->name, "image2")) {
+        // Image sequence input can legitimately expand frame counts.
+        goto after_runaway_check;
+      }
+      int64_t decoded_frames = ictx->decoded_res->frames;
+      if ((int64_t)octx->res->frames + 1 > 25 * decoded_frames) {
+        av_frame_unref(frame);
+        ret = lpms_ERR_ENC_RUNAWAY;
+        goto proc_cleanup;
+      }
+    }
+after_runaway_check:
 
       ret = encode(encoder, frame, octx, ost);
 skip:

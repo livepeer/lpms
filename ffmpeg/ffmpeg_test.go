@@ -1536,6 +1536,33 @@ func TestTranscoder_PassthroughFPS(t *testing.T) {
 	run(cmd)
 }
 
+func TestTranscoder_EncodedFrameRunaway(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// generate a sample with 10 seconds between frames
+	// transcode to 5 fps == 50 output frames per input frame
+	// should trigger runaway frame detection (output > 25x input)
+
+	cmd := `
+        cp "$1/../transcoder/test.ts" test.ts
+        ffmpeg -i test.ts -vf "setpts=N*10/TB" -frames:v 5 -c:v libx264 -bf 0 -fps_mode vfr -an lowfps.mp4
+        ffprobe -v warning -select_streams v -show_entries format=duration lowfps.mp4 | grep duration=40.0
+    `
+	run(cmd)
+
+	profile := P144p30fps16x9
+	profile.Framerate = 5
+	in := &TranscodeOptionsIn{Fname: dir + "/lowfps.mp4"}
+	out := []TranscodeOptions{{
+		Oname:   dir + "/out-60fps.ts",
+		Profile: profile,
+	}}
+
+	_, err := Transcode3(in, out)
+	assert.EqualError(t, err, "Encoded frames runaway")
+}
+
 func TestTranscoder_PassthroughFPS_AdjustTimestamps(t *testing.T) {
 	// check timestamp adjustments for fps passthrough
 

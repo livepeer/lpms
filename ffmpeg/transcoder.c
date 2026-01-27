@@ -20,6 +20,7 @@ const int lpms_ERR_PACKET_ONLY = FFERRTAG('P','K','O','N');
 const int lpms_ERR_FILTER_FLUSHED = FFERRTAG('F','L','F','L');
 const int lpms_ERR_OUTPUTS = FFERRTAG('O','U','T','P');
 const int lpms_ERR_UNRECOVERABLE = FFERRTAG('U', 'N', 'R', 'V');
+const int lpms_ERR_ENC_RUNAWAY = FFERRTAG('E', 'N', 'R', 'W');
 
 //
 //  Notes on transcoder internals:
@@ -326,6 +327,8 @@ int transcode(struct transcode_thread *h,
   int nb_outputs = h->nb_outputs;
   int outputs_ready = 0, hit_eof = 0;
 
+  ictx->decoded_res = decoded_results;
+
   ipkt = av_packet_alloc();
   if (!ipkt) LPMS_ERR(transcode_cleanup, "Unable to allocated packet");
   dframe = av_frame_alloc();
@@ -552,6 +555,7 @@ whileloop_end:
         avformat_close_input(&ictx->ic);
         ictx->ic = NULL;
     }
+    ictx->decoded_res = NULL;
     return 0;
   }
 
@@ -562,6 +566,7 @@ whileloop_end:
   }
 
 transcode_cleanup:
+  ictx->decoded_res = NULL;
   if (dframe) av_frame_free(&dframe);
   if (ipkt) av_packet_free(&ipkt);  // needed for early exits
   if (frame_queue) queue_free(&frame_queue);
