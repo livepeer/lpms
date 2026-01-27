@@ -207,8 +207,7 @@ close_format_context:
 
 int lpms_compare_sign_bypath(char *signpath1, char *signpath2)
 {
-  int ret = avfilter_compare_sign_bypath(signpath1, signpath2);
-  return ret;
+  return -1;
 }
 // compare two signature buffers whether those matches or not.
 // @param signbuf1        the pointer of the first signature buffer.
@@ -218,8 +217,7 @@ int lpms_compare_sign_bypath(char *signpath1, char *signpath2)
 // @return  <0: error =0: no matchiing 1: partial matching 2: whole matching.
 int lpms_compare_sign_bybuffer(void *buffer1, int len1, void *buffer2, int len2)
 {
-  int ret = avfilter_compare_sign_bybuff(buffer1, len1, buffer2, len2);
-  return ret;
+  return -1;
 }
 
 static int get_filesize(const char *filename)
