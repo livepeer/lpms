@@ -637,7 +637,11 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
         AVRational filter_tb = av_buffersink_get_time_base(filter->sink_ctx);
         if (av_cmp_q(filter_tb, encoder->time_base)) {
           frame->pts = av_rescale_q(frame->pts, filter_tb, encoder->time_base);
-          // TODO does frame->duration needs to be rescaled too?
+          // Keep duration in the same timebase as pts; it is used for guard checks.
+          if (frame->duration > 0) {
+            frame->duration = av_rescale_q(frame->duration, filter_tb, encoder->time_base);
+            if (frame->duration <= 0) frame->duration = 1;
+          }
         }
       }
 

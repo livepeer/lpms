@@ -596,9 +596,7 @@ func shortSegments(t *testing.T, accel Acceleration, fc int) {
 		out[0].Oname = oname
 		in := &TranscodeOptionsIn{Fname: fname, Accel: accel}
 		res, err := tc.Transcode(in, out)
-		if err != nil {
-			t.Error("Could not transcode: ", err)
-		}
+		require.NoError(t, err, "Could not transcode")
 		// verify that output frame count is same as input frame count
 		if res.Decoded.Frames != fc || res.Encoded[0].Frames != fc {
 			t.Error("Did not get expected frame count; got ", res.Encoded[0].Frames)
