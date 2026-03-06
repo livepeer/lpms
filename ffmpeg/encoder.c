@@ -628,8 +628,8 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
 
     // Check for runaway encodes where the FPS filter produces too many frames
     // Unclear what causes these
-    if (is_video && frame && ictx->decoded_res && ictx->decoded_res->frames > 0) {
-      if (ictx->ic && ictx->ic->iformat &&
+    if (is_video && frame && ictx && ictx->decoded_res && ictx->decoded_res->frames > 0) {
+      if (ictx->ic && ictx->ic->iformat && ictx->ic->iformat->name &&
           !strcmp(ictx->ic->iformat->name, "image2")) {
         // Image sequence input can legitimately expand frame counts.
         goto after_runaway_check;
