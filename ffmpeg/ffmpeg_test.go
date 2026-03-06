@@ -2543,8 +2543,8 @@ func TestTranscoder_LargeOutputs(t *testing.T) {
 	close(closeCh)
 	assert.Nil(err)
 	assert.Equal(120, res.Decoded.Frames)
-	assert.Equal(116, res.Encoded[0].Frames) // ffmpeg probably drops missing timestamp frames
-	assert.Equal(56, res.Encoded[1].Frames)
+	assert.Equal(120, res.Encoded[0].Frames) // passthrough
+	assert.Equal(60, res.Encoded[1].Frames)  // 30fps, 2 second input
 	cmd := `
 		# check input properties to ensure they still have the weird timestamps
 		ffprobe -of csv -hide_banner -show_entries frame=pts_time,pkt_dts_time,media_type,pict_type $1/../data/missing-dts.ts 2>&1 | grep video > input.out
@@ -2675,8 +2675,6 @@ func TestTranscoder_LargeOutputs(t *testing.T) {
 
 
 		# check output
-		ls -lha
-		#ffprobe -of csv -hide_banner -show_entries frame=pts_time,pkt_dts_time,media_type,pict_type out-30fps.ts
 		ffprobe -of csv -hide_banner -show_entries frame=pts_time,pkt_dts_time,media_type,pict_type out-30fps.ts 2>&1 | grep video > output.out
 		cat <<- 'EOF2' > expected-output.out
 			frame,video,25994.033333,25994.033333,I,
@@ -2697,9 +2695,10 @@ func TestTranscoder_LargeOutputs(t *testing.T) {
 			frame,video,25994.533333,25994.533333,B
 			frame,video,25994.566667,25994.566667,B
 			frame,video,25994.600000,25994.600000,P,
-			frame,video,25994.666667,25994.666667,P,
+			frame,video,25994.633333,25994.633333,P,
+			frame,video,25994.666667,25994.666667,B,
 			frame,video,25994.700000,25994.700000,B,
-			frame,video,25994.733333,25994.733333,B,
+			frame,video,25994.733333,25994.733333,P,
 			frame,video,25994.766667,25994.766667,B,
 			frame,video,25994.800000,25994.800000,P,
 			frame,video,25994.833333,25994.833333,B,
@@ -2710,30 +2709,33 @@ func TestTranscoder_LargeOutputs(t *testing.T) {
 			frame,video,25995.000000,25995.000000,P,
 			frame,video,25995.033333,25995.033333,B,
 			frame,video,25995.066667,25995.066667,B,
+			frame,video,25995.100000,25995.100000,P,
 			frame,video,25995.133333,25995.133333,B,
 			frame,video,25995.166667,25995.166667,P,
 			frame,video,25995.200000,25995.200000,B,
+			frame,video,25995.233333,25995.233333,B,
 			frame,video,25995.266667,25995.266667,B,
-			frame,video,25995.300000,25995.300000,B,
-			frame,video,25995.333333,25995.333333,P,
+			frame,video,25995.300000,25995.300000,P,
+			frame,video,25995.333333,25995.333333,B,
 			frame,video,25995.366667,25995.366667,B,
 			frame,video,25995.400000,25995.400000,B,
-			frame,video,25995.433333,25995.433333,B,
-			frame,video,25995.466667,25995.466667,P,
+			frame,video,25995.433333,25995.433333,P,
+			frame,video,25995.466667,25995.466667,B,
 			frame,video,25995.500000,25995.500000,B,
 			frame,video,25995.533333,25995.533333,B,
-			frame,video,25995.566667,25995.566667,B,
-			frame,video,25995.600000,25995.600000,P,
+			frame,video,25995.566667,25995.566667,P,
+			frame,video,25995.600000,25995.600000,B,
 			frame,video,25995.633333,25995.633333,B,
 			frame,video,25995.666667,25995.666667,B,
+			frame,video,25995.700000,25995.700000,P,
 			frame,video,25995.733333,25995.733333,B,
-			frame,video,25995.766667,25995.766667,P,
+			frame,video,25995.766667,25995.766667,B,
 			frame,video,25995.800000,25995.800000,B,
-			frame,video,25995.833333,25995.833333,B,
+			frame,video,25995.833333,25995.833333,P,
 			frame,video,25995.866667,25995.866667,B,
-			frame,video,25995.900000,25995.900000,P,
+			frame,video,25995.900000,25995.900000,B,
 			frame,video,25995.933333,25995.933333,B,
-			frame,video,25995.966667,N/A,B,
+			frame,video,25995.966667,N/A,P,
 			frame,video,25996.000000,N/A,P,
 		EOF2
 		diff -u expected-output.out output.out

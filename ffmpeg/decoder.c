@@ -11,11 +11,43 @@ static int lpms_send_packet(struct input_ctx *ictx, AVCodecContext *dec, AVPacke
     return ret;
 }
 
+static int64_t decoded_video_pts_step(struct input_ctx *ictx, AVFrame *frame)
+{
+    if (frame && frame->duration > 0) return frame->duration;
+    AVStream *vst = (ictx && ictx->ic && ictx->vi >= 0) ? ictx->ic->streams[ictx->vi] : NULL;
+    if (vst && vst->r_frame_rate.num > 0 && vst->r_frame_rate.den > 0) {
+      int64_t step = av_rescale_q(1, av_inv_q(vst->r_frame_rate), vst->time_base);
+      if (step > 0) return step;
+    }
+    return 1;
+}
+
+// Fix malformed decode timestamps (missing/regressive PTS) so downstream stages
+// receive a stable, non-AV_NOPTS_VALUE video timeline.
+static void fix_video_pts(struct input_ctx *ictx, AVFrame *frame)
+{
+    int64_t pts = frame->pts;
+    int synthesized = 0;
+    if (pts == AV_NOPTS_VALUE) pts = frame->best_effort_timestamp;
+    if (pts == AV_NOPTS_VALUE) {
+      pts = decoded_video_pts_step(ictx, frame);
+      if (ictx->last_video_pts != AV_NOPTS_VALUE) pts += ictx->last_video_pts;
+      synthesized = 1;
+    }
+    if (ictx->last_video_pts != AV_NOPTS_VALUE && pts <= ictx->last_video_pts) {
+      int64_t step = synthesized ? decoded_video_pts_step(ictx, frame) : 1;
+      pts = ictx->last_video_pts + step;
+    }
+    frame->pts = pts;
+    ictx->last_video_pts = pts;
+}
+
 static int lpms_receive_frame(struct input_ctx *ictx, AVCodecContext *dec, AVFrame *frame)
 {
     int ret = avcodec_receive_frame(dec, frame);
     if (dec != ictx->vc) return ret;
     if (!ret && frame && !is_flush_frame(frame)) {
+      fix_video_pts(ictx, frame);
       ictx->pkt_diff--; // decrease buffer count for non-sentinel video frames
       if (ictx->flushing) ictx->sentinel_count = 0;
     }
@@ -328,6 +360,7 @@ int open_input(input_params *params, struct input_ctx *ctx)
   if (!ctx->last_frame_v) LPMS_ERR(open_input_err, "Unable to alloc last_frame_v");
   ctx->last_frame_a = av_frame_alloc();
   if (!ctx->last_frame_a) LPMS_ERR(open_input_err, "Unable to alloc last_frame_a");
+  ctx->last_video_pts = AV_NOPTS_VALUE;
 
   return 0;
 

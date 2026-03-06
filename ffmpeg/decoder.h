@@ -36,6 +36,8 @@ struct input_ctx {
 #define SENTINEL_MAX 8
   uint16_t sentinel_count;
 
+  int64_t last_video_pts; // Resets after each segment
+
   // Packet held while decoder is blocked and needs to drain
   AVPacket *blocked_pkt;
 

@@ -161,6 +161,7 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
   int nb_outputs = h->nb_outputs;
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
+  ictx->last_video_pts = AV_NOPTS_VALUE;
 
   AVDictionary **demuxer_opts = NULL;
   if (inp->demuxer.opts) demuxer_opts = &inp->demuxer.opts;
