@@ -48,6 +48,7 @@ static int add_video_stream(struct output_ctx *octx, struct input_ctx *ictx)
   } else LPMS_ERR(add_video_err, "No video encoder, not a copy; what is this?");
 
   octx->last_video_dts = AV_NOPTS_VALUE;
+  octx->last_enc_pts = AV_NOPTS_VALUE;
   return 0;
 
 add_video_err:
@@ -519,8 +520,11 @@ int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
           pkt->pts = pkt->dts = pkt->pts + pkt->dts + octx->last_video_dts + 1
                      - FFMIN3(pkt->pts, pkt->dts, octx->last_video_dts + 1)
                      - FFMAX3(pkt->pts, pkt->dts, octx->last_video_dts + 1);
+      }
+      // Match ffmpeg's mux behavior and clamp non-monotonic DTS separately,
+      // even when the packet did not trip the decoder's DTS > PTS repair path.
+      if (pkt->dts != AV_NOPTS_VALUE && octx->last_video_dts != AV_NOPTS_VALUE) {
           int64_t max = octx->last_video_dts + !(octx->oc->oformat->flags & AVFMT_TS_NONSTRICT);
-          // check if dts is bigger than previous last dts or not, not then that's non-monotonic
           if (pkt->dts < max) {
               if (pkt->pts >= pkt->dts) pkt->pts = FFMAX(pkt->pts, max);
               pkt->dts = max;
@@ -644,9 +648,19 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
       if (frame) {
         // rescale pts to match encoder timebase if necessary (eg, fps passthrough)
         AVRational filter_tb = av_buffersink_get_time_base(filter->sink_ctx);
-        if (av_cmp_q(filter_tb, encoder->time_base)) {
+        int pts_rescaled = av_cmp_q(filter_tb, encoder->time_base);
+        if (pts_rescaled) {
           frame->pts = av_rescale_q(frame->pts, filter_tb, encoder->time_base);
           // TODO does frame->duration needs to be rescaled too?
+        }
+        // Handle timebase conversion collapsing adjacent PTS into the same encoder tick
+        if (is_video && pts_rescaled) {
+          if (octx->last_enc_pts != AV_NOPTS_VALUE && frame->pts <= octx->last_enc_pts) {
+            frame->pts = octx->last_enc_pts + 1;
+            AVRational ftb = av_buffersink_get_time_base(filter->sink_ctx);
+            frame->opaque = (void *)av_rescale_q(frame->pts, encoder->time_base, ftb);
+          }
+          octx->last_enc_pts = frame->pts;
         }
       }
 

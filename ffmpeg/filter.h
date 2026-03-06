@@ -62,6 +62,7 @@ struct output_ctx {
   int64_t last_audio_dts;     //dts of the last audio packet sent to the muxer
 
   int64_t last_video_dts;     //dts of the last video packet sent to the muxer
+  int64_t last_enc_pts;       // last pts sent to the video encoder (in encoder timebase)
 
   int64_t gop_time, gop_pts_len, next_kf_pts; // for gop reset
 
