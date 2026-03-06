@@ -162,7 +162,7 @@ int transcode_init(struct transcode_thread *h, input_params *inp,
 
   if (!inp) LPMS_ERR(transcode_cleanup, "Missing input params")
 
-  AVDictionary **demuxer_opts;
+  AVDictionary **demuxer_opts = NULL;
   if (inp->demuxer.opts) demuxer_opts = &inp->demuxer.opts;
 
   // by default we re-use decoder between segments of same stream
