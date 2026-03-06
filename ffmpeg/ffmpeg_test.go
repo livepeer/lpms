@@ -2742,3 +2742,177 @@ func TestTranscoder_LargeOutputs(t *testing.T) {
 	`
 	assert.True(run(cmd))
 }
+
+func TestTranscoder_NOPTS_SkipSegment(t *testing.T) {
+
+	// This test case exercises 2 samples that have produced extremely large
+	// outputs due to mis-placed SEI resulting in the H.264 parser omitting
+	// timing information. When a segment is skipped
+	// (eg, jumping from segment 1 -> 3), this led to a PTS underflow
+	// in the FPS filter (AV_NOPTS_VALUE is a large negative number), causing
+	// millions of frames to be output. This is fixed at several layers now
+	// but transcoding the samples here would trigger exactly that problem.
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+	tc := NewTranscoder()
+	defer tc.StopTranscoder()
+	segs := []int{1, 3}
+
+	// Double check that the inputs have a broken 'shape'
+	// which is a SEI that comes late after a picture NAL
+	// that results in N/A timestamp and position values (AV_NOPTS_VALUE)
+	// this behavior comes from deep inside the ffmpeg h264 parser
+	//
+	// Frame 6 of each segment has N/A pts; frames 15-21 of skip_1
+	// show non-monotonic PTS from B-frame reordering.
+	cmd := `
+		cat <<- 'EOF' > expected-skip.out
+			==> skip_1.begin <==
+			12.844767,N/A,1156029,I
+			12.878133,12.878133,1159032,B
+			12.911500,12.911500,1162035,B
+			12.944867,12.944867,1165038,B
+			12.978233,12.978233,1168041,B
+			N/A,13.011600,1171044,P
+			13.044967,13.044967,1174047,B
+			13.078333,13.078333,1177050,B
+
+			==> skip_1.mid <==
+			13.478733,13.311900,1213086,B
+			13.311900,13.345267,1201074,P
+			13.378633,13.378633,1204077,B
+			13.412000,13.412000,1207080,B
+			13.445367,13.445367,1210083,B
+			13.645567,13.478733,1213086,B
+			13.345267,13.512100,1216089,P
+
+			==> skip_1.end <==
+			18.483733,18.450367,1660533,B
+			18.517100,18.483733,1663536,B
+			18.350267,N/A,1651524,P
+
+			==> skip_3.begin <==
+			24.256167,N/A,2183055,I
+			24.289533,24.289533,2186058,B
+			24.322900,24.322900,2189061,B
+			24.356267,24.356267,2192064,B
+			24.389633,24.389633,2195067,B
+			N/A,24.423000,2198070,P
+			24.456367,24.456367,2201073,B
+			24.489733,24.489733,2204076,B
+
+			==> skip_3.mid <==
+			24.723300,24.723300,2225097,B
+			24.756667,24.756667,2228100,P
+			24.790033,24.790033,2231103,B
+			24.823400,24.823400,2234106,B
+			24.856767,24.856767,2237109,B
+			24.890133,24.890133,2240112,B
+			24.923500,24.923500,2243115,P
+
+			==> skip_3.end <==
+			29.861767,29.861767,2687559,B
+			29.895133,29.895133,2690562,B
+			29.928500,N/A,2693565,P
+		EOF
+
+		for i in 1 3
+		do
+			name="skip_$i"
+			ffprobe -loglevel warning -select_streams v:0 \
+				-show_entries frame=pts_time,pkt_dts_time,best_effort_timestamp,pict_type \
+				-of csv=p=0 "$1/../data/${name}.ts" | sed '/^$/d; s/,*$//g' > "$name.frames"
+			head -n 8 "$name.frames" > "$name.begin"
+			sed -n '15,21p' "$name.frames" > "$name.mid"
+			tail -n 3 "$name.frames" > "$name.end"
+			tail -n +1 "$name.begin" "$name.mid" "$name.end" >> skip.out
+			[ "$i" = 1 ] && printf '\n' >> skip.out
+		done
+		diff -u expected-skip.out skip.out
+	`
+	require.True(t, run(cmd), "unable to verify input; ffmpeg behavior may have changed")
+
+	passthrough := P240p30fps16x9
+	passthrough.Framerate = 0
+
+	for _, i := range segs {
+		in := &TranscodeOptionsIn{
+			Fname: fmt.Sprintf("../data/skip_%d.ts", i),
+		}
+		out := []TranscodeOptions{{
+			Oname:        "-",
+			Profile:      P240p30fps16x9,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+			Muxer:        ComponentOptions{Name: "null"},
+		}, {
+			Oname:        fmt.Sprintf("%s/out-%d-pass.ts", dir, i),
+			Profile:      passthrough,
+			AudioEncoder: ComponentOptions{Name: "copy"},
+		}}
+		res, err := tc.Transcode(in, out)
+		require.Nil(t, err)
+		assert := assert.New(t)
+		assert.Equal(171, res.Decoded.Frames)
+		assert.Equal(171, res.Encoded[1].Frames, "passthrough output frame count for segment %d", i)
+		if i == 0 {
+			assert.Equal(172, res.Encoded[1].Frames) // unclear why; ts rounding?
+		} else {
+			assert.Equal(171, res.Encoded[1].Frames)
+		}
+	}
+	cmd = `
+		cat <<- 'EOF' > expected-out-pass.out
+			==> out-1-pass.begin <==
+			12.844767,12.778033,0.033367,K__
+			12.978233,12.811400,0.033367,___
+			12.911500,12.844767,0.033367,___
+			12.878133,12.878133,0.033367,___
+			12.944867,12.911500,0.033367,___
+			13.111700,12.944867,0.033367,___
+			13.044967,12.978233,0.033367,___
+			13.011600,13.011600,0.033367,___
+
+			==> out-1-pass.end <==
+			18.385033,18.385033,0.033367,___
+			18.450367,18.417000,0.033367,___
+			18.618600,18.451767,0.033367,___
+			18.551867,18.485133,0.033367,___
+			18.518500,18.518500,0.033367,___
+			18.585233,18.551867,0.033367,___
+			18.685333,18.585233,0.033367,___
+			18.651967,18.618600,0.033367,___
+
+			==> out-3-pass.begin <==
+			24.256167,24.189433,0.033367,K__
+			24.389633,24.222800,0.033367,___
+			24.322900,24.256167,0.033367,___
+			24.289533,24.289533,0.033367,___
+			24.356267,24.322900,0.033367,___
+			24.523100,24.356267,0.033367,___
+			24.456367,24.389633,0.033367,___
+			24.423000,24.423000,0.033367,___
+
+			==> out-3-pass.end <==
+			29.661567,29.628200,0.033367,___
+			29.828400,29.661567,0.033367,___
+			29.761667,29.694933,0.033367,___
+			29.728300,29.728300,0.033367,___
+			29.795033,29.761667,0.033367,___
+			29.928500,29.795033,0.033367,___
+			29.861767,29.828400,0.033367,___
+			29.895133,29.861767,0.033367,___
+		EOF
+
+		for i in 1 3
+		do
+			ffprobe -loglevel warning -select_streams v:0 -show_entries packet=pts_time,dts_time,duration_time,flags -of csv=p=0 "out-$i-pass.ts" | sed '/^$/d; s/,*$//g' > "out-$i-pass.packets"
+			head -n 8 "out-$i-pass.packets" > "out-$i-pass.begin"
+			tail -n 8 "out-$i-pass.packets" > "out-$i-pass.end"
+			tail -n +1 "out-$i-pass.begin" "out-$i-pass.end" >> out-pass.out
+			[ "$i" = 1 ] && printf '\n' >> out-pass.out
+		done
+		diff -u expected-out-pass.out out-pass.out
+	`
+	assert.True(t, run(cmd))
+}
