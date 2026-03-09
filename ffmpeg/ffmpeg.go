@@ -912,6 +912,14 @@ func (t *Transcoder) Transcode(input *TranscodeOptionsIn, ps []TranscodeOptions)
 				}
 			}
 		}
+		if format.Format == "mpegts" && format.Vcodec == "h264" {
+			if fixedPath, fixErr := FixMisplacedSEI(input.Fname); fixErr != nil {
+				glog.Warningf("SEI fix-up check failed for %s: %v", input.Fname, fixErr)
+			} else if fixedPath != input.Fname {
+				defer os.Remove(fixedPath)
+				input.Fname = fixedPath
+			}
+		}
 	}
 	hw_type, err := accelDeviceType(input.Accel)
 	if err != nil {
