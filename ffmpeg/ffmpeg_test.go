@@ -2916,3 +2916,74 @@ func TestTranscoder_NOPTS_SkipSegment(t *testing.T) {
 	`
 	assert.True(t, run(cmd))
 }
+
+func TestTranscoder_NOPTS_MissingSEIAndPES(t *testing.T) {
+	// This test case is constructed such that the H.264 parser can't produce
+	// timestamps (missing SEI timing information) but ensure that LPMS can
+	// still derive produce timestamps for that.
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+		cat <<- 'EOF' > expected-input.out
+			0.200000,0.000000,0.100000,K__
+			0.500000,0.100000,0.100000,___
+			0.300000,0.200000,0.100000,___
+			0.400000,0.300000,0.100000,___
+			N/A,N/A,0.100000,___
+			N/A,N/A,0.100000,___
+			N/A,N/A,0.100000,___
+			N/A,N/A,0.100000,___
+			0.900000,0.800000,0.100000,___
+			1.000000,0.900000,0.100000,___
+			1.300000,1.000000,0.100000,___
+			1.200000,1.100000,0.100000,___
+		EOF
+
+		ffprobe -loglevel warning -select_streams v:0 \
+			-show_entries packet=pts_time,dts_time,duration_time,flags -of csv=p=0 \
+			"$1/../data/missing-sei-and-pes.ts" | sed '/^$/d; s/,*$//g' > input.out
+		diff -u expected-input.out input.out
+	`
+	require.True(t, run(cmd), "unable to verify input; ffmpeg behavior may have changed")
+
+	passthrough := P240p30fps16x9
+	passthrough.Framerate = 0
+
+	in := &TranscodeOptionsIn{
+		Fname: "../data/missing-sei-and-pes.ts",
+	}
+	out := []TranscodeOptions{{
+		Oname:        fmt.Sprintf("%s/out.ts", dir),
+		Profile:      passthrough,
+		AudioEncoder: ComponentOptions{Name: "drop"},
+	}}
+	res, err := Transcode3(in, out)
+	require.Nil(t, err)
+	assert := assert.New(t)
+	assert.Equal(12, res.Decoded.Frames)
+	assert.Equal(12, res.Encoded[0].Frames)
+
+	cmd = `
+		cat <<- 'EOF' > expected-output.out
+			0.200000,0.000000,0.100000,K__
+			0.600000,0.100000,0.100000,___
+			0.400000,0.200000,0.100000,___
+			0.300000,0.300000,0.100000,___
+			0.500000,0.400000,0.100000,___
+			1.000000,0.500000,0.100000,___
+			0.800000,0.600000,0.100000,___
+			0.700000,0.700000,0.100000,___
+			0.900000,0.800000,0.100000,___
+			1.300000,0.900000,0.100000,___
+			1.100000,1.000000,0.100000,___
+			1.200000,1.100000,0.100000,___
+		EOF
+
+		ffprobe -loglevel warning -select_streams v:0 \
+			-show_entries packet=pts_time,dts_time,duration_time,flags -of csv=p=0 \
+			out.ts | sed '/^$/d; s/,*$//g' > output.out
+		diff -u expected-output.out output.out
+	`
+	require.True(t, run(cmd), "Unable to verify output, LPMS behavior may have changed")
+}
