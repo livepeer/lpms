@@ -211,6 +211,7 @@ else
   # disable all unnecessary features for production build
   DISABLE_FFMPEG_COMPONENTS+=" --disable-doc --disable-sdl2 --disable-iconv --disable-muxers --disable-demuxers --disable-parsers --disable-protocols "
   DISABLE_FFMPEG_COMPONENTS+=" --disable-encoders --disable-decoders --disable-filters --disable-bsfs --disable-postproc --disable-lzma "
+  DISABLE_FFMPEG_COMPONENTS+=" --disable-xlib "
 fi
 
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
