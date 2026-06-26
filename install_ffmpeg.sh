@@ -156,7 +156,8 @@ fi
 
 if [[ ! -e "$ROOT/zlib-1.2.11" ]]; then
   cd "$ROOT"
-  curl -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
+  curl -L -o zlib-1.2.11.tar.gz https://github.com/madler/zlib/archive/refs/tags/v1.2.11.tar.gz
+  echo '629380c90a77b964d896ed37163f5c3a34f6e6d897311f1df2a7016355c45eff  zlib-1.2.11.tar.gz' | sha256sum -c
   tar xf zlib-1.2.11.tar.gz
   cd zlib-1.2.11
   ./configure --prefix="$ROOT/compiled" --static
