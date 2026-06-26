@@ -127,7 +127,7 @@ if [[ "$GOOS" != "windows" && "$GOARCH" == "amd64" ]]; then
   if [[ ! -e "$ROOT/nasm-2.14.02" ]]; then
     # sudo apt-get -y install asciidoc xmlto # this fails :(
     cd "$ROOT"
-    curl -o nasm-2.14.02.tar.gz "https://gstreamer.freedesktop.org/src/mirror/nasm-2.14.02.tar.xz"
+    curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o nasm-2.14.02.tar.gz "https://gstreamer.freedesktop.org/src/mirror/nasm-2.14.02.tar.xz"
     echo 'e24ade3e928f7253aa8c14aa44726d1edf3f98643f87c9d72ec1df44b26be8f5  nasm-2.14.02.tar.gz' >nasm-2.14.02.tar.gz.sha256
     sha256sum -c nasm-2.14.02.tar.gz.sha256
     tar xf nasm-2.14.02.tar.gz
@@ -156,7 +156,8 @@ fi
 
 if [[ ! -e "$ROOT/zlib-1.2.11" ]]; then
   cd "$ROOT"
-  curl -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
+  curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o zlib-1.2.11.tar.gz https://github.com/madler/zlib/archive/refs/tags/v1.2.11.tar.gz
+  echo '629380c90a77b964d896ed37163f5c3a34f6e6d897311f1df2a7016355c45eff  zlib-1.2.11.tar.gz' | sha256sum -c
   tar xf zlib-1.2.11.tar.gz
   cd zlib-1.2.11
   ./configure --prefix="$ROOT/compiled" --static
