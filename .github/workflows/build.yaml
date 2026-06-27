@@ -29,7 +29,7 @@ jobs:
           apt install -yqq build-essential make git zip unzip zlib1g-dev zlib1g yasm curl sudo
 
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -117,7 +117,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
