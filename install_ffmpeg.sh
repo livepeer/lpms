@@ -140,7 +140,7 @@ if [[ "$GOOS" != "windows" && "$GOARCH" == "amd64" ]]; then
 fi
 
 if [[ ! -e "$ROOT/x264" ]]; then
-  git clone http://git.videolan.org/git/x264.git "$ROOT/x264"
+  git clone https://code.videolan.org/videolan/x264.git "$ROOT/x264"
   cd "$ROOT/x264"
   if [[ $GOARCH == "arm64" ]]; then
     # newer git master, compiles on Apple Silicon
