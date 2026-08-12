@@ -29,7 +29,7 @@ jobs:
           apt install -yqq build-essential make git zip unzip zlib1g-dev zlib1g yasm curl sudo
 
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -38,7 +38,7 @@ jobs:
 
       - name: Set up go
         id: go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7.0.0
         with:
           go-version: 1.20.4
           cache: true
@@ -46,7 +46,7 @@ jobs:
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: /home/runner/compiled
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('./install_ffmpeg.sh') }}
@@ -105,7 +105,7 @@ jobs:
         run: PATH="/github/home/compiled/bin:$PATH" go test -timeout 1h -coverprofile cover.out ./...
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7.0.0
         with:
           files: ./cover.out
           name: ${{ github.event.repository.name }}
@@ -117,7 +117,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
