@@ -8,5 +8,5 @@ require (
 	github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/stretchr/testify v1.3.0
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.34.2
 )
