@@ -1914,6 +1914,55 @@ func TestTranscoder_GetCodecInfo(t *testing.T) {
 	assert.Equal(t, "aac", format.Acodec)
 }
 
+func TestGetCodecInfoBytesStatusInvariants(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	readFixture := func(t *testing.T, name string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(path.Join(wd, "..", "data", name))
+		require.NoError(t, err)
+		return data
+	}
+
+	t.Run("normal video", func(t *testing.T) {
+		status, format, err := GetCodecInfoBytes(readFixture(t, "bunny.mp4"))
+		require.NoError(t, err)
+		assert.Equal(t, CodecStatusOk, status)
+		assert.NotEmpty(t, format.Vcodec)
+	})
+
+	t.Run("zero-frame video", func(t *testing.T) {
+		status, format, err := GetCodecInfoBytes(readFixture(t, "zero-frame.ts"))
+		require.NoError(t, err)
+		assert.Equal(t, CodecStatusNeedsBypass, status)
+		assert.NotEmpty(t, format.Vcodec)
+	})
+
+	t.Run("audio only", func(t *testing.T) {
+		status, format, err := GetCodecInfoBytes(readFixture(t, "audio.mp3"))
+		require.NoError(t, err)
+		assert.Equal(t, CodecStatusOk, status)
+		assert.Empty(t, format.Vcodec)
+		assert.NotEmpty(t, format.Acodec)
+	})
+
+	for _, tt := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "JSON", data: []byte(`{"not":"media"}`)},
+		{name: "empty input", data: []byte{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			status, format, err := GetCodecInfoBytes(tt.data)
+			require.NoError(t, err)
+			assert.Equal(t, CodecStatusInternalError, status)
+			assert.Empty(t, format.Vcodec)
+		})
+	}
+}
+
 func TestTranscoder_ZeroFrameLongBadSegment(t *testing.T) {
 	badSegment := make([]byte, 16*1024*1024)
 	res, err := HasZeroVideoFrameBytes(badSegment)
