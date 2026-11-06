@@ -36,6 +36,16 @@ function check_sysroot() {
   fi
 }
 
+# Verify "<sha256>  <file>" lines read from stdin. The BSD sha256sum that ships
+# with macOS cannot read them from stdin, so use shasum there.
+function sha256_check() {
+  if [[ "$BUILDOS" == "darwin" ]]; then
+    shasum -a 256 -c
+  else
+    sha256sum -c
+  fi
+}
+
 if [[ "$BUILDARCH" == "amd64" && "$BUILDOS" == "linux" && "$GOARCH" == "arm64" && "$GOOS" == "linux" ]]; then
   echo "cross-compiling linux-amd64 --> linux-arm64"
   export CC="clang-14"
@@ -129,7 +139,7 @@ if [[ "$GOOS" != "windows" && "$GOARCH" == "amd64" ]]; then
     cd "$ROOT"
     curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o nasm-2.14.02.tar.gz "https://gstreamer.freedesktop.org/src/mirror/nasm-2.14.02.tar.xz"
     echo 'e24ade3e928f7253aa8c14aa44726d1edf3f98643f87c9d72ec1df44b26be8f5  nasm-2.14.02.tar.gz' >nasm-2.14.02.tar.gz.sha256
-    sha256sum -c nasm-2.14.02.tar.gz.sha256
+    sha256_check <nasm-2.14.02.tar.gz.sha256
     tar xf nasm-2.14.02.tar.gz
     rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
     cd "$ROOT/nasm-2.14.02"
@@ -154,12 +164,12 @@ if [[ ! -e "$ROOT/x264" ]]; then
   make -j$NPROC install-lib-static
 fi
 
-if [[ ! -e "$ROOT/zlib-1.2.11" ]]; then
+if [[ ! -e "$ROOT/zlib-1.3.2" ]]; then
   cd "$ROOT"
-  curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o zlib-1.2.11.tar.gz https://github.com/madler/zlib/archive/refs/tags/v1.2.11.tar.gz
-  echo '629380c90a77b964d896ed37163f5c3a34f6e6d897311f1df2a7016355c45eff  zlib-1.2.11.tar.gz' | sha256sum -c
-  tar xf zlib-1.2.11.tar.gz
-  cd zlib-1.2.11
+  curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 15 -o zlib-1.3.2.tar.gz https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+  echo 'bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16  zlib-1.3.2.tar.gz' | sha256_check
+  tar xf zlib-1.3.2.tar.gz
+  cd zlib-1.3.2
   ./configure --prefix="$ROOT/compiled" --static
   make -j$NPROC
   make -j$NPROC install
